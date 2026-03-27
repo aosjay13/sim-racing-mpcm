@@ -61,8 +61,24 @@
             text-transform: uppercase;
         }
 
+        .brand-label {
+            white-space: nowrap;
+        }
+
+        .brand-logo-frame {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: clamp(52px, 7.3vw, 74px);
+            height: clamp(52px, 7.3vw, 74px);
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            padding: 6px;
+        }
+
         .brand-logo {
-            width: clamp(44px, 6.2vw, 64px);
+            width: 100%;
             height: auto;
             filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.35));
         }
@@ -206,8 +222,10 @@
     <div class="shell">
         <header class="top">
             <div class="brand">
-                <img class="brand-logo" src="../Phoenix%20SRMPCM%20Logo.png" alt="Phoenix SRMPCM logo">
-                <span>Phoenix SRMPC</span>
+                <span class="brand-logo-frame">
+                    <img class="brand-logo" src="../Phoenix SRMPCM Logo.png" alt="Phoenix SRMPCM logo">
+                </span>
+                <span class="brand-label">Phoenix SRMPC</span>
             </div>
             <div class="pill">Multiplayer Career Platform</div>
         </header>
