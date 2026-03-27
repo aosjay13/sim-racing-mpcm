@@ -239,8 +239,6 @@ const UI = {
         }
     },
 
-    viewDriver(driverId) {
-
     async deleteDriver(driverId) {
         if (confirm('Are you sure you want to delete this driver?')) {
             try {
@@ -252,6 +250,8 @@ const UI = {
                 this.showNotification('Error deleting driver', 'error');
             }
         }
+    },
+
     async viewDriver(driverId) {
         try {
             const driver = await Database.drivers.getById(driverId);
@@ -385,7 +385,6 @@ const UI = {
         return card;
     },
 
-    editTeam(teamId) {
     async editTeam(teamId) {
         try {
             const team = await Database.teams.getById(teamId);
@@ -409,8 +408,6 @@ const UI = {
         }
     },
 
-    viewTeam(teamId) {
-
     async deleteTeam(teamId) {
         if (confirm('Are you sure you want to delete this team?')) {
             try {
@@ -422,6 +419,8 @@ const UI = {
                 this.showNotification('Error deleting team', 'error');
             }
         }
+    },
+
     async viewTeam(teamId) {
         try {
             const team = await Database.teams.getById(teamId);

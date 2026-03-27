@@ -13,8 +13,11 @@ function initializeEventListeners() {
     // Navigation buttons
     document.querySelectorAll('.nav-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
-            const viewName = e.target.dataset.view;
-            UI.switchView(viewName);
+            const button = e.target.closest('.nav-btn');
+            if (button) {
+                const viewName = button.dataset.view;
+                UI.switchView(viewName);
+            }
         });
     });
 
