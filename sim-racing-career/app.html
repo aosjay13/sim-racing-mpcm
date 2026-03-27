@@ -22,10 +22,10 @@
                 </div>
                 <nav class="nav-main">
                     <button class="nav-btn active" data-view="dashboard">Dashboard</button>
-                    <button class="nav-btn" data-view="drivers">Drivers</button>
                     <button class="nav-btn" data-view="calendar">Calendar</button>
-                    <button class="nav-btn" data-view="standings">Standings</button>
+                    <button class="nav-btn" data-view="drivers">Drivers</button>
                     <button class="nav-btn" data-view="teams">Teams</button>
+                    <button class="nav-btn" data-view="sponsors">Sponsors</button>
                 </nav>
                 <div class="header-actions">
                     <button class="btn-icon" id="settings-btn">⚙️</button>
@@ -140,46 +140,19 @@
                 </div>
             </section>
 
-            <!-- Standings View -->
-            <section id="standings-view" class="view">
+            <!-- Sponsors View -->
+            <section id="sponsors-view" class="view">
                 <div class="view-header">
-                    <h2>Championship Standings</h2>
+                    <h2>Sponsor Management</h2>
+                    <button class="btn btn-primary" id="add-sponsor-btn">+ Add Sponsor</button>
                 </div>
 
-                <div class="standings-filters">
-                    <select id="season-select" class="filter-select">
-                        <option value="current">Current Season</option>
-                    </select>
-                    <select id="game-filter" class="filter-select">
-                        <option value="">All Games</option>
-                        <option value="iracing">iRacing</option>
-                        <option value="nascar2003">NASCAR Racing 2003</option>
-                        <option value="wreckfest">Wreckfest</option>
-                        <option value="wreckfest2">Wreckfest 2</option>
-                        <option value="automobilista1">Automobilista 1</option>
-                        <option value="automobilista2">Automobilista 2</option>
-                        <option value="beamng">BeamNG.Drive</option>
-                    </select>
+                <div id="sponsors-grid" class="teams-grid">
+                    <div class="empty-state">
+                        <p style="font-size:1.2rem; margin-bottom:0.5rem;">🤝 No sponsors yet</p>
+                        <p style="color: var(--text-secondary);">Add sponsors to track partnerships, deals, and branding across your career.</p>
+                    </div>
                 </div>
-
-                <table class="standings-table">
-                    <thead>
-                        <tr>
-                            <th>Position</th>
-                            <th>Driver</th>
-                            <th>Team</th>
-                            <th>Points</th>
-                            <th>Races</th>
-                            <th>Wins</th>
-                            <th>Podiums</th>
-                        </tr>
-                    </thead>
-                    <tbody id="standings-body">
-                        <tr class="empty-state-row">
-                            <td colspan="7">No drivers in standings yet</td>
-                        </tr>
-                    </tbody>
-                </table>
             </section>
 
             <!-- Teams View -->

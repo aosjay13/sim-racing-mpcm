@@ -43,8 +43,8 @@ const UI = {
             case 'calendar':
                 this.loadCalendar();
                 break;
-            case 'standings':
-                this.loadStandings();
+            case 'sponsors':
+                this.loadSponsors();
                 break;
             case 'teams':
                 this.loadTeams();
@@ -596,37 +596,19 @@ const UI = {
         });
     },
 
-    // ===== STANDINGS =====
-    async loadStandings() {
+    // ===== SPONSORS =====
+    async loadSponsors() {
         try {
-            const standings = await Database.standings.getCurrentSeasonStandings();
-            const standingsBody = document.getElementById('standings-body');
-            standingsBody.innerHTML = '';
-
-            if (!standings || standings.entries.length === 0) {
-                standingsBody.innerHTML = '<tr class="empty-state-row"><td colspan="7">No drivers in standings yet</td></tr>';
-                return;
-            }
-
-            standings.entries.forEach((entry, index) => {
-                Database.drivers.getById(entry.driverId).then(driver => {
-                    if (driver) {
-                        const row = document.createElement('tr');
-                        row.innerHTML = `
-                            <td><span class="position-badge">${index + 1}</span></td>
-                            <td>${driver.name}</td>
-                            <td>${driver.teamId || 'N/A'}</td>
-                            <td><span class="points">${entry.points}</span></td>
-                            <td>${entry.races}</td>
-                            <td>${entry.wins}</td>
-                            <td>${entry.podiums}</td>
-                        `;
-                        standingsBody.appendChild(row);
-                    }
-                });
-            });
+            const sponsorsGrid = document.getElementById('sponsors-grid');
+            // Placeholder — sponsors feature coming soon
+            sponsorsGrid.innerHTML = `
+                <div class="empty-state">
+                    <p style="font-size:1.2rem; margin-bottom:0.5rem;">\ud83e\udd1d No sponsors yet</p>
+                    <p style="color: var(--text-secondary);">Add sponsors to track partnerships, deals, and branding across your career.</p>
+                </div>
+            `;
         } catch (error) {
-            console.error('Error loading standings:', error);
+            console.error('Error loading sponsors:', error);
         }
     },
 

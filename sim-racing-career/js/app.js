@@ -99,6 +99,11 @@ function initializeEventListeners() {
         UI.closeModal('user-profile-modal');
     });
 
+    // Sponsor management (placeholder)
+    document.getElementById('add-sponsor-btn')?.addEventListener('click', () => {
+        alert('Sponsor management coming soon!');
+    });
+
     // Load saved settings on startup
     loadSavedSettings();
 }
