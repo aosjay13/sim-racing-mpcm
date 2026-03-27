@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phoenix's Sim Racing Multiplayer Career Mode (SRMPC)</title>
+    <link rel="stylesheet" href="css/style.css">
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-storage.js"></script>
+</head>
+<body>
+    <div id="app" class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <span class="logo-icon">🏁</span>
+                    <span class="logo-text">SRMPC<span class="logo-sub">Phoenix</span></span>
+                </div>
+                <nav class="nav-main">
+                    <button class="nav-btn active" data-view="dashboard">Dashboard</button>
+                    <button class="nav-btn" data-view="drivers">Drivers</button>
+                    <button class="nav-btn" data-view="calendar">Calendar</button>
+                    <button class="nav-btn" data-view="standings">Standings</button>
+                    <button class="nav-btn" data-view="teams">Teams</button>
+                </nav>
+                <div class="header-actions">
+                    <button class="btn-icon" id="settings-btn">⚙️</button>
+                    <button class="btn-icon" id="user-btn">👤</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-container">
+            <!-- Dashboard View -->
+            <section id="dashboard-view" class="view active">
+                <div class="dashboard-grid">
+                    <!-- Welcome Card -->
+                    <div class="card card-featured">
+                        <div class="card-header">
+                            <h2>Welcome to Phoenix's SRMPC</h2>
+                            <span class="badge-new">v1.0</span>
+                        </div>
+                        <p>Manage your motorsport career across multiple racing simulations. Track stats, organize teams, and dominate the leaderboards.</p>
+                        <button class="btn btn-primary" id="quick-add-driver">+ Add Driver</button>
+                    </div>
+
+                    <!-- Quick Stats -->
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-value" id="total-drivers">0</div>
+                            <div class="stat-label">Active Drivers</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="total-teams">0</div>
+                            <div class="stat-label">Teams</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="races-completed">0</div>
+                            <div class="stat-label">Races</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="next-race-days">TBD</div>
+                            <div class="stat-label">Next Race</div>
+                        </div>
+                    </div>
+
+                    <!-- Recent Activity -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Recent Activity</h3>
+                        </div>
+                        <div id="activity-feed" class="activity-feed">
+                            <div class="activity-item">
+                                <div class="activity-icon">🏁</div>
+                                <div class="activity-content">
+                                    <p>Welcome to Sim Racing Career! Start by adding drivers to your team.</p>
+                                    <span class="activity-time">Just now</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Upcoming Events -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Upcoming Events</h3>
+                        </div>
+                        <div id="upcoming-events" class="events-list">
+                            <p class="empty-state">No events scheduled yet</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Drivers View -->
+            <section id="drivers-view" class="view">
+                <div class="view-header">
+                    <h2>Driver Management</h2>
+                    <button class="btn btn-primary" id="add-driver-btn">+ New Driver</button>
+                </div>
+                
+                <div class="filters-bar">
+                    <input type="text" id="driver-search" class="search-input" placeholder="Search drivers...">
+                    <select id="team-filter" class="filter-select">
+                        <option value="">All Teams</option>
+                    </select>
+                </div>
+
+                <div id="drivers-grid" class="drivers-grid">
+                    <div class="empty-state">No drivers yet. Create your first driver to get started!</div>
+                </div>
+            </section>
+
+            <!-- Calendar View -->
+            <section id="calendar-view" class="view">
+                <div class="view-header">
+                    <h2>Race Calendar</h2>
+                    <button class="btn btn-primary" id="add-race-btn">+ Schedule Race</button>
+                </div>
+
+                <div class="calendar-container">
+                    <div class="calendar-nav">
+                        <button id="prev-month">◀</button>
+                        <h3 id="current-month"></h3>
+                        <button id="next-month">▶</button>
+                    </div>
+                    <div id="calendar" class="calendar-grid"></div>
+                </div>
+
+                <div class="races-timeline">
+                    <h3>Scheduled Races</h3>
+                    <div id="races-list" class="races-list">
+                        <p class="empty-state">No races scheduled</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Standings View -->
+            <section id="standings-view" class="view">
+                <div class="view-header">
+                    <h2>Championship Standings</h2>
+                </div>
+
+                <div class="standings-filters">
+                    <select id="season-select" class="filter-select">
+                        <option value="current">Current Season</option>
+                    </select>
+                    <select id="game-filter" class="filter-select">
+                        <option value="">All Games</option>
+                        <option value="iracing">iRacing</option>
+                        <option value="nascar2003">NASCAR Racing 2003</option>
+                        <option value="wreckfest">Wreckfest</option>
+                        <option value="wreckfest2">Wreckfest 2</option>
+                        <option value="automobilista1">Automobilista 1</option>
+                        <option value="automobilista2">Automobilista 2</option>
+                        <option value="beamng">BeamNG.Drive</option>
+                    </select>
+                </div>
+
+                <table class="standings-table">
+                    <thead>
+                        <tr>
+                            <th>Position</th>
+                            <th>Driver</th>
+                            <th>Team</th>
+                            <th>Points</th>
+                            <th>Races</th>
+                            <th>Wins</th>
+                            <th>Podiums</th>
+                        </tr>
+                    </thead>
+                    <tbody id="standings-body">
+                        <tr class="empty-state-row">
+                            <td colspan="7">No drivers in standings yet</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- Teams View -->
+            <section id="teams-view" class="view">
+                <div class="view-header">
+                    <h2>Team Management</h2>
+                    <button class="btn btn-primary" id="add-team-btn">+ Create Team</button>
+                </div>
+
+                <div id="teams-grid" class="teams-grid">
+                    <div class="empty-state">No teams yet. Create your first team!</div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <!-- Add Driver Modal -->
+    <div id="add-driver-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add New Driver</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="driver-form" class="form">
+                <div class="form-group">
+                    <label for="driver-name">Driver Name *</label>
+                    <input type="text" id="driver-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="driver-number">Driver Number</label>
+                    <input type="number" id="driver-number" min="1" max="999">
+                </div>
+                <div class="form-group">
+                    <label for="driver-team">Team</label>
+                    <select id="driver-team">
+                        <option value="">Create New Team</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="driver-country">Country</label>
+                    <input type="text" id="driver-country">
+                </div>
+                <div class="form-group">
+                    <label for="driver-description">Bio</label>
+                    <textarea id="driver-description" rows="3"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Add Driver</button>
+                    <button type="button" class="btn btn-secondary" id="cancel-driver">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Team Modal -->
+    <div id="add-team-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Create Team</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="team-form" class="form">
+                <div class="form-group">
+                    <label for="team-name">Team Name *</label>
+                    <input type="text" id="team-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="team-color">Team Color</label>
+                    <input type="color" id="team-color" value="#FF4444">
+                </div>
+                <div class="form-group">
+                    <label for="team-description">Description</label>
+                    <textarea id="team-description" rows="3"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Create Team</button>
+                    <button type="button" class="btn btn-secondary" id="cancel-team">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Race Modal -->
+    <div id="add-race-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Schedule Race</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="race-form" class="form">
+                <div class="form-group">
+                    <label for="race-name">Race Name *</label>
+                    <input type="text" id="race-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="race-date">Date *</label>
+                    <input type="datetime-local" id="race-date" required>
+                </div>
+                <div class="form-group">
+                    <label for="race-game">Simulation *</label>
+                    <select id="race-game" required>
+                        <option value="">Select a game</option>
+                        <option value="iracing">iRacing</option>
+                        <option value="nascar2003">NASCAR Racing 2003</option>
+                        <option value="wreckfest">Wreckfest</option>
+                        <option value="wreckfest2">Wreckfest 2</option>
+                        <option value="automobilista1">Automobilista 1</option>
+                        <option value="automobilista2">Automobilista 2</option>
+                        <option value="beamng">BeamNG.Drive</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="race-track">Track/Circuit</label>
+                    <input type="text" id="race-track">
+                </div>
+                <div class="form-group">
+                    <label for="race-description">Notes</label>
+                    <textarea id="race-description" rows="2"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Schedule Race</button>
+                    <button type="button" class="btn btn-secondary" id="cancel-race">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+
+        <!-- View Driver Modal -->
+        <div id="view-driver-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 id="view-driver-title">Driver Details</h2>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div id="view-driver-content" class="form">
+                    <!-- Content populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <!-- View Team Modal -->
+        <div id="view-team-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 id="view-team-title">Team Details</h2>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div id="view-team-content" class="form">
+                    <!-- Content populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit Driver Modal -->
+        <div id="edit-driver-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Edit Driver</h2>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <form id="edit-driver-form" class="form">
+                    <div class="form-group">
+                        <label for="edit-driver-name">Driver Name *</label>
+                        <input type="text" id="edit-driver-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-driver-number">Driver Number</label>
+                        <input type="number" id="edit-driver-number" min="1" max="999">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-driver-team">Team</label>
+                        <select id="edit-driver-team"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-driver-country">Country</label>
+                        <input type="text" id="edit-driver-country">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-driver-description">Bio</label>
+                        <textarea id="edit-driver-description" rows="3"></textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                        <button type="button" class="btn btn-secondary" id="cancel-edit-driver">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Edit Team Modal -->
+        <div id="edit-team-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Edit Team</h2>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <form id="edit-team-form" class="form">
+                    <div class="form-group">
+                        <label for="edit-team-name">Team Name *</label>
+                        <input type="text" id="edit-team-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-team-color">Team Color</label>
+                        <input type="color" id="edit-team-color" value="#FF4444">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-team-description">Description</label>
+                        <textarea id="edit-team-description" rows="3"></textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                        <button type="button" class="btn btn-secondary" id="cancel-edit-team">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Settings Modal -->
+        <div id="settings-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Settings</h2>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="form">
+                    <div class="form-group">
+                        <label>App Version</label>
+                        <p style="color: var(--text-secondary);">v1.0 - Phoenix's SRMPC</p>
+                    </div>
+                    <div class="form-group">
+                        <label>Points System</label>
+                        <select id="points-system">
+                            <option value="f1">F1 Style (25-18-15-12-10...)</option>
+                            <option value="indycar">IndyCar Style (40-34-29-26...)</option>
+                            <option value="nascar">NASCAR Style (43-41-39-37...)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="season-year">Current Season</label>
+                        <input type="number" id="season-year" value="2026" min="2000" max="2099">
+                    </div>
+                    <div class="form-group">
+                        <label for="max-drivers">Max Drivers per Team</label>
+                        <input type="number" id="max-drivers" value="2" min="1" max="10">
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn btn-primary" id="save-settings">Save Settings</button>
+                        <button type="button" class="btn btn-secondary" id="close-settings">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- User Profile Modal -->
+        <div id="user-profile-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>User Profile</h2>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="form">
+                    <div class="form-group">
+                        <label for="user-name">Display Name</label>
+                        <input type="text" id="user-name" placeholder="Your name">
+                    </div>
+                    <div class="form-group">
+                        <label for="user-email">Email</label>
+                        <input type="email" id="user-email" placeholder="your@email.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="user-team">Primary Team (Optional)</label>
+                        <select id="user-team">
+                            <option value="">Not assigned</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Account Type</label>
+                        <p style="color: var(--text-secondary);">Local User (No authentication yet)</p>
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn btn-primary" id="save-profile">Save Profile</button>
+                        <button type="button" class="btn btn-secondary" id="close-profile">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scripts -->
+    <script src="js/firebase-config.js"></script>
+    <script src="js/database.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
