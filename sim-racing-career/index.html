@@ -51,11 +51,20 @@
         }
 
         .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.7rem;
             font-family: "Chakra Petch", sans-serif;
             font-size: clamp(1.1rem, 2.8vw, 1.7rem);
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
+        }
+
+        .brand-logo {
+            width: clamp(44px, 6.2vw, 64px);
+            height: auto;
+            filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.35));
         }
 
         .pill {
@@ -196,7 +205,10 @@
 <body>
     <div class="shell">
         <header class="top">
-            <div class="brand">Phoenix SRMPC</div>
+            <div class="brand">
+                <img class="brand-logo" src="../Phoenix%20SRMPCM%20Logo.png" alt="Phoenix SRMPCM logo">
+                <span>Phoenix SRMPC</span>
+            </div>
             <div class="pill">Multiplayer Career Platform</div>
         </header>
 

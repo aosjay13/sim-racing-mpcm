@@ -96,6 +96,13 @@ html, body {
     animation: pulse 2s infinite;
 }
 
+.logo-image {
+    height: 54px;
+    width: auto;
+    display: block;
+    filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.4));
+}
+
 @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.7; }
