@@ -70,18 +70,18 @@ That means your root site URL can act as a clean project home page, while the ap
 
 1. Create/select a Firebase project in Firebase Console.
 2. Enable Firestore.
-3. Put your project config in `js/firebase-config.js`.
+3. Put your project config in `js/firebase-config.local.js` (gitignored).
 
 Expected shape:
 
 ```javascript
-const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+window.__SRMPC_FIREBASE_CONFIG__ = {
+   apiKey: "YOUR_API_KEY",
+   authDomain: "YOUR_PROJECT.firebaseapp.com",
+   projectId: "YOUR_PROJECT_ID",
+   storageBucket: "YOUR_PROJECT.appspot.com",
+   messagingSenderId: "YOUR_SENDER_ID",
+   appId: "YOUR_APP_ID"
 };
 ```
 

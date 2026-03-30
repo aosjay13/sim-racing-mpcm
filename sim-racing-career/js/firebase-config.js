@@ -3,12 +3,12 @@
 // Get these from https://console.firebase.google.com
 
 const firebaseConfig = {
-    apiKey: "AIzaSyAcpomoHaYuSEVCBi_FzzDT9rARmCC6--8",
-    authDomain: "sim-racing-career-228a3.firebaseapp.com",
-    projectId: "sim-racing-career-228a3",
-    storageBucket: "sim-racing-career-228a3.firebasestorage.app",
-    messagingSenderId: "349016304868",
-    appId: "1:349016304868:web:79f80e44da0342372ad0f1"
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT_ID.appspot.com",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId: "YOUR_APP_ID"
 };
 
 const FIREBASE_CONFIG_STORAGE_KEY = 'srmpc_firebase_config';
@@ -40,10 +40,19 @@ function isValidFirebaseConfig(config) {
 }
 
 function getFirebaseConfig() {
+    // Highest priority: untracked local override loaded from js/firebase-config.local.js.
+    const localOverride = window.__SRMPC_FIREBASE_CONFIG__;
+    if (isValidFirebaseConfig(localOverride)) {
+        return localOverride;
+    }
+
+    // Next: browser-stored config for this device.
     const storedConfig = getStoredFirebaseConfig();
     if (isValidFirebaseConfig(storedConfig)) {
         return storedConfig;
     }
+
+    // Last fallback: tracked template values.
     return firebaseConfig;
 }
 

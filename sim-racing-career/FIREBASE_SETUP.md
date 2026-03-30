@@ -55,11 +55,26 @@ const firebaseConfig = {
 };
 ```
 
-## Step 4: Update Your Application Config
+## Step 4: Update Your Application Config (Private)
 
-1. Open `js/firebase-config.js` in your project
-2. Replace the placeholder config with your Firebase config from Step 3
+1. Create `js/firebase-config.local.js` in your project
+2. Paste your Firebase config into that file
 3. Save the file
+
+Use this structure:
+
+```javascript
+window.__SRMPC_FIREBASE_CONFIG__ = {
+  apiKey: "YOUR_ACTUAL_API_KEY",
+  authDomain: "your-actual-project.firebaseapp.com",
+  projectId: "your-actual-project-id",
+  storageBucket: "your-actual-project.appspot.com",
+  messagingSenderId: "YOUR_ACTUAL_SENDER_ID",
+  appId: "YOUR_ACTUAL_APP_ID"
+};
+```
+
+`js/firebase-config.local.js` is gitignored, so your key will not be committed.
 
 ```javascript
 const firebaseConfig = {
