@@ -104,6 +104,7 @@ let storage;
 let appCheck;
 let firebaseInitError;
 let authReadyPromise = Promise.resolve();
+let authStateReady = null;
 
 try {
     const runtimeFirebaseConfig = normalizeFirebaseConfig(getFirebaseConfig());
@@ -131,6 +132,13 @@ try {
 
     try {
         auth = firebase.auth(app);
+
+        authStateReady = new Promise((resolve) => {
+            const unsubscribe = auth.onAuthStateChanged(() => {
+                resolve();
+                unsubscribe();
+            });
+        });
 
         // Sign in anonymously so authenticated Firestore rules can be enforced.
         // Requires Anonymous sign-in to be enabled in Firebase Console > Authentication > Sign-in providers.
@@ -403,3 +411,150 @@ const DatabaseHelper = {
         }
     }
 };
+
+const AuthService = {
+    _listeners: [],
+    _isAdmin: false,
+    _user: null,
+    _readyPromise: Promise.resolve(),
+
+    init() {
+        if (!auth) {
+            this._readyPromise = Promise.resolve();
+            return this._readyPromise;
+        }
+
+        this._readyPromise = new Promise((resolve) => {
+            auth.onAuthStateChanged(async (user) => {
+                this._user = user || null;
+                this._isAdmin = await this.resolveAdminStatus(user);
+                this._notifyListeners();
+                resolve();
+            });
+        });
+
+        return this._readyPromise;
+    },
+
+    async waitUntilReady() {
+        await (authStateReady || Promise.resolve());
+        await this._readyPromise;
+    },
+
+    async resolveAdminStatus(user) {
+        if (!user || !db || user.isAnonymous) return false;
+        try {
+            const adminDoc = await db.collection('admins').doc(user.uid).get();
+            return adminDoc.exists && adminDoc.data()?.isActive !== false;
+        } catch (error) {
+            console.error('Error resolving admin status:', error);
+            return false;
+        }
+    },
+
+    onAuthStateChanged(listener) {
+        this._listeners.push(listener);
+        try {
+            listener({
+                user: this._user,
+                isAdmin: this._isAdmin,
+                isAuthenticated: this.isAuthenticated()
+            });
+        } catch (error) {
+            console.error('Auth listener error:', error);
+        }
+
+        return () => {
+            this._listeners = this._listeners.filter((cb) => cb !== listener);
+        };
+    },
+
+    _notifyListeners() {
+        const payload = {
+            user: this._user,
+            isAdmin: this._isAdmin,
+            isAuthenticated: this.isAuthenticated()
+        };
+
+        this._listeners.forEach((listener) => {
+            try {
+                listener(payload);
+            } catch (error) {
+                console.error('Auth listener execution error:', error);
+            }
+        });
+    },
+
+    async signInWithGoogle() {
+        if (!auth) {
+            throw new Error('Authentication is not configured.');
+        }
+
+        const provider = new firebase.auth.GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
+        const currentUser = auth.currentUser;
+
+        try {
+            if (currentUser?.isAnonymous) {
+                try {
+                    await currentUser.linkWithPopup(provider);
+                    await this.waitUntilReady();
+                    return { redirectStarted: false, user: this._user };
+                } catch (linkError) {
+                    if (
+                        linkError.code === 'auth/provider-already-linked' ||
+                        linkError.code === 'auth/credential-already-in-use' ||
+                        linkError.code === 'auth/email-already-in-use'
+                    ) {
+                        await auth.signInWithPopup(provider);
+                        await this.waitUntilReady();
+                        return { redirectStarted: false, user: this._user };
+                    }
+                    throw linkError;
+                }
+            }
+
+            await auth.signInWithPopup(provider);
+            await this.waitUntilReady();
+            return { redirectStarted: false, user: this._user };
+        } catch (error) {
+            if (error.code === 'auth/popup-blocked' || error.code === 'auth/cancelled-popup-request') {
+                await auth.signInWithRedirect(provider);
+                return { redirectStarted: true };
+            }
+
+            if (error.code === 'auth/popup-closed-by-user') {
+                throw new Error('Sign-in popup was closed before completing authentication.');
+            }
+
+            if (error.code === 'auth/unauthorized-domain') {
+                const hostname = window.location.hostname || 'this domain';
+                throw new Error(
+                    'Google sign-in is blocked for ' + hostname + '. Add this domain in Firebase Authentication > Settings > Authorized domains.'
+                );
+            }
+
+            throw error;
+        }
+    },
+
+    async signOut() {
+        if (!auth) return;
+        await auth.signOut();
+    },
+
+    getCurrentUser() {
+        return this._user;
+    },
+
+    isAuthenticated() {
+        return Boolean(this._user && !this._user.isAnonymous);
+    },
+
+    isAdmin() {
+        return this._isAdmin;
+    }
+};
+
+AuthService.init();
+window.AuthService = AuthService;

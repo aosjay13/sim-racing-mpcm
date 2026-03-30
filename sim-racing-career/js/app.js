@@ -1,10 +1,18 @@
 // Main Application File - Sim Racing Career Mode
 
+const AppSession = {
+    user: null,
+    isAuthenticated: false,
+    isAdmin: false,
+    claimedDriverId: ''
+};
+
 // ===== APPLICATION INITIALIZATION =====
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
     console.log('Initializing Sim Racing Career Mode...');
     
     initializeEventListeners();
+    await initializeAuthSession();
     loadDriverTeamOptions();
     toggleNewDriverTeamFields();
     UI.loadDashboard();
@@ -17,6 +25,145 @@ function withTimeout(promise, timeoutMs, timeoutMessage) {
             setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
         })
     ]);
+}
+
+async function initializeAuthSession() {
+    if (!window.AuthService) {
+        console.warn('AuthService is not available. Running in guest mode.');
+        updateAuthUI();
+        return;
+    }
+
+    await window.AuthService.waitUntilReady();
+
+    window.AuthService.onAuthStateChanged((state) => {
+        AppSession.user = state.user;
+        AppSession.isAuthenticated = state.isAuthenticated;
+        AppSession.isAdmin = state.isAdmin;
+
+        updateAuthUI();
+
+        Promise.allSettled([
+            UI.loadDashboard(),
+            UI.loadDrivers(),
+            UI.loadTeams(),
+            UI.loadStandings(),
+            UI.loadDriverHub(),
+            loadDriverTeamOptions()
+        ]);
+    });
+}
+
+function updateAuthUI() {
+    const loginBtn = document.getElementById('login-btn');
+    const logoutBtn = document.getElementById('logout-btn');
+    const roleBadge = document.getElementById('auth-role-badge');
+
+    if (loginBtn) {
+        loginBtn.classList.toggle('hidden', AppSession.isAuthenticated);
+    }
+
+    if (logoutBtn) {
+        logoutBtn.classList.toggle('hidden', !AppSession.isAuthenticated);
+    }
+
+    if (roleBadge) {
+        roleBadge.classList.remove('auth-role-admin', 'auth-role-user');
+        if (AppSession.isAdmin) {
+            roleBadge.textContent = 'Admin';
+            roleBadge.classList.add('auth-role-admin');
+        } else if (AppSession.isAuthenticated) {
+            roleBadge.textContent = 'Driver';
+            roleBadge.classList.add('auth-role-user');
+        } else {
+            roleBadge.textContent = 'Guest';
+        }
+    }
+
+    const addRaceBtn = document.getElementById('add-race-btn');
+    const addTeamBtn = document.getElementById('add-team-btn');
+    const addSponsorBtn = document.getElementById('add-sponsor-btn');
+    const adminNavBtn = document.getElementById('admin-nav-btn');
+    const driverHubNavBtn = document.getElementById('driver-hub-nav-btn');
+
+    if (addRaceBtn) {
+        addRaceBtn.disabled = !AppSession.isAdmin;
+        addRaceBtn.title = AppSession.isAdmin ? '' : 'Admin login required';
+    }
+
+    if (addTeamBtn) {
+        addTeamBtn.disabled = !AppSession.isAuthenticated;
+        addTeamBtn.title = AppSession.isAuthenticated ? '' : 'Sign in required';
+    }
+
+    if (addSponsorBtn) {
+        addSponsorBtn.disabled = !AppSession.isAdmin;
+        addSponsorBtn.title = AppSession.isAdmin ? '' : 'Admin login required';
+    }
+
+    if (adminNavBtn) {
+        adminNavBtn.classList.toggle('hidden', !AppSession.isAdmin);
+        if (!AppSession.isAdmin && UI.currentView === 'admin') {
+            UI.switchView('dashboard');
+        }
+    }
+
+    if (driverHubNavBtn) {
+        const visible = AppSession.isAuthenticated && !AppSession.isAdmin;
+        driverHubNavBtn.classList.toggle('hidden', !visible);
+        if (!visible && UI.currentView === 'driver-hub') {
+            UI.switchView('dashboard');
+        }
+    }
+}
+
+function requireAuthenticated(message = 'Please sign in to continue.') {
+    if (!AppSession.isAuthenticated) {
+        UI.showNotification(message, 'error');
+        return false;
+    }
+
+    return true;
+}
+
+function requireAdmin(message = 'Administrator access required for this action.') {
+    if (!AppSession.isAdmin) {
+        UI.showNotification(message, 'error');
+        return false;
+    }
+
+    return true;
+}
+
+async function handleLogin() {
+    if (!window.AuthService) {
+        UI.showNotification('Authentication service is unavailable.', 'error');
+        return;
+    }
+
+    try {
+        const loginResult = await window.AuthService.signInWithGoogle();
+        if (loginResult?.redirectStarted) {
+            UI.showNotification('Redirecting to Google sign-in...');
+            return;
+        }
+        UI.showNotification('Signed in successfully.');
+    } catch (error) {
+        console.error('Login error:', error);
+        UI.showNotification('Sign in failed: ' + error.message, 'error');
+    }
+}
+
+async function handleLogout() {
+    if (!window.AuthService) return;
+
+    try {
+        await window.AuthService.signOut();
+        UI.showNotification('Signed out successfully.');
+    } catch (error) {
+        console.error('Logout error:', error);
+        UI.showNotification('Sign out failed: ' + error.message, 'error');
+    }
 }
 
 // ===== EVENT LISTENERS SETUP =====
@@ -37,6 +184,7 @@ function initializeEventListeners() {
 
     // Dashboard actions
     document.getElementById('quick-add-driver')?.addEventListener('click', async () => {
+        if (!requireAuthenticated('Sign in to submit a driver for approval.')) return;
         await loadDriverTeamOptions();
         const driverForm = document.getElementById('driver-form');
         driverForm?.reset();
@@ -46,6 +194,7 @@ function initializeEventListeners() {
 
     // Driver management
     document.getElementById('add-driver-btn')?.addEventListener('click', async () => {
+        if (!requireAuthenticated('Sign in to submit a driver for approval.')) return;
         await loadDriverTeamOptions();
         const driverForm = document.getElementById('driver-form');
         driverForm?.reset();
@@ -61,6 +210,7 @@ function initializeEventListeners() {
 
     // Team management
     document.getElementById('add-team-btn')?.addEventListener('click', () => {
+        if (!requireAuthenticated('Sign in to submit a team for approval.')) return;
         UI.showModal('add-team-modal');
     });
 
@@ -71,6 +221,7 @@ function initializeEventListeners() {
 
     // Race management
     document.getElementById('add-race-btn')?.addEventListener('click', () => {
+        if (!requireAdmin()) return;
         UI.showModal('add-race-modal');
     });
 
@@ -78,16 +229,31 @@ function initializeEventListeners() {
     document.getElementById('cancel-race')?.addEventListener('click', () => {
         UI.closeModal('add-race-modal');
     });
+    document.getElementById('race-details-close')?.addEventListener('click', () => {
+        UI.closeModal('race-details-modal');
+    });
+    document.getElementById('race-signup-toggle')?.addEventListener('click', async () => {
+        await UI.toggleRaceSignup();
+    });
+    document.getElementById('race-submit-results')?.addEventListener('click', async () => {
+        await UI.submitRaceResults();
+    });
+    document.getElementById('race-reopen')?.addEventListener('click', async () => {
+        await UI.reopenRace();
+    });
+    document.getElementById('race-rebuild-standings')?.addEventListener('click', async () => {
+        await UI.rebuildStandings();
+    });
 
     // Calendar navigation
     document.getElementById('prev-month')?.addEventListener('click', () => {
         UI.currentMonth.setMonth(UI.currentMonth.getMonth() - 1);
-        UI.renderCalendar();
+        UI.loadCalendar();
     });
 
     document.getElementById('next-month')?.addEventListener('click', () => {
         UI.currentMonth.setMonth(UI.currentMonth.getMonth() + 1);
-        UI.renderCalendar();
+        UI.loadCalendar();
     });
 
     // Filters
@@ -97,6 +263,8 @@ function initializeEventListeners() {
     // Header actions
     document.getElementById('settings-btn')?.addEventListener('click', handleSettings);
     document.getElementById('user-btn')?.addEventListener('click', handleUserMenu);
+    document.getElementById('login-btn')?.addEventListener('click', handleLogin);
+    document.getElementById('logout-btn')?.addEventListener('click', handleLogout);
 
     // Edit Driver Modal
     document.getElementById('edit-driver-form')?.addEventListener('submit', handleSaveEditDriver);
@@ -122,9 +290,68 @@ function initializeEventListeners() {
         UI.closeModal('user-profile-modal');
     });
 
-    // Sponsor management (placeholder)
+    // Sponsor management
     document.getElementById('add-sponsor-btn')?.addEventListener('click', () => {
-        alert('Sponsor management coming soon!');
+        if (!requireAdmin()) return;
+        UI.focusSponsorshipForm();
+    });
+
+    document.getElementById('sponsorship-create-form')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!requireAdmin()) return;
+        await UI.saveSponsorshipContractFromForm();
+    });
+
+    document.getElementById('sponsor-status-filter')?.addEventListener('change', async () => {
+        await UI.loadSponsors();
+    });
+
+    document.getElementById('admin-refresh-btn')?.addEventListener('click', async () => {
+        if (!requireAdmin()) return;
+        await UI.loadAdminPanel();
+    });
+
+    document.getElementById('moderation-type-filter')?.addEventListener('change', async () => {
+        if (!requireAdmin()) return;
+        await UI.loadModerationQueue();
+    });
+
+    document.getElementById('admin-create-form')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!requireAdmin()) return;
+        await UI.saveAdminFromForm();
+    });
+
+    document.getElementById('game-create-form')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!requireAdmin()) return;
+        await UI.saveGameFromForm();
+    });
+
+    document.getElementById('car-create-form')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!requireAdmin()) return;
+        await UI.saveCarFromForm();
+    });
+
+    document.getElementById('admin-payout-form')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!requireAdmin()) return;
+        await UI.saveAdminPayoutFromForm();
+    });
+
+    document.getElementById('admin-payout-refresh-btn')?.addEventListener('click', async () => {
+        if (!requireAdmin()) return;
+        await UI.loadAdminPayoutActivity();
+    });
+
+    document.getElementById('driver-hub-refresh-btn')?.addEventListener('click', async () => {
+        if (!requireAuthenticated('Sign in to access Driver Hub.')) return;
+        await UI.loadDriverHub();
+    });
+
+    document.getElementById('driver-shop-game-filter')?.addEventListener('change', async () => {
+        await UI.loadCarsCatalog();
     });
 
     // Load saved settings on startup
@@ -144,7 +371,9 @@ async function loadDriverTeamOptions() {
 
     try {
         const teams = await Database.teams.getAll();
-        teams.forEach((team) => {
+        const visibleTeams = AppSession.isAdmin ? teams : teams.filter((team) => (team.status || 'approved') === 'approved');
+
+        visibleTeams.forEach((team) => {
             const option = document.createElement('option');
             option.value = team.id;
             option.textContent = team.name;
@@ -203,6 +432,8 @@ function loadSavedSettings() {
             document.getElementById('user-name').value = profile.name || '';
             document.getElementById('user-email').value = profile.email || '';
             document.getElementById('user-team').value = profile.primaryTeam || '';
+            document.getElementById('user-driver').value = profile.primaryDriver || '';
+            AppSession.claimedDriverId = profile.primaryDriver || '';
         }
     } catch (error) {
         console.warn('Could not load saved settings:', error);
@@ -212,15 +443,33 @@ function loadSavedSettings() {
 // ===== LOAD USER TEAMS FOR PROFILE =====
 async function loadUserTeamsForProfile() {
     try {
-        const teams = await Database.teams.getAll();
+        const [teams, drivers] = await Promise.all([
+            Database.teams.getAll(),
+            Database.drivers.getAll()
+        ]);
+
+        const visibleTeams = AppSession.isAdmin ? teams : teams.filter((team) => (team.status || 'approved') === 'approved');
+        const visibleDrivers = AppSession.isAdmin ? drivers : drivers.filter((driver) => (driver.status || 'approved') === 'approved');
+
         const userTeamSelect = document.getElementById('user-team');
+        const userDriverSelect = document.getElementById('user-driver');
         userTeamSelect.innerHTML = '<option value="">Not assigned</option>';
-        teams.forEach(team => {
+        visibleTeams.forEach(team => {
             const option = document.createElement('option');
             option.value = team.id;
             option.textContent = team.name;
             userTeamSelect.appendChild(option);
         });
+
+        if (userDriverSelect) {
+            userDriverSelect.innerHTML = '<option value="">Select approved driver</option>';
+            visibleDrivers.forEach((driver) => {
+                const option = document.createElement('option');
+                option.value = driver.id;
+                option.textContent = driver.name;
+                userDriverSelect.appendChild(option);
+            });
+        }
 
         // Restore saved selection
         const savedProfile = localStorage.getItem('srmpcUserProfile');
@@ -228,6 +477,23 @@ async function loadUserTeamsForProfile() {
             const profile = JSON.parse(savedProfile);
             if (profile.primaryTeam) {
                 userTeamSelect.value = profile.primaryTeam;
+            }
+            if (profile.primaryDriver && userDriverSelect) {
+                userDriverSelect.value = profile.primaryDriver;
+                AppSession.claimedDriverId = profile.primaryDriver;
+            }
+        }
+
+        if (AppSession.isAuthenticated && AppSession.user?.uid) {
+            const remoteProfile = await Database.users.getProfile(AppSession.user.uid);
+            if (remoteProfile) {
+                if (remoteProfile.primaryTeam) {
+                    userTeamSelect.value = remoteProfile.primaryTeam;
+                }
+                if (remoteProfile.primaryDriver && userDriverSelect) {
+                    userDriverSelect.value = remoteProfile.primaryDriver;
+                    AppSession.claimedDriverId = remoteProfile.primaryDriver;
+                }
             }
         }
     } catch (error) {
@@ -263,6 +529,10 @@ function setupModalHandlers() {
 async function handleAddDriver(e) {
     e.preventDefault();
 
+    if (!requireAuthenticated('Sign in to submit a driver for approval.')) {
+        return;
+    }
+
     const driverForm = document.getElementById('driver-form');
     const submitButton = driverForm?.querySelector('button[type="submit"]');
     const originalButtonText = submitButton?.textContent;
@@ -288,6 +558,7 @@ async function handleAddDriver(e) {
 
         let teamId = null;
         let createdTeamId = null;
+        const recordStatus = AppSession.isAdmin ? 'approved' : 'pending';
 
         if (driverTeamSelection === '__create_new__') {
             if (!newDriverTeamName.trim()) {
@@ -297,7 +568,10 @@ async function handleAddDriver(e) {
 
             teamId = await withTimeout(Database.teams.create({
                 name: newDriverTeamName.trim(),
-                color: newDriverTeamColor || '#FF4444'
+                color: newDriverTeamColor || '#FF4444',
+                status: recordStatus,
+                createdByUid: AppSession.user?.uid || null,
+                createdByEmail: AppSession.user?.email || null
             }), 12000, 'Creating team timed out. Check your Firebase connection and try again.');
             createdTeamId = teamId;
         } else if (driverTeamSelection) {
@@ -311,10 +585,17 @@ async function handleAddDriver(e) {
                 number: driverNumber ? parseInt(driverNumber, 10) : null,
                 teamId: teamId,
                 country: driverCountry,
-                bio: driverDescription
+                bio: driverDescription,
+                status: recordStatus,
+                createdByUid: AppSession.user?.uid || null,
+                createdByEmail: AppSession.user?.email || null
             }), 12000, 'Creating driver timed out. Check your Firebase connection and try again.');
 
-            UI.showNotification(`Driver "${driverName}" added successfully!`);
+            UI.showNotification(
+                AppSession.isAdmin
+                    ? `Driver "${driverName}" added successfully!`
+                    : `Driver "${driverName}" submitted for admin approval.`
+            );
             document.getElementById('driver-form').reset();
             toggleNewDriverTeamFields();
             UI.closeModal('add-driver-modal');
@@ -354,6 +635,10 @@ async function handleAddDriver(e) {
 async function handleAddTeam(e) {
     e.preventDefault();
 
+    if (!requireAuthenticated('Sign in to submit a team for approval.')) {
+        return;
+    }
+
     try {
         const teamName = document.getElementById('team-name').value;
         const teamColor = document.getElementById('team-color').value;
@@ -364,19 +649,30 @@ async function handleAddTeam(e) {
             return;
         }
 
+        const recordStatus = AppSession.isAdmin ? 'approved' : 'pending';
+
         const teamId = await Database.teams.create({
             name: teamName,
             color: teamColor,
-            description: teamDescription
+            description: teamDescription,
+            status: recordStatus,
+            createdByUid: AppSession.user?.uid || null,
+            createdByEmail: AppSession.user?.email || null
         });
 
-        UI.showNotification('Team created successfully!');
+        UI.showNotification(
+            AppSession.isAdmin
+                ? 'Team created successfully!'
+                : 'Team submitted for admin approval.'
+        );
         document.getElementById('team-form').reset();
         UI.closeModal('add-team-modal');
-        UI.loadTeams();
-        UI.loadDrivers(); // Refresh drivers to show new team option
-        await loadDriverTeamOptions();
-        UI.loadDashboard();
+        await Promise.allSettled([
+            UI.loadTeams(),
+            UI.loadDrivers(),
+            loadDriverTeamOptions(),
+            UI.loadDashboard()
+        ]); // Refresh drivers to show new team option
 
         console.log(`Team "${teamName}" created successfully`);
     } catch (error) {
@@ -387,6 +683,10 @@ async function handleAddTeam(e) {
 
 async function handleAddRace(e) {
     e.preventDefault();
+
+    if (!requireAdmin()) {
+        return;
+    }
 
     try {
         const raceName = document.getElementById('race-name').value;
@@ -411,8 +711,10 @@ async function handleAddRace(e) {
         UI.showNotification('Race scheduled successfully!');
         document.getElementById('race-form').reset();
         UI.closeModal('add-race-modal');
-        UI.loadCalendar();
-        UI.loadDashboard();
+        await Promise.allSettled([
+            UI.loadCalendar(),
+            UI.loadDashboard()
+        ]);
 
         console.log(`Race "${raceName}" scheduled for ${raceDate}`);
     } catch (error) {
@@ -428,6 +730,9 @@ async function filterDrivers() {
         const teamFilter = document.getElementById('team-filter').value;
 
         let drivers = await Database.drivers.getAll();
+        if (!AppSession.isAdmin) {
+            drivers = drivers.filter((driver) => (driver.status || 'approved') === 'approved');
+        }
 
         // Apply filters
         if (searchTerm) {
@@ -471,6 +776,11 @@ function handleUserMenu() {
 
 async function handleSaveEditDriver(e) {
     e.preventDefault();
+
+    if (!requireAdmin()) {
+        return;
+    }
+
     try {
         const driverId = window.currentEditingDriverId;
         if (!driverId) {
@@ -499,6 +809,11 @@ async function handleSaveEditDriver(e) {
 
 async function handleSaveEditTeam(e) {
     e.preventDefault();
+
+    if (!requireAdmin()) {
+        return;
+    }
+
     try {
         const teamId = window.currentEditingTeamId;
         if (!teamId) {
@@ -547,17 +862,30 @@ function handleSaveSettings(e) {
     }
 }
 
-function handleSaveProfile(e) {
+async function handleSaveProfile(e) {
     e.preventDefault();
     try {
         const profile = {
             name: document.getElementById('user-name').value,
             email: document.getElementById('user-email').value,
             primaryTeam: document.getElementById('user-team').value,
+            primaryDriver: document.getElementById('user-driver').value,
             savedAt: new Date().toISOString()
         };
 
         localStorage.setItem('srmpcUserProfile', JSON.stringify(profile));
+
+        AppSession.claimedDriverId = profile.primaryDriver || '';
+
+        if (AppSession.isAuthenticated && AppSession.user?.uid) {
+            await Database.users.upsertProfile(AppSession.user.uid, {
+                displayName: profile.name,
+                email: profile.email || AppSession.user.email || '',
+                primaryTeam: profile.primaryTeam,
+                primaryDriver: profile.primaryDriver
+            });
+        }
+
         UI.showNotification('Profile saved successfully!');
         console.log('Profile saved:', profile);
     } catch (error) {
@@ -674,5 +1002,6 @@ window.UI = UI;
 window.Database = Database;
 window.loadSampleData = loadSampleData;
 window.loadDriverTeamOptions = loadDriverTeamOptions;
+window.AppSession = AppSession;
 
 console.log('Application initialized. Press Ctrl+Shift+D to load sample data.');

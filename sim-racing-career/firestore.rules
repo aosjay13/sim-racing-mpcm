@@ -2,21 +2,134 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // DEVELOPMENT RULES — open access while Anonymous Authentication is being set up.
-    // TODO: After enabling Anonymous sign-in in Firebase Console, switch to production rules below.
-    match /{document=**} {
-      allow read, write: if true;
+    function isSignedIn() {
+      return request.auth != null;
     }
 
-    // PRODUCTION RULES — uncomment and redeploy once Anonymous Authentication is enabled.
-    // function isSignedIn() {
-    //   return request.auth != null;
-    // }
-    // match /{document=**} {
-    //   allow read, write: if isSignedIn();
-    // }
-    // match /users/{userId} {
-    //   allow read, write: if isSignedIn() && request.auth.uid == userId;
-    // }
+    function isRealUser() {
+      return isSignedIn() && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.isActive == true;
+    }
+
+    function hasProfile() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isClaimedDriver(driverId) {
+      return hasProfile() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.primaryDriver == driverId;
+    }
+
+    function isOwnedCar(userId, carId) {
+      return exists(/databases/$(database)/documents/garage/$(userId + '_' + carId));
+    }
+
+    // Public reads for league viewing.
+    match /drivers/{driverId} {
+      allow read: if true;
+      // Drivers can submit themselves for approval. Admins can create directly.
+      allow create: if isRealUser() || isAdmin();
+      allow update, delete: if isAdmin();
+    }
+
+    match /teams/{teamId} {
+      allow read: if true;
+      // Drivers can submit teams for approval. Admins can create directly.
+      allow create: if isRealUser() || isAdmin();
+      allow update, delete: if isAdmin();
+    }
+
+    match /races/{raceId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /raceSignups/{signupId} {
+      allow read: if true;
+      allow create: if isRealUser() &&
+        request.resource.data.userId == request.auth.uid &&
+        isClaimedDriver(request.resource.data.driverId) &&
+        request.resource.data.selectedCarId is string &&
+        exists(/databases/$(database)/documents/cars/$(request.resource.data.selectedCarId)) &&
+        exists(/databases/$(database)/documents/races/$(request.resource.data.raceId)) &&
+        get(/databases/$(database)/documents/cars/$(request.resource.data.selectedCarId)).data.gameKey ==
+          get(/databases/$(database)/documents/races/$(request.resource.data.raceId)).data.game &&
+        isOwnedCar(request.auth.uid, request.resource.data.selectedCarId);
+      allow delete: if isAdmin() || (
+        isRealUser() &&
+        resource.data.userId == request.auth.uid &&
+        isClaimedDriver(resource.data.driverId)
+      );
+      allow update: if isAdmin();
+    }
+
+    match /games/{gameId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /cars/{carId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /garage/{garageId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isAdmin() || (
+        isRealUser() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.carId is string &&
+        exists(/databases/$(database)/documents/cars/$(request.resource.data.carId))
+      );
+      allow delete: if isAdmin() || (isRealUser() && resource.data.userId == request.auth.uid);
+      allow update: if false;
+    }
+
+    match /walletTransactions/{transactionId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isAdmin() || (
+        isRealUser() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.type == 'purchase' &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount < 0
+      );
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /standings/{standingsId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /raceResultAudits/{auditId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /payoutAudits/{auditId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /sponsorships/{sponsorshipId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /admins/{adminUid} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
   }
 }

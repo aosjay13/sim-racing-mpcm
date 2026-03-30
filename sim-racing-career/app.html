@@ -26,9 +26,15 @@
                     <button class="nav-btn" data-view="calendar">Calendar</button>
                     <button class="nav-btn" data-view="drivers">Drivers</button>
                     <button class="nav-btn" data-view="teams">Teams</button>
+                    <button class="nav-btn" data-view="standings">Standings</button>
                     <button class="nav-btn" data-view="sponsors">Sponsors</button>
+                    <button class="nav-btn hidden" id="driver-hub-nav-btn" data-view="driver-hub">Driver Hub</button>
+                    <button class="nav-btn hidden" id="admin-nav-btn" data-view="admin">Admin</button>
                 </nav>
                 <div class="header-actions">
+                    <span id="auth-role-badge" class="auth-role-badge">Guest</span>
+                    <button class="btn btn-secondary" id="login-btn" type="button">Sign In</button>
+                    <button class="btn btn-secondary hidden" id="logout-btn" type="button">Sign Out</button>
                     <button class="btn-icon" id="settings-btn">⚙️</button>
                     <button class="btn-icon" id="user-btn">👤</button>
                 </div>
@@ -148,10 +154,92 @@
                     <button class="btn btn-primary" id="add-sponsor-btn">+ Add Sponsor</button>
                 </div>
 
-                <div id="sponsors-grid" class="teams-grid">
-                    <div class="empty-state">
-                        <p style="font-size:1.2rem; margin-bottom:0.5rem;">🤝 No sponsors yet</p>
-                        <p style="color: var(--text-secondary);">Add sponsors to track partnerships, deals, and branding across your career.</p>
+                <div class="admin-grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>New Sponsorship Contract</h3>
+                        </div>
+                        <form id="sponsorship-create-form" class="form" style="padding-top: 1rem;">
+                            <div class="form-group">
+                                <label for="sponsor-company">Company Name *</label>
+                                <input type="text" id="sponsor-company" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="sponsor-driver-id">Driver *</label>
+                                <select id="sponsor-driver-id" required>
+                                    <option value="">Select driver</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="sponsor-team-id">Team (optional)</label>
+                                <select id="sponsor-team-id">
+                                    <option value="">No team</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="sponsor-status">Status</label>
+                                <select id="sponsor-status">
+                                    <option value="active">Active</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="paused">Paused</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="sponsor-base-per-race">Base Payout Per Race ($) *</label>
+                                <input type="number" id="sponsor-base-per-race" min="0" step="100" value="10000" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="sponsor-win-bonus">Win Bonus ($)</label>
+                                <input type="number" id="sponsor-win-bonus" min="0" step="100" value="4000">
+                            </div>
+                            <div class="form-group">
+                                <label for="sponsor-podium-bonus">Podium Bonus ($)</label>
+                                <input type="number" id="sponsor-podium-bonus" min="0" step="100" value="2000">
+                            </div>
+                            <div class="form-group">
+                                <label for="sponsor-dnf-penalty">DNF Penalty ($)</label>
+                                <input type="number" id="sponsor-dnf-penalty" min="0" step="100" value="1500">
+                            </div>
+                            <div class="form-group">
+                                <label for="sponsor-start-date">Start Date</label>
+                                <input type="date" id="sponsor-start-date">
+                            </div>
+                            <div class="form-group">
+                                <label for="sponsor-end-date">End Date</label>
+                                <input type="date" id="sponsor-end-date">
+                            </div>
+                            <div class="form-group">
+                                <label for="sponsor-terms">Terms / Notes</label>
+                                <textarea id="sponsor-terms" rows="3"></textarea>
+                            </div>
+                            <div class="form-actions" style="margin-top: 1rem;">
+                                <button class="btn btn-primary" type="submit">Save Contract</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Contracts</h3>
+                        </div>
+                        <div class="form" style="padding-top: 1rem;">
+                            <div class="filters-bar" style="margin-bottom: 1rem;">
+                                <select id="sponsor-status-filter" class="filter-select">
+                                    <option value="all">All Statuses</option>
+                                    <option value="active">Active</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="paused">Paused</option>
+                                    <option value="expired">Expired</option>
+                                    <option value="terminated">Terminated</option>
+                                </select>
+                            </div>
+                            <div id="sponsors-grid">
+                                <div class="empty-state">
+                                    <p style="font-size:1.2rem; margin-bottom:0.5rem;">No sponsorship contracts yet</p>
+                                    <p style="color: var(--text-secondary);">Create a contract to start automated payouts.</p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -165,6 +253,268 @@
 
                 <div id="teams-grid" class="teams-grid">
                     <div class="empty-state">No teams yet. Create your first team!</div>
+                </div>
+            </section>
+
+            <!-- Standings View -->
+            <section id="standings-view" class="view">
+                <div class="view-header">
+                    <h2>Season Standings</h2>
+                </div>
+                <div class="card" style="margin-bottom: 1rem;">
+                    <div class="card-header">
+                        <h3>Driver Standings</h3>
+                    </div>
+                    <div id="driver-standings-table" class="form" style="padding: 1rem;">
+                        <p class="empty-state">No standings data yet.</p>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Team Standings</h3>
+                    </div>
+                    <div id="team-standings-table" class="form" style="padding: 1rem;">
+                        <p class="empty-state">No standings data yet.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Driver Hub View -->
+            <section id="driver-hub-view" class="view">
+                <div class="view-header">
+                    <h2>Driver Hub</h2>
+                    <button class="btn btn-secondary" id="driver-hub-refresh-btn" type="button">Refresh</button>
+                </div>
+
+                <div class="driver-hub-grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Budget</h3>
+                        </div>
+                        <div class="form">
+                            <div class="stat-row">
+                                <span class="stat-label">Current Balance</span>
+                                <span class="stat-value" id="driver-wallet-balance">$0</span>
+                            </div>
+                            <div id="driver-wallet-transactions" style="margin-top: 1rem;">
+                                <p class="empty-state">No transactions yet.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Garage</h3>
+                        </div>
+                        <div class="form">
+                            <div id="driver-garage-list">
+                                <p class="empty-state">No cars owned yet.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Race Shop</h3>
+                        </div>
+                        <div class="form">
+                            <div class="filters-bar" style="margin-bottom: 1rem;">
+                                <select id="driver-shop-game-filter" class="filter-select">
+                                    <option value="">All Games</option>
+                                </select>
+                            </div>
+                            <div id="driver-shop-cars">
+                                <p class="empty-state">No cars available.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Available Races</h3>
+                        </div>
+                        <div class="form">
+                            <div id="driver-hub-races">
+                                <p class="empty-state">No upcoming races.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Season KPI Snapshot</h3>
+                        </div>
+                        <div class="form">
+                            <div id="driver-hub-kpi-grid" class="driver-kpi-grid">
+                                <p class="empty-state">Claim a driver profile to unlock KPI cards.</p>
+                            </div>
+                            <div id="driver-team-kpi" style="margin-top: 1rem;">
+                                <p class="empty-state">No team KPI data yet.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Recent Performance History</h3>
+                        </div>
+                        <div class="form">
+                            <div id="driver-performance-history">
+                                <p class="empty-state">No race history yet.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Admin View -->
+            <section id="admin-view" class="view">
+                <div class="view-header">
+                    <h2>Admin Controls</h2>
+                    <button class="btn btn-secondary" id="admin-refresh-btn" type="button">Refresh</button>
+                </div>
+
+                <div class="admin-grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Moderation Queue</h3>
+                        </div>
+                        <div class="form" style="padding-top: 1rem;">
+                            <div class="filters-bar" style="margin-bottom: 1rem;">
+                                <select id="moderation-type-filter" class="filter-select">
+                                    <option value="all">All Types</option>
+                                    <option value="driver">Drivers</option>
+                                    <option value="team">Teams</option>
+                                </select>
+                            </div>
+                            <div id="moderation-queue-list">
+                                <p class="empty-state">No pending submissions.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Admin Management</h3>
+                        </div>
+                        <form id="admin-create-form" class="form" style="padding-top: 1rem;">
+                            <div class="form-group">
+                                <label for="admin-uid">User UID *</label>
+                                <input type="text" id="admin-uid" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="admin-email">Email</label>
+                                <input type="email" id="admin-email">
+                            </div>
+                            <div class="form-group">
+                                <label for="admin-display-name">Display Name</label>
+                                <input type="text" id="admin-display-name">
+                            </div>
+                            <div class="form-group">
+                                <label for="admin-is-active">Status</label>
+                                <select id="admin-is-active">
+                                    <option value="true">Active</option>
+                                    <option value="false">Inactive</option>
+                                </select>
+                            </div>
+                            <div class="form-actions" style="margin-top: 1rem;">
+                                <button class="btn btn-primary" type="submit">Save Admin</button>
+                            </div>
+                        </form>
+                        <div class="form" style="padding-top: 0;">
+                            <div id="admin-list">
+                                <p class="empty-state">No admins found.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Games Catalog</h3>
+                        </div>
+                        <form id="game-create-form" class="form" style="padding-top: 1rem;">
+                            <div class="form-group">
+                                <label for="game-key">Game Key *</label>
+                                <input type="text" id="game-key" placeholder="iracing" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="game-name">Display Name *</label>
+                                <input type="text" id="game-name" placeholder="iRacing" required>
+                            </div>
+                            <div class="form-actions" style="margin-top: 1rem;">
+                                <button class="btn btn-primary" type="submit">Save Game</button>
+                            </div>
+                        </form>
+                        <div class="form" style="padding-top: 0;">
+                            <div id="games-list">
+                                <p class="empty-state">No games configured.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Cars Catalog</h3>
+                        </div>
+                        <form id="car-create-form" class="form" style="padding-top: 1rem;">
+                            <div class="form-group">
+                                <label for="car-name">Car Name *</label>
+                                <input type="text" id="car-name" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="car-game-key">Game *</label>
+                                <select id="car-game-key" required>
+                                    <option value="">Select game</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="car-price">Price *</label>
+                                <input type="number" id="car-price" min="0" step="1" value="50000" required>
+                            </div>
+                            <div class="form-actions" style="margin-top: 1rem;">
+                                <button class="btn btn-primary" type="submit">Save Car</button>
+                            </div>
+                        </form>
+                        <div class="form" style="padding-top: 0;">
+                            <div id="cars-list">
+                                <p class="empty-state">No cars configured.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Payout Controls</h3>
+                        </div>
+                        <form id="admin-payout-form" class="form" style="padding-top: 1rem;">
+                            <div class="form-group">
+                                <label for="admin-payout-user-id">Target User UID *</label>
+                                <input type="text" id="admin-payout-user-id" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="admin-payout-driver-id">Driver ID (optional)</label>
+                                <input type="text" id="admin-payout-driver-id">
+                            </div>
+                            <div class="form-group">
+                                <label for="admin-payout-amount">Amount ($)</label>
+                                <input type="number" id="admin-payout-amount" step="1" required>
+                                <small style="color: var(--text-secondary);">Positive = bonus, negative = penalty.</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="admin-payout-note">Reason *</label>
+                                <textarea id="admin-payout-note" rows="2" required></textarea>
+                            </div>
+                            <div class="form-actions" style="margin-top: 1rem;">
+                                <button class="btn btn-primary" type="submit">Apply Adjustment</button>
+                                <button class="btn btn-secondary" type="button" id="admin-payout-refresh-btn">Refresh Audit</button>
+                            </div>
+                        </form>
+                        <div class="form" style="padding-top: 0;">
+                            <div id="admin-payout-audit-list">
+                                <p class="empty-state">No payout adjustments recorded.</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
         </main>
@@ -288,6 +638,33 @@
                     <button type="button" class="btn btn-secondary" id="cancel-race">Cancel</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <div id="race-details-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="race-details-title">Race Details</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div id="race-details-content" class="form">
+                <p class="empty-state">Loading race details...</p>
+            </div>
+            <div id="race-signup-car-group" class="form hidden" style="padding-top: 0;">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label for="race-signup-car">Car Selection</label>
+                    <select id="race-signup-car">
+                        <option value="">Select owned compatible car</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-primary" id="race-signup-toggle">Sign Me Up</button>
+                <button type="button" class="btn btn-primary hidden" id="race-submit-results">Submit Results</button>
+                <button type="button" class="btn btn-secondary hidden" id="race-reopen">Reopen Race</button>
+                <button type="button" class="btn btn-secondary hidden" id="race-rebuild-standings">Rebuild Standings</button>
+                <button type="button" class="btn btn-secondary" id="race-details-close">Close</button>
+            </div>
         </div>
     </div>
 
@@ -439,6 +816,12 @@
                         <label for="user-team">Primary Team (Optional)</label>
                         <select id="user-team">
                             <option value="">Not assigned</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="user-driver">My Driver Profile</label>
+                        <select id="user-driver">
+                            <option value="">Select approved driver</option>
                         </select>
                     </div>
                     <div class="form-group">
