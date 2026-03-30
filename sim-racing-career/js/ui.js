@@ -14,6 +14,12 @@ const UI = {
         return Boolean(window.AuthService?.isAuthenticated?.());
     },
 
+    canEditTeam(team) {
+        if (this.isAdmin()) return true;
+        const uid = window.AppSession?.user?.uid || '';
+        return Boolean(uid && team?.ownerUid && team.ownerUid === uid);
+    },
+
     normalizeDate(value) {
         if (!value) return new Date(0);
         if (value?.toDate && typeof value.toDate === 'function') {
@@ -441,7 +447,7 @@ const UI = {
             </div>
             <div class="card-actions">
                 <button onclick="UI.viewTeam('${team.id}')">View</button>
-                ${this.isAdmin() ? `<button onclick="UI.editTeam('${team.id}')">Edit</button>` : ''}
+                ${this.canEditTeam(team) ? `<button onclick="UI.editTeam('${team.id}')">Edit</button>` : ''}
                 ${this.isAdmin() ? `<button onclick="UI.deleteTeam('${team.id}')">Delete</button>` : ''}
                 ${this.isAdmin() && team.status === 'pending' ? `<button onclick="UI.approveTeam('${team.id}')">Approve</button>` : ''}
                 ${this.isAdmin() && team.status === 'pending' ? `<button onclick="UI.rejectTeam('${team.id}')">Reject</button>` : ''}
@@ -451,15 +457,15 @@ const UI = {
     },
 
     async editTeam(teamId) {
-        if (!this.isAdmin()) {
-            this.showNotification('Only admins can edit teams.', 'error');
-            return;
-        }
-
         try {
             const team = await Database.teams.getById(teamId);
             if (!team) {
                 this.showNotification('Team not found', 'error');
+                return;
+            }
+
+            if (!this.canEditTeam(team)) {
+                this.showNotification('You can only edit your own team.', 'error');
                 return;
             }
 

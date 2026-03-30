@@ -424,6 +424,10 @@ const AuthService = {
             return this._readyPromise;
         }
 
+        auth.getRedirectResult().catch((error) => {
+            console.error('Google redirect sign-in failed:', error);
+        });
+
         this._readyPromise = new Promise((resolve) => {
             auth.onAuthStateChanged(async (user) => {
                 this._user = user || null;
@@ -491,8 +495,16 @@ const AuthService = {
         }
 
         const provider = new firebase.auth.GoogleAuthProvider();
+        provider.addScope('email');
+        provider.addScope('profile');
         provider.setCustomParameters({ prompt: 'select_account' });
         const currentUser = auth.currentUser;
+
+        const signInWithPopupFlow = async () => {
+            await auth.signInWithPopup(provider);
+            await this.waitUntilReady();
+            return { redirectStarted: false, user: this._user };
+        };
 
         try {
             if (currentUser?.isAnonymous) {
@@ -506,17 +518,14 @@ const AuthService = {
                         linkError.code === 'auth/credential-already-in-use' ||
                         linkError.code === 'auth/email-already-in-use'
                     ) {
-                        await auth.signInWithPopup(provider);
-                        await this.waitUntilReady();
-                        return { redirectStarted: false, user: this._user };
+                        await auth.signOut();
+                        return await signInWithPopupFlow();
                     }
                     throw linkError;
                 }
             }
 
-            await auth.signInWithPopup(provider);
-            await this.waitUntilReady();
-            return { redirectStarted: false, user: this._user };
+            return await signInWithPopupFlow();
         } catch (error) {
             if (error.code === 'auth/popup-blocked' || error.code === 'auth/cancelled-popup-request') {
                 await auth.signInWithRedirect(provider);
@@ -532,6 +541,18 @@ const AuthService = {
                 throw new Error(
                     'Google sign-in is blocked for ' + hostname + '. Add this domain in Firebase Authentication > Settings > Authorized domains.'
                 );
+            }
+
+            if (error.code === 'auth/operation-not-allowed') {
+                throw new Error('Google sign-in is disabled in Firebase Authentication. Enable the Google provider and try again.');
+            }
+
+            if (error.code === 'auth/operation-not-supported-in-this-environment') {
+                throw new Error('Google popup sign-in is not supported in this preview environment. Open the app in a regular browser tab and try again.');
+            }
+
+            if (error.code === 'auth/network-request-failed') {
+                throw new Error('Network request failed during Google sign-in. Check connectivity and try again.');
             }
 
             throw error;

@@ -10,6 +10,7 @@ const Database = {
                     name: driverData.name,
                     number: driverData.number || null,
                     teamId: driverData.teamId || null,
+                    ownerUid: driverData.ownerUid || user?.uid || null,
                     country: driverData.country || '',
                     bio: driverData.bio || '',
                     avatar: driverData.avatar || '',
@@ -116,6 +117,7 @@ const Database = {
                     logo: teamData.logo || '',
                     foundedDate: new Date(),
                     owner: teamData.owner || '',
+                    ownerUid: teamData.ownerUid || user?.uid || null,
                     // Stats
                     stats: {
                         drivers: 0,

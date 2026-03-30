@@ -29,19 +29,54 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/garage/$(userId + '_' + carId));
     }
 
+    function ownerUidMatches(resourceData) {
+      return resourceData.ownerUid is string && resourceData.ownerUid == request.auth.uid;
+    }
+
     // Public reads for league viewing.
     match /drivers/{driverId} {
       allow read: if true;
       // Drivers can submit themselves for approval. Admins can create directly.
-      allow create: if isRealUser() || isAdmin();
-      allow update, delete: if isAdmin();
+      allow create: if isAdmin() || (
+        isRealUser() &&
+        request.resource.data.ownerUid == request.auth.uid
+      );
+      allow update: if isAdmin() || (
+        isRealUser() &&
+        isClaimedDriver(driverId) &&
+        ownerUidMatches(resource.data) &&
+        request.resource.data.ownerUid == resource.data.ownerUid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name',
+          'country',
+          'bio',
+          'avatar',
+          'updatedAt'
+        ])
+      );
+      allow delete: if isAdmin();
     }
 
     match /teams/{teamId} {
       allow read: if true;
       // Drivers can submit teams for approval. Admins can create directly.
-      allow create: if isRealUser() || isAdmin();
-      allow update, delete: if isAdmin();
+      allow create: if isAdmin() || (
+        isRealUser() &&
+        request.resource.data.ownerUid == request.auth.uid
+      );
+      allow update: if isAdmin() || (
+        isRealUser() &&
+        ownerUidMatches(resource.data) &&
+        request.resource.data.ownerUid == resource.data.ownerUid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name',
+          'color',
+          'description',
+          'logo',
+          'updatedAt'
+        ])
+      );
+      allow delete: if isAdmin();
     }
 
     match /races/{raceId} {

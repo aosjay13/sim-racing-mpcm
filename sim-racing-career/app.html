@@ -13,7 +13,40 @@
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-check-compat.js"></script>
 </head>
 <body>
-    <div id="app" class="app-container">
+    <section id="auth-gate" class="auth-gate">
+        <div class="auth-gate-card">
+            <div class="auth-gate-header">
+                <div class="logo">
+                    <img class="logo-image" src="../Phoenix SRMPCM Logo.png" alt="Phoenix SRMPCM logo">
+                    <span class="logo-fallback-text">Phoenix SRMPC</span>
+                </div>
+                <span class="badge-new">Secure Access</span>
+            </div>
+            <h1>League Entry Portal</h1>
+            <p>Choose your lane and sign in with Google to continue into your role-specific workspace.</p>
+            <div class="auth-gate-highlights">
+                <span class="status-pill status-approved">Live data</span>
+                <span class="status-pill status-pending">Role-based access</span>
+                <span class="status-pill status-rejected">Protected admin controls</span>
+            </div>
+            <div class="auth-gate-panels">
+                <button id="auth-driver-login-btn" class="auth-panel auth-panel-driver" type="button">
+                    <span class="auth-panel-icon" aria-hidden="true">🏎️</span>
+                    <span class="auth-panel-label">Driver Portal</span>
+                    <span class="auth-panel-copy">Manage your profile, garage, races, and earnings.</span>
+                    <span class="auth-panel-action">Continue with Google as Driver</span>
+                </button>
+                <button id="auth-admin-login-btn" class="auth-panel auth-panel-admin" type="button">
+                    <span class="auth-panel-icon" aria-hidden="true">🛠️</span>
+                    <span class="auth-panel-label">Admin Portal</span>
+                    <span class="auth-panel-copy">Moderate, configure races, and control league operations.</span>
+                    <span class="auth-panel-action">Continue with Google as Admin</span>
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <div id="app" class="app-container hidden">
         <!-- Header -->
         <header class="header">
             <div class="header-content">

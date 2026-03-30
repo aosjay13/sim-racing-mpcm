@@ -4,7 +4,10 @@ const AppSession = {
     user: null,
     isAuthenticated: false,
     isAdmin: false,
-    claimedDriverId: ''
+    claimedDriverId: '',
+    loginIntent: 'driver',
+    hasEnteredApp: false,
+    authInFlight: false
 };
 
 // ===== APPLICATION INITIALIZATION =====
@@ -15,7 +18,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     await initializeAuthSession();
     loadDriverTeamOptions();
     toggleNewDriverTeamFields();
-    UI.loadDashboard();
 });
 
 function withTimeout(promise, timeoutMs, timeoutMessage) {
@@ -28,6 +30,8 @@ function withTimeout(promise, timeoutMs, timeoutMessage) {
 }
 
 async function initializeAuthSession() {
+    updateShellVisibility();
+
     if (!window.AuthService) {
         console.warn('AuthService is not available. Running in guest mode.');
         updateAuthUI();
@@ -36,12 +40,32 @@ async function initializeAuthSession() {
 
     await window.AuthService.waitUntilReady();
 
-    window.AuthService.onAuthStateChanged((state) => {
+    window.AuthService.onAuthStateChanged(async (state) => {
         AppSession.user = state.user;
         AppSession.isAuthenticated = state.isAuthenticated;
         AppSession.isAdmin = state.isAdmin;
 
+        if (!AppSession.isAuthenticated) {
+            AppSession.claimedDriverId = '';
+            AppSession.hasEnteredApp = false;
+        } else {
+            await hydrateSessionProfile();
+        }
+
         updateAuthUI();
+
+        if (AppSession.isAuthenticated && !AppSession.hasEnteredApp) {
+            AppSession.hasEnteredApp = true;
+            if (AppSession.loginIntent === 'admin' && !AppSession.isAdmin) {
+                UI.showNotification('Admin access was not found for this account. Opening Driver portal instead.', 'error');
+            }
+
+            if (AppSession.isAdmin) {
+                UI.switchView('admin');
+            } else {
+                UI.switchView('driver-hub');
+            }
+        }
 
         Promise.allSettled([
             UI.loadDashboard(),
@@ -52,6 +76,59 @@ async function initializeAuthSession() {
             loadDriverTeamOptions()
         ]);
     });
+}
+
+async function hydrateSessionProfile() {
+    if (!AppSession.isAuthenticated || !AppSession.user?.uid) return;
+
+    const uid = AppSession.user.uid;
+    let localProfile = null;
+
+    try {
+        const saved = localStorage.getItem('srmpcUserProfile');
+        if (saved) {
+            localProfile = JSON.parse(saved);
+        }
+    } catch (error) {
+        console.warn('Could not parse local profile cache:', error);
+    }
+
+    let remoteProfile = await Database.users.getProfile(uid);
+
+    if (!remoteProfile) {
+        await Database.users.upsertProfile(uid, {
+            displayName: AppSession.user.displayName || localProfile?.name || '',
+            email: AppSession.user.email || localProfile?.email || '',
+            primaryTeam: localProfile?.primaryTeam || '',
+            primaryDriver: localProfile?.primaryDriver || ''
+        });
+
+        remoteProfile = await Database.users.getProfile(uid);
+    }
+
+    const mergedProfile = {
+        name: remoteProfile?.displayName || localProfile?.name || AppSession.user.displayName || '',
+        email: remoteProfile?.email || AppSession.user.email || localProfile?.email || '',
+        primaryTeam: remoteProfile?.primaryTeam || localProfile?.primaryTeam || '',
+        primaryDriver: remoteProfile?.primaryDriver || localProfile?.primaryDriver || '',
+        savedAt: new Date().toISOString()
+    };
+
+    AppSession.claimedDriverId = mergedProfile.primaryDriver || '';
+    localStorage.setItem('srmpcUserProfile', JSON.stringify(mergedProfile));
+}
+
+function updateShellVisibility() {
+    const appShell = document.getElementById('app');
+    const authGate = document.getElementById('auth-gate');
+
+    if (appShell) {
+        appShell.classList.toggle('hidden', !AppSession.isAuthenticated);
+    }
+
+    if (authGate) {
+        authGate.classList.toggle('hidden', AppSession.isAuthenticated);
+    }
 }
 
 function updateAuthUI() {
@@ -80,8 +157,12 @@ function updateAuthUI() {
         }
     }
 
+    updateShellVisibility();
+
     const addRaceBtn = document.getElementById('add-race-btn');
     const addTeamBtn = document.getElementById('add-team-btn');
+    const addDriverBtn = document.getElementById('add-driver-btn');
+    const quickAddDriverBtn = document.getElementById('quick-add-driver');
     const addSponsorBtn = document.getElementById('add-sponsor-btn');
     const adminNavBtn = document.getElementById('admin-nav-btn');
     const driverHubNavBtn = document.getElementById('driver-hub-nav-btn');
@@ -94,6 +175,22 @@ function updateAuthUI() {
     if (addTeamBtn) {
         addTeamBtn.disabled = !AppSession.isAuthenticated;
         addTeamBtn.title = AppSession.isAuthenticated ? '' : 'Sign in required';
+    }
+
+    if (addDriverBtn) {
+        const canAddDriver = AppSession.isAdmin || !AppSession.claimedDriverId;
+        addDriverBtn.disabled = !AppSession.isAuthenticated || !canAddDriver;
+        addDriverBtn.title = AppSession.isAuthenticated
+            ? (canAddDriver ? '' : 'Only one driver profile is allowed per account.')
+            : 'Sign in required';
+    }
+
+    if (quickAddDriverBtn) {
+        const canAddDriver = AppSession.isAdmin || !AppSession.claimedDriverId;
+        quickAddDriverBtn.disabled = !AppSession.isAuthenticated || !canAddDriver;
+        quickAddDriverBtn.title = AppSession.isAuthenticated
+            ? (canAddDriver ? '' : 'Only one driver profile is allowed per account.')
+            : 'Sign in required';
     }
 
     if (addSponsorBtn) {
@@ -141,6 +238,18 @@ async function handleLogin() {
         return;
     }
 
+    if (AppSession.authInFlight) {
+        return;
+    }
+
+    AppSession.authInFlight = true;
+    const loginBtn = document.getElementById('login-btn');
+    const driverBtn = document.getElementById('auth-driver-login-btn');
+    const adminBtn = document.getElementById('auth-admin-login-btn');
+    [loginBtn, driverBtn, adminBtn].forEach((button) => {
+        if (button) button.disabled = true;
+    });
+
     try {
         const loginResult = await window.AuthService.signInWithGoogle();
         if (loginResult?.redirectStarted) {
@@ -151,7 +260,17 @@ async function handleLogin() {
     } catch (error) {
         console.error('Login error:', error);
         UI.showNotification('Sign in failed: ' + error.message, 'error');
+    } finally {
+        AppSession.authInFlight = false;
+        [loginBtn, driverBtn, adminBtn].forEach((button) => {
+            if (button) button.disabled = false;
+        });
     }
+}
+
+async function handleIntentLogin(intent) {
+    AppSession.loginIntent = intent === 'admin' ? 'admin' : 'driver';
+    await handleLogin();
 }
 
 async function handleLogout() {
@@ -168,6 +287,14 @@ async function handleLogout() {
 
 // ===== EVENT LISTENERS SETUP =====
 function initializeEventListeners() {
+    document.getElementById('auth-driver-login-btn')?.addEventListener('click', () => {
+        handleIntentLogin('driver');
+    });
+
+    document.getElementById('auth-admin-login-btn')?.addEventListener('click', () => {
+        handleIntentLogin('admin');
+    });
+
     // Navigation buttons
     document.querySelectorAll('.nav-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -263,7 +390,7 @@ function initializeEventListeners() {
     // Header actions
     document.getElementById('settings-btn')?.addEventListener('click', handleSettings);
     document.getElementById('user-btn')?.addEventListener('click', handleUserMenu);
-    document.getElementById('login-btn')?.addEventListener('click', handleLogin);
+    document.getElementById('login-btn')?.addEventListener('click', () => handleIntentLogin(AppSession.loginIntent));
     document.getElementById('logout-btn')?.addEventListener('click', handleLogout);
 
     // Edit Driver Modal
@@ -543,6 +670,11 @@ async function handleAddDriver(e) {
     }
 
     try {
+        if (!AppSession.isAdmin && AppSession.claimedDriverId) {
+            UI.showNotification('Your account already has a claimed driver profile.', 'error');
+            return;
+        }
+
         const driverName = document.getElementById('driver-name').value;
         const driverNumber = document.getElementById('driver-number').value;
         const driverTeamSelection = document.getElementById('driver-team').value;
@@ -569,6 +701,7 @@ async function handleAddDriver(e) {
             teamId = await withTimeout(Database.teams.create({
                 name: newDriverTeamName.trim(),
                 color: newDriverTeamColor || '#FF4444',
+                ownerUid: AppSession.user?.uid || null,
                 status: recordStatus,
                 createdByUid: AppSession.user?.uid || null,
                 createdByEmail: AppSession.user?.email || null
@@ -584,6 +717,7 @@ async function handleAddDriver(e) {
                 name: driverName,
                 number: driverNumber ? parseInt(driverNumber, 10) : null,
                 teamId: teamId,
+                ownerUid: AppSession.user?.uid || null,
                 country: driverCountry,
                 bio: driverDescription,
                 status: recordStatus,
@@ -599,6 +733,17 @@ async function handleAddDriver(e) {
             document.getElementById('driver-form').reset();
             toggleNewDriverTeamFields();
             UI.closeModal('add-driver-modal');
+
+            if (!AppSession.isAdmin && !AppSession.claimedDriverId && AppSession.user?.uid) {
+                const profile = await Database.users.getProfile(AppSession.user.uid);
+                await Database.users.upsertProfile(AppSession.user.uid, {
+                    displayName: profile?.displayName || AppSession.user.displayName || '',
+                    email: profile?.email || AppSession.user.email || '',
+                    primaryTeam: profile?.primaryTeam || teamId || '',
+                    primaryDriver: driverId
+                });
+                AppSession.claimedDriverId = driverId;
+            }
 
             await Promise.allSettled([
                 UI.loadDrivers(),
@@ -655,6 +800,7 @@ async function handleAddTeam(e) {
             name: teamName,
             color: teamColor,
             description: teamDescription,
+            ownerUid: AppSession.user?.uid || null,
             status: recordStatus,
             createdByUid: AppSession.user?.uid || null,
             createdByEmail: AppSession.user?.email || null
@@ -777,10 +923,6 @@ function handleUserMenu() {
 async function handleSaveEditDriver(e) {
     e.preventDefault();
 
-    if (!requireAdmin()) {
-        return;
-    }
-
     try {
         const driverId = window.currentEditingDriverId;
         if (!driverId) {
@@ -788,13 +930,40 @@ async function handleSaveEditDriver(e) {
             return;
         }
 
-        const updates = {
-            name: document.getElementById('edit-driver-name').value,
-            number: document.getElementById('edit-driver-number').value ? parseInt(document.getElementById('edit-driver-number').value) : null,
-            teamId: document.getElementById('edit-driver-team').value || null,
-            country: document.getElementById('edit-driver-country').value,
-            bio: document.getElementById('edit-driver-description').value
-        };
+        const driver = await Database.drivers.getById(driverId);
+        if (!driver) {
+            UI.showNotification('Driver not found', 'error');
+            return;
+        }
+
+        const isDriverOwner = Boolean(
+            AppSession.isAuthenticated &&
+            AppSession.claimedDriverId === driverId &&
+            driver.ownerUid &&
+            driver.ownerUid === AppSession.user?.uid
+        );
+
+        if (!AppSession.isAdmin && !isDriverOwner) {
+            UI.showNotification('You can only edit your own claimed driver profile.', 'error');
+            return;
+        }
+
+        let updates;
+        if (AppSession.isAdmin) {
+            updates = {
+                name: document.getElementById('edit-driver-name').value,
+                number: document.getElementById('edit-driver-number').value ? parseInt(document.getElementById('edit-driver-number').value) : null,
+                teamId: document.getElementById('edit-driver-team').value || null,
+                country: document.getElementById('edit-driver-country').value,
+                bio: document.getElementById('edit-driver-description').value
+            };
+        } else {
+            updates = {
+                name: document.getElementById('edit-driver-name').value,
+                country: document.getElementById('edit-driver-country').value,
+                bio: document.getElementById('edit-driver-description').value
+            };
+        }
 
         await Database.drivers.update(driverId, updates);
         UI.showNotification('Driver updated successfully!');
@@ -810,14 +979,27 @@ async function handleSaveEditDriver(e) {
 async function handleSaveEditTeam(e) {
     e.preventDefault();
 
-    if (!requireAdmin()) {
-        return;
-    }
-
     try {
         const teamId = window.currentEditingTeamId;
         if (!teamId) {
             UI.showNotification('No team selected', 'error');
+            return;
+        }
+
+        const team = await Database.teams.getById(teamId);
+        if (!team) {
+            UI.showNotification('Team not found', 'error');
+            return;
+        }
+
+        const isTeamOwner = Boolean(
+            AppSession.isAuthenticated &&
+            team.ownerUid &&
+            team.ownerUid === AppSession.user?.uid
+        );
+
+        if (!AppSession.isAdmin && !isTeamOwner) {
+            UI.showNotification('You can only edit your own team.', 'error');
             return;
         }
 
