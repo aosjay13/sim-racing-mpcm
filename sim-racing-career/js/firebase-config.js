@@ -132,15 +132,24 @@ try {
     try {
         auth = firebase.auth(app);
 
-        // Sign in anonymously by default so authenticated Firestore rules can be enforced.
+        // Sign in anonymously so authenticated Firestore rules can be enforced.
+        // Requires Anonymous sign-in to be enabled in Firebase Console > Authentication > Sign-in providers.
         if (runtimeFirebaseConfig.enableAnonymousAuth !== false) {
             authReadyPromise = auth.signInAnonymously()
                 .then(() => {
                     console.log('Signed in anonymously for Firestore access');
                 })
                 .catch((error) => {
-                    console.error('Anonymous sign-in failed:', error);
-                    throw error;
+                    if (error.code === 'auth/configuration-not-found' || error.code === 'auth/operation-not-allowed') {
+                        console.warn(
+                            'Anonymous Authentication is not enabled in your Firebase project. ' +
+                            'Go to Firebase Console > Authentication > Sign-in providers and enable Anonymous. ' +
+                            'Continuing without auth — open Firestore rules are required until this is done.'
+                        );
+                    } else {
+                        console.error('Anonymous sign-in failed:', error);
+                    }
+                    // Resolve so Firestore operations are not blocked.
                 });
         }
     } catch (error) {
