@@ -206,6 +206,12 @@ To clear a saved browser config later:
 SRMPCFirebase.clearConfig();
 ```
 
+If Firebase is not initialized and you want an interactive setup, run:
+
+```javascript
+SRMPCFirebase.quickSetup();
+```
+
 ## Firestore Backup
 
 ### Auto Backup (Recommended)

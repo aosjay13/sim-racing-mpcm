@@ -81,6 +81,20 @@ window.SRMPCFirebase = {
         localStorage.removeItem(FIREBASE_CONFIG_STORAGE_KEY);
         console.log('Stored Firebase config removed. Reloading app...');
         window.location.reload();
+    },
+
+    quickSetup() {
+        const existing = getStoredFirebaseConfig() || {};
+        const config = {
+            apiKey: window.prompt('Firebase apiKey', existing.apiKey || ''),
+            authDomain: window.prompt('Firebase authDomain', existing.authDomain || ''),
+            projectId: window.prompt('Firebase projectId', existing.projectId || ''),
+            storageBucket: window.prompt('Firebase storageBucket', existing.storageBucket || ''),
+            messagingSenderId: window.prompt('Firebase messagingSenderId', existing.messagingSenderId || ''),
+            appId: window.prompt('Firebase appId', existing.appId || '')
+        };
+
+        this.setConfig(config);
     }
 };
 
@@ -131,6 +145,7 @@ try {
     console.error('Firebase initialization error:', error);
     console.warn('Firebase not yet configured. Please update firebase-config.js with your credentials.');
     console.warn('Or run this in the browser console to save config locally: SRMPCFirebase.setConfig({...})');
+    console.warn('Quick option: SRMPCFirebase.quickSetup()');
     console.warn('Get your config from: https://console.firebase.google.com');
 }
 
