@@ -2,12 +2,12 @@
 
 A web app for managing a multiplayer sim-racing career: drivers, teams, race schedule, and standings.
 
-Live GitHub Pages site:
-https://aosjay13.github.io/sim-racing-mpcm/
+Live GitHub Pages site: <https://aosjay13.github.io/sim-racing-mpcm/>
 
 ## What Changed for GitHub Pages
 
 This repository now uses:
+
 - `index.html` as a public landing page
 - `app.html` as the full SRMPC application
 
@@ -52,12 +52,14 @@ That means your root site URL can act as a clean project home page, while the ap
 ## Local Development
 
 1. Clone repo:
+
    ```bash
    git clone https://github.com/aosjay13/sim-racing-mpcm.git
    cd sim-racing-mpcm
    ```
 
 2. Run a local static server:
+
    ```bash
    python -m http.server 8000
    ```
@@ -69,21 +71,28 @@ That means your root site URL can act as a clean project home page, while the ap
 ## Firebase Setup
 
 1. Create/select a Firebase project in Firebase Console.
-2. Enable Firestore.
-3. Put your project config in `js/firebase-config.local.js` (gitignored).
+2. Enable Firestore and Anonymous Authentication.
+3. Put your project config in `js/firebase-config.js`.
 
 Expected shape:
 
 ```javascript
-window.__SRMPC_FIREBASE_CONFIG__ = {
-   apiKey: "YOUR_API_KEY",
-   authDomain: "YOUR_PROJECT.firebaseapp.com",
-   projectId: "YOUR_PROJECT_ID",
-   storageBucket: "YOUR_PROJECT.appspot.com",
-   messagingSenderId: "YOUR_SENDER_ID",
-   appId: "YOUR_APP_ID"
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID",
+  appCheckSiteKey: "YOUR_RECAPTCHA_V3_SITE_KEY",
+  enableAnonymousAuth: true
 };
 ```
+
+Notes:
+
+- Firebase web API keys are public by design in browser apps.
+- Protect data with Firestore rules, App Check, and key restrictions.
 
 ## Deploy to GitHub Pages
 
@@ -93,11 +102,9 @@ window.__SRMPC_FIREBASE_CONFIG__ = {
 4. Select branch `main` and folder `/ (root)`.
 5. Save.
 
-Your live URL:
-https://aosjay13.github.io/sim-racing-mpcm/
+Your live URL: <https://aosjay13.github.io/sim-racing-mpcm/>
 
-App direct URL:
-https://aosjay13.github.io/sim-racing-mpcm/app.html
+App direct URL: <https://aosjay13.github.io/sim-racing-mpcm/app.html>
 
 ## Suggested Git Commands
 

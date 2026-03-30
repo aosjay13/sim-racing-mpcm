@@ -3,12 +3,15 @@
 // Get these from https://console.firebase.google.com
 
 const firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT_ID.appspot.com",
-    messagingSenderId: "YOUR_SENDER_ID",
-    appId: "YOUR_APP_ID"
+    apiKey: "AIzaSyAcpomoHaYuSEVCBi_FzzDT9rARmCC6--8",
+    authDomain: "sim-racing-career-228a3.firebaseapp.com",
+    projectId: "sim-racing-career-228a3",
+    storageBucket: "sim-racing-career-228a3.appspot.com",
+    messagingSenderId: "349016304868",
+    appId: "1:349016304868:web:79f80e44da0342372ad0f1",
+    appCheckSiteKey: "",
+    appCheckDebugToken: "",
+    enableAnonymousAuth: true
 };
 
 const FIREBASE_CONFIG_STORAGE_KEY = 'srmpc_firebase_config';
@@ -40,19 +43,13 @@ function isValidFirebaseConfig(config) {
 }
 
 function getFirebaseConfig() {
-    // Highest priority: untracked local override loaded from js/firebase-config.local.js.
-    const localOverride = window.__SRMPC_FIREBASE_CONFIG__;
-    if (isValidFirebaseConfig(localOverride)) {
-        return localOverride;
-    }
-
-    // Next: browser-stored config for this device.
+    // Highest priority: browser-stored config for quick updates without redeploy.
     const storedConfig = getStoredFirebaseConfig();
     if (isValidFirebaseConfig(storedConfig)) {
         return storedConfig;
     }
 
-    // Last fallback: tracked template values.
+    // Default: hosted config committed with the app.
     return firebaseConfig;
 }
 
@@ -91,7 +88,9 @@ window.SRMPCFirebase = {
             projectId: window.prompt('Firebase projectId', existing.projectId || ''),
             storageBucket: window.prompt('Firebase storageBucket', existing.storageBucket || ''),
             messagingSenderId: window.prompt('Firebase messagingSenderId', existing.messagingSenderId || ''),
-            appId: window.prompt('Firebase appId', existing.appId || '')
+            appId: window.prompt('Firebase appId', existing.appId || ''),
+            appCheckSiteKey: window.prompt('Firebase App Check site key (optional but recommended)', existing.appCheckSiteKey || ''),
+            enableAnonymousAuth: true
         };
 
         this.setConfig(config);
@@ -102,7 +101,9 @@ window.SRMPCFirebase = {
 let db;
 let auth;
 let storage;
+let appCheck;
 let firebaseInitError;
+let authReadyPromise = Promise.resolve();
 
 try {
     const runtimeFirebaseConfig = normalizeFirebaseConfig(getFirebaseConfig());
@@ -114,8 +115,34 @@ try {
     const app = firebase.initializeApp(runtimeFirebaseConfig);
     db = firebase.firestore(app);
 
+    // Optional App Check: strongly recommended in production.
+    if (runtimeFirebaseConfig.appCheckSiteKey && typeof firebase.appCheck === 'function') {
+        const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+        if (isLocalHost && runtimeFirebaseConfig.appCheckDebugToken) {
+            self.FIREBASE_APPCHECK_DEBUG_TOKEN = runtimeFirebaseConfig.appCheckDebugToken;
+        }
+
+        appCheck = firebase.appCheck();
+        appCheck.activate(runtimeFirebaseConfig.appCheckSiteKey, true);
+        console.log('Firebase App Check enabled');
+    } else {
+        console.warn('Firebase App Check is not configured. Add appCheckSiteKey to strengthen abuse protection.');
+    }
+
     try {
         auth = firebase.auth(app);
+
+        // Sign in anonymously by default so authenticated Firestore rules can be enforced.
+        if (runtimeFirebaseConfig.enableAnonymousAuth !== false) {
+            authReadyPromise = auth.signInAnonymously()
+                .then(() => {
+                    console.log('Signed in anonymously for Firestore access');
+                })
+                .catch((error) => {
+                    console.error('Anonymous sign-in failed:', error);
+                    throw error;
+                });
+        }
     } catch (error) {
         console.warn('Firebase Auth init failed, continuing without auth:', error);
     }
@@ -154,17 +181,22 @@ window.getFirebaseInitStatus = function getFirebaseInitStatus() {
         initialized: Boolean(db),
         hasAuth: Boolean(auth),
         hasStorage: Boolean(storage),
+        hasAppCheck: Boolean(appCheck),
         error: firebaseInitError ? (firebaseInitError.message || String(firebaseInitError)) : null
     };
 };
 
 // Firebase Helper Functions
 const DatabaseHelper = {
-    ensureFirebaseReady() {
+    ensureFirebaseReadySync() {
         if (db) return;
         const debugStatus = window.getFirebaseInitStatus ? window.getFirebaseInitStatus() : null;
         const initErrorMessage = debugStatus && debugStatus.error ? ` Root cause: ${debugStatus.error}` : '';
         throw new Error(`Firebase not initialized.${initErrorMessage} Run getFirebaseInitStatus() in the browser console for details.`);
+    },
+
+    async ensureFirebaseReady() {
+        this.ensureFirebaseReadySync();
     },
 
     /**
@@ -172,7 +204,8 @@ const DatabaseHelper = {
      */
     async addDocument(collectionName, data) {
         try {
-            this.ensureFirebaseReady();
+            await this.ensureFirebaseReady();
+            await authReadyPromise;
             const docRef = await db.collection(collectionName).add({
                 ...data,
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -190,7 +223,8 @@ const DatabaseHelper = {
      */
     async updateDocument(collectionName, docId, data) {
         try {
-            this.ensureFirebaseReady();
+            await this.ensureFirebaseReady();
+            await authReadyPromise;
             await db.collection(collectionName).doc(docId).update({
                 ...data,
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -206,7 +240,8 @@ const DatabaseHelper = {
      */
     async deleteDocument(collectionName, docId) {
         try {
-            this.ensureFirebaseReady();
+            await this.ensureFirebaseReady();
+            await authReadyPromise;
             await db.collection(collectionName).doc(docId).delete();
         } catch (error) {
             console.error(`Error deleting ${collectionName}:`, error);
@@ -219,7 +254,8 @@ const DatabaseHelper = {
      */
     async getDocument(collectionName, docId) {
         try {
-            this.ensureFirebaseReady();
+            await this.ensureFirebaseReady();
+            await authReadyPromise;
             const doc = await db.collection(collectionName).doc(docId).get();
             if (doc.exists) {
                 return { id: doc.id, ...doc.data() };
@@ -236,7 +272,8 @@ const DatabaseHelper = {
      */
     async getCollection(collectionName, constraints = []) {
         try {
-            this.ensureFirebaseReady();
+            await this.ensureFirebaseReady();
+            await authReadyPromise;
             let query = db.collection(collectionName);
 
             // Apply constraints if provided
@@ -261,7 +298,8 @@ const DatabaseHelper = {
      */
     async queryCollection(collectionName, filters = [], orderBy = null, limit = null) {
         try {
-            this.ensureFirebaseReady();
+            await this.ensureFirebaseReady();
+            await authReadyPromise;
             let query = db.collection(collectionName);
 
             // Apply filters
@@ -296,25 +334,36 @@ const DatabaseHelper = {
      */
     listenToCollection(collectionName, callback, constraints = []) {
         try {
-            this.ensureFirebaseReady();
-            let query = db.collection(collectionName);
+            this.ensureFirebaseReadySync();
+            let unsubscribe = () => {};
 
-            // Apply constraints if provided
-            for (const [field, operator, value] of constraints) {
-                query = query.where(field, operator, value);
-            }
+            authReadyPromise
+                .then(() => {
+                    let query = db.collection(collectionName);
 
-            return query.onSnapshot((snapshot) => {
-                const documents = [];
-                snapshot.forEach(doc => {
-                    documents.push({ id: doc.id, ...doc.data() });
+                    // Apply constraints if provided
+                    for (const [field, operator, value] of constraints) {
+                        query = query.where(field, operator, value);
+                    }
+
+                    unsubscribe = query.onSnapshot((snapshot) => {
+                        const documents = [];
+                        snapshot.forEach(doc => {
+                            documents.push({ id: doc.id, ...doc.data() });
+                        });
+                        callback(documents);
+                    }, (error) => {
+                        console.error(`Error listening to ${collectionName}:`, error);
+                    });
+                })
+                .catch((error) => {
+                    console.error(`Auth not ready for ${collectionName} listener:`, error);
                 });
-                callback(documents);
-            }, (error) => {
-                console.error(`Error listening to ${collectionName}:`, error);
-            });
+
+            return () => unsubscribe();
         } catch (error) {
             console.error(`Error setting up listener:`, error);
+            return () => {};
         }
     },
 
@@ -323,7 +372,8 @@ const DatabaseHelper = {
      */
     async batchWrite(operations) {
         try {
-            this.ensureFirebaseReady();
+            await this.ensureFirebaseReady();
+            await authReadyPromise;
             const batch = db.batch();
 
             for (const op of operations) {

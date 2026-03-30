@@ -21,6 +21,7 @@ This guide will walk you through setting up Firebase for your Sim Racing Career 
 6. Click "Create"
 
 ### Firestore Security Rules (Development)
+
 For testing, use these open rules (never use in production):
 
 ```javascript
@@ -55,35 +56,24 @@ const firebaseConfig = {
 };
 ```
 
-## Step 4: Update Your Application Config (Private)
+## Step 4: Update Your Application Config
 
-1. Create `js/firebase-config.local.js` in your project
-2. Paste your Firebase config into that file
+1. Open `js/firebase-config.js` in your project
+2. Replace config values with your Firebase web app config
 3. Save the file
 
 Use this structure:
 
 ```javascript
-window.__SRMPC_FIREBASE_CONFIG__ = {
+const firebaseConfig = {
   apiKey: "YOUR_ACTUAL_API_KEY",
   authDomain: "your-actual-project.firebaseapp.com",
   projectId: "your-actual-project-id",
   storageBucket: "your-actual-project.appspot.com",
   messagingSenderId: "YOUR_ACTUAL_SENDER_ID",
-  appId: "YOUR_ACTUAL_APP_ID"
-};
-```
-
-`js/firebase-config.local.js` is gitignored, so your key will not be committed.
-
-```javascript
-const firebaseConfig = {
-    apiKey: "YOUR_ACTUAL_API_KEY",
-    authDomain: "your-actual-project.firebaseapp.com",
-    projectId: "your-actual-project-id",
-    storageBucket: "your-actual-project.appspot.com",
-    messagingSenderId: "YOUR_ACTUAL_SENDER_ID",
-    appId: "YOUR_ACTUAL_APP_ID"
+  appId: "YOUR_ACTUAL_APP_ID",
+  appCheckSiteKey: "YOUR_RECAPTCHA_V3_SITE_KEY",
+  enableAnonymousAuth: true
 };
 ```
 
@@ -103,7 +93,7 @@ The application will auto-create collections as you add data, but you can pre-cr
 
 ## Step 6: Test Your Setup
 
-1. Run your application locally
+1. Open your hosted app URL
 2. Open browser console (F12)
 3. You should see: "Firebase initialized successfully"
 4. In the browser console, type: `loadSampleData()`
@@ -114,16 +104,19 @@ The application will auto-create collections as you add data, but you can pre-cr
 For easier deployment and Google Sites embedding:
 
 1. Install Firebase CLI:
+
    ```bash
    npm install -g firebase-tools
    ```
 
 2. Login to Firebase:
+
    ```bash
    firebase login
    ```
 
 3. Initialize Firebase hosting in your project:
+
    ```bash
    cd sim-racing-career
    firebase init hosting
@@ -135,6 +128,7 @@ For easier deployment and Google Sites embedding:
    - Configure as single-page app: `Yes`
 
 5. Deploy:
+
    ```bash
    firebase deploy --only hosting
    ```
@@ -150,15 +144,15 @@ Once deployed to Firebase Hosting:
 3. Select "Embed code"
 4. Paste this code:
 
-```html
-<iframe 
-  src="https://your-project.web.app/" 
-  width="100%" 
-  height="800px" 
-  frameborder="0"
-  style="border: none; margin: 0; padding: 0;">
-</iframe>
-```
+   ```html
+   <iframe
+     src="https://your-project.web.app/"
+     width="100%"
+     height="800px"
+     frameborder="0"
+     style="border: none; margin: 0; padding: 0;">
+   </iframe>
+   ```
 
 5. Click "Insert"
 
@@ -166,7 +160,7 @@ Once deployed to Firebase Hosting:
 
 If using Firebase Hosting, create a `.env` file with:
 
-```
+```text
 FIREBASE_API_KEY=your_api_key
 FIREBASE_PROJECT_ID=your_project_id
 ```
@@ -215,12 +209,14 @@ SRMPCFirebase.quickSetup();
 ## Firestore Backup
 
 ### Auto Backup (Recommended)
+
 1. Go to Firestore Database
 2. Click "Backups" tab
 3. Click "Create Backup"
 4. Enable automatic backups
 
 ### Manual Backup
+
 ```bash
 gcloud firestore export gs://your-bucket-name/backups/$(date +%Y%m%d-%H%M%S)
 ```
@@ -233,35 +229,73 @@ When ready for production, implement proper security:
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Only authenticated users can read/write
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+    function isSignedIn() {
+      return request.auth != null;
     }
-    
-    // Users can only modify their own data
+
+    match /{document=**} {
+      allow read, write: if isSignedIn();
+    }
+
     match /users/{userId} {
-      allow read, write: if request.auth.uid == userId;
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
     }
   }
 }
 ```
 
+Deploy the included rules file:
+
+```bash
+cd sim-racing-career
+firebase deploy --only firestore:rules
+```
+
+## App Check (Required for Public Hosting)
+
+1. In Firebase Console, open Build > App Check.
+2. Register your Web app with reCAPTCHA v3.
+3. Copy your site key.
+4. Add `appCheckSiteKey` to your app config (local or browser-stored).
+5. In App Check, turn on enforcement for Firestore and Storage.
+
+This blocks most abuse even though Firebase web config is public in browser apps.
+
+## API Key Restrictions (Google Cloud)
+
+1. Open Google Cloud Console > APIs & Services > Credentials.
+2. Select your Firebase Web API key.
+3. Set Application restrictions to HTTP referrers and allow only your domains.
+4. Set API restrictions to Firebase APIs required by this app.
+
+Example referrers:
+
+```text
+https://aosjay13.github.io/*
+https://*.web.app/*
+https://*.firebaseapp.com/*
+```
+
 ## Troubleshooting
 
 ### "Firebase is not defined"
+
 - Check that Firebase CDN scripts are loaded in `index.html`
 - Open browser console and check for network errors
 
 ### "Permission denied" errors
+
 - Update Firestore security rules to test mode
 - Check that Firestore is enabled in your project
 
 ### Data not appearing
+
 - Verify Firestore database is active and has data
 - Check browser console for errors
 - Verify Firebase config is correct
 
 ### Connection timeout
+
 - Check your internet connection
 - Verify Firebase project is running
 - Check Firebase console for service status
@@ -269,6 +303,7 @@ service cloud.firestore {
 ## Firebase Quotas
 
 Free tier includes:
+
 - 1 GB storage
 - 50K read operations/day
 - 20K write operations/day
@@ -289,4 +324,4 @@ Monitor usage in Firebase Console > Quotas
 
 ---
 
-**Need help?** Check Firebase docs: https://firebase.google.com/docs
+**Need help?** Check Firebase docs: <https://firebase.google.com/docs>

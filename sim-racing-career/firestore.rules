@@ -1,0 +1,19 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Baseline production rule set: authenticated access only.
+    // Tighten by collection/role as your app matures.
+    match /{document=**} {
+      allow read, write: if isSignedIn();
+    }
+
+    // User profile documents are private to the owner.
+    match /users/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+  }
+}
