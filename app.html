@@ -3,11 +3,85 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sim Racing MPCM App Redirect</title>
-  <meta http-equiv="refresh" content="0; url=sim-racing-career/app.html">
+  <title>Phoenix SRMPC | Launching App</title>
+  <style>
+    :root {
+      --primary-accent: #ff4444;
+      --secondary-accent: #ffd700;
+      --text-primary: #ffffff;
+      --text-secondary: #b0b0b0;
+      --background-dark: #0a0a0a;
+      --card-bg: #1a1a1a;
+      --border-color: #333333;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at 12% 18%, rgba(255, 68, 68, 0.24) 0%, transparent 46%),
+        radial-gradient(circle at 88% 14%, rgba(255, 215, 0, 0.15) 0%, transparent 36%),
+        linear-gradient(140deg, var(--background-dark) 0%, #131313 58%, #1a1a1a 100%);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      color: var(--text-primary);
+      padding: 1rem;
+    }
+
+    .launch-card {
+      width: min(680px, 100%);
+      border: 1px solid rgba(255, 68, 68, 0.35);
+      border-radius: 14px;
+      background: linear-gradient(145deg, rgba(26, 26, 26, 0.96), rgba(18, 18, 18, 0.96));
+      box-shadow: 0 18px 48px rgba(255, 68, 68, 0.18);
+      padding: 1.4rem;
+      text-align: center;
+    }
+
+    .launch-card h1 {
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 0.6rem;
+      background: linear-gradient(45deg, var(--primary-accent), var(--secondary-accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .launch-card p {
+      color: var(--text-secondary);
+      margin-bottom: 1rem;
+    }
+
+    .launch-link {
+      display: inline-block;
+      text-decoration: none;
+      color: #111;
+      font-weight: 700;
+      padding: 0.75rem 1rem;
+      border-radius: 10px;
+      background: linear-gradient(45deg, var(--primary-accent), #ff6666);
+      border: 1px solid var(--primary-accent);
+    }
+  </style>
 </head>
 <body>
-  <p>Redirecting to the app...</p>
-  <p><a href="sim-racing-career/app.html">Open app</a></p>
+  <main class="launch-card">
+    <h1>Phoenix SRMPC</h1>
+    <p>Opening the full app experience. If your preview does not auto-redirect, use the button below.</p>
+    <a class="launch-link" href="sim-racing-career/app.html">Open App</a>
+  </main>
+
+  <script>
+    setTimeout(() => {
+      window.location.href = 'sim-racing-career/app.html';
+    }, 700);
+  </script>
 </body>
 </html>

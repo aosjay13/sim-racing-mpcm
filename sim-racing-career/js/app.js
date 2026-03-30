@@ -15,10 +15,41 @@ document.addEventListener('DOMContentLoaded', async function() {
     console.log('Initializing Sim Racing Career Mode...');
     
     initializeEventListeners();
+    updateAuthDiagnostics();
     await initializeAuthSession();
     loadDriverTeamOptions();
     toggleNewDriverTeamFields();
 });
+
+function updateAuthDiagnostics() {
+    const diagnosticsEl = document.getElementById('auth-gate-diagnostics');
+    if (!diagnosticsEl) return;
+
+    const host = window.location.hostname || '';
+    const status = window.getFirebaseInitStatus ? window.getFirebaseInitStatus() : null;
+    const hints = [];
+
+    if (!status?.initialized) {
+        hints.push('Firebase is not fully initialized in this session.');
+    }
+
+    if (host.includes('github.dev') || host.includes('app.github.dev')) {
+        hints.push('Preview domains usually require adding this exact host to Firebase Auth Authorized domains.');
+    }
+
+    if (!status?.hasAuth) {
+        hints.push('Firebase Auth is unavailable. Check firebase-config.js credentials.');
+    }
+
+    if (!hints.length) {
+        diagnosticsEl.classList.add('hidden');
+        diagnosticsEl.textContent = '';
+        return;
+    }
+
+    diagnosticsEl.textContent = `Auth diagnostics (${host}): ${hints.join(' ')}`;
+    diagnosticsEl.classList.remove('hidden');
+}
 
 function withTimeout(promise, timeoutMs, timeoutMessage) {
     return Promise.race([
@@ -259,7 +290,9 @@ async function handleLogin() {
         UI.showNotification('Signed in successfully.');
     } catch (error) {
         console.error('Login error:', error);
-        UI.showNotification('Sign in failed: ' + error.message, 'error');
+        const host = window.location.hostname || 'current host';
+        UI.showNotification('Sign in failed: ' + error.message + ' [host: ' + host + ']', 'error');
+        updateAuthDiagnostics();
     } finally {
         AppSession.authInFlight = false;
         [loginBtn, driverBtn, adminBtn].forEach((button) => {

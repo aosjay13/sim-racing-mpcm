@@ -539,7 +539,7 @@ const AuthService = {
             if (error.code === 'auth/unauthorized-domain') {
                 const hostname = window.location.hostname || 'this domain';
                 throw new Error(
-                    'Google sign-in is blocked for ' + hostname + '. Add this domain in Firebase Authentication > Settings > Authorized domains.'
+                    'Google sign-in is blocked for ' + hostname + '. Add this exact host in Firebase Authentication > Settings > Authorized domains (including preview hostnames).'
                 );
             }
 
