@@ -5,6 +5,8 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('Initializing Sim Racing Career Mode...');
     
     initializeEventListeners();
+    loadDriverTeamOptions();
+    toggleNewDriverTeamFields();
     UI.loadDashboard();
 });
 
@@ -25,16 +27,21 @@ function initializeEventListeners() {
     setupModalHandlers();
 
     // Dashboard actions
-    document.getElementById('quick-add-driver')?.addEventListener('click', () => {
+    document.getElementById('quick-add-driver')?.addEventListener('click', async () => {
+        await loadDriverTeamOptions();
+        toggleNewDriverTeamFields();
         UI.showModal('add-driver-modal');
     });
 
     // Driver management
-    document.getElementById('add-driver-btn')?.addEventListener('click', () => {
+    document.getElementById('add-driver-btn')?.addEventListener('click', async () => {
+        await loadDriverTeamOptions();
+        toggleNewDriverTeamFields();
         UI.showModal('add-driver-modal');
     });
 
     document.getElementById('driver-form')?.addEventListener('submit', handleAddDriver);
+    document.getElementById('driver-team')?.addEventListener('change', toggleNewDriverTeamFields);
     document.getElementById('cancel-driver')?.addEventListener('click', () => {
         UI.closeModal('add-driver-modal');
     });
@@ -109,6 +116,48 @@ function initializeEventListeners() {
 
     // Load saved settings on startup
     loadSavedSettings();
+}
+
+async function loadDriverTeamOptions() {
+    const teamSelect = document.getElementById('driver-team');
+    if (!teamSelect) return;
+
+    const currentValue = teamSelect.value;
+
+    teamSelect.innerHTML = `
+        <option value="">No Team</option>
+        <option value="__create_new__">+ Create New Team</option>
+    `;
+
+    try {
+        const teams = await Database.teams.getAll();
+        teams.forEach((team) => {
+            const option = document.createElement('option');
+            option.value = team.id;
+            option.textContent = team.name;
+            teamSelect.appendChild(option);
+        });
+
+        const hasCurrentValue = Array.from(teamSelect.options).some((opt) => opt.value === currentValue);
+        teamSelect.value = hasCurrentValue ? currentValue : '';
+    } catch (error) {
+        console.error('Error loading teams for driver form:', error);
+        teamSelect.value = '';
+    }
+}
+
+function toggleNewDriverTeamFields() {
+    const teamSelect = document.getElementById('driver-team');
+    const teamNameGroup = document.getElementById('new-driver-team-name-group');
+    const teamColorGroup = document.getElementById('new-driver-team-color-group');
+    const teamNameInput = document.getElementById('new-driver-team-name');
+
+    if (!teamSelect || !teamNameGroup || !teamColorGroup || !teamNameInput) return;
+
+    const creatingNewTeam = teamSelect.value === '__create_new__';
+    teamNameGroup.style.display = creatingNewTeam ? 'block' : 'none';
+    teamColorGroup.style.display = creatingNewTeam ? 'block' : 'none';
+    teamNameInput.required = creatingNewTeam;
 }
 
 // ===== LOAD SAVED SETTINGS =====
@@ -191,7 +240,9 @@ async function handleAddDriver(e) {
     try {
         const driverName = document.getElementById('driver-name').value;
         const driverNumber = document.getElementById('driver-number').value;
-        const driverTeam = document.getElementById('driver-team').value;
+        const driverTeamSelection = document.getElementById('driver-team').value;
+        const newDriverTeamName = document.getElementById('new-driver-team-name').value;
+        const newDriverTeamColor = document.getElementById('new-driver-team-color').value;
         const driverCountry = document.getElementById('driver-country').value;
         const driverDescription = document.getElementById('driver-description').value;
 
@@ -200,32 +251,56 @@ async function handleAddDriver(e) {
             return;
         }
 
-        // Check if we need to create a new team
-        let teamId = driverTeam;
-        if (!teamId) {
+        let teamId = null;
+        let createdTeamId = null;
+
+        if (driverTeamSelection === '__create_new__') {
+            if (!newDriverTeamName.trim()) {
+                UI.showNotification('New team name is required', 'error');
+                return;
+            }
+
             teamId = await Database.teams.create({
-                name: `${driverName}'s Team`,
-                color: '#FF4444'
+                name: newDriverTeamName.trim(),
+                color: newDriverTeamColor || '#FF4444'
             });
+            createdTeamId = teamId;
+        } else if (driverTeamSelection) {
+            teamId = driverTeamSelection;
         }
 
         // Create driver
-        const driverId = await Database.drivers.create({
-            name: driverName,
-            number: driverNumber ? parseInt(driverNumber) : null,
-            teamId: teamId,
-            country: driverCountry,
-            bio: driverDescription
-        });
+        try {
+            const driverId = await Database.drivers.create({
+                name: driverName,
+                number: driverNumber ? parseInt(driverNumber, 10) : null,
+                teamId: teamId,
+                country: driverCountry,
+                bio: driverDescription
+            });
 
-        UI.showNotification('Driver added successfully!');
-        document.getElementById('driver-form').reset();
-        UI.closeModal('add-driver-modal');
-        UI.loadDrivers();
-        UI.loadDashboard();
+            UI.showNotification('Driver added successfully!');
+            document.getElementById('driver-form').reset();
+            toggleNewDriverTeamFields();
+            UI.closeModal('add-driver-modal');
+            UI.loadDrivers();
+            UI.loadDashboard();
+            await loadDriverTeamOptions();
 
-        // Log activity
-        console.log(`Driver "${driverName}" (#${driverNumber || 'N/A'}) created successfully`);
+            // Log activity
+            console.log(`Driver "${driverName}" (#${driverNumber || 'N/A'}) created successfully`, driverId);
+        } catch (driverError) {
+            // Prevent orphan teams when driver creation fails right after creating a team.
+            if (createdTeamId) {
+                try {
+                    await Database.teams.delete(createdTeamId);
+                } catch (cleanupError) {
+                    console.error('Rollback failed for newly created team:', cleanupError);
+                }
+            }
+
+            throw driverError;
+        }
     } catch (error) {
         console.error('Error adding driver:', error);
         UI.showNotification('Error adding driver: ' + error.message, 'error');
@@ -256,6 +331,7 @@ async function handleAddTeam(e) {
         UI.closeModal('add-team-modal');
         UI.loadTeams();
         UI.loadDrivers(); // Refresh drivers to show new team option
+        await loadDriverTeamOptions();
         UI.loadDashboard();
 
         console.log(`Team "${teamName}" created successfully`);

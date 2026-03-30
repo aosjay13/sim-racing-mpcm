@@ -190,8 +190,17 @@
                 <div class="form-group">
                     <label for="driver-team">Team</label>
                     <select id="driver-team">
-                        <option value="">Create New Team</option>
+                        <option value="">No Team</option>
+                        <option value="__create_new__">+ Create New Team</option>
                     </select>
+                </div>
+                <div class="form-group" id="new-driver-team-name-group" style="display: none;">
+                    <label for="new-driver-team-name">New Team Name *</label>
+                    <input type="text" id="new-driver-team-name" placeholder="Enter team name">
+                </div>
+                <div class="form-group" id="new-driver-team-color-group" style="display: none;">
+                    <label for="new-driver-team-color">New Team Color</label>
+                    <input type="color" id="new-driver-team-color" value="#FF4444">
                 </div>
                 <div class="form-group">
                     <label for="driver-country">Country</label>
