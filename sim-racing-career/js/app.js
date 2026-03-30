@@ -10,6 +10,15 @@ document.addEventListener('DOMContentLoaded', function() {
     UI.loadDashboard();
 });
 
+function withTimeout(promise, timeoutMs, timeoutMessage) {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => {
+            setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+        })
+    ]);
+}
+
 // ===== EVENT LISTENERS SETUP =====
 function initializeEventListeners() {
     // Navigation buttons
@@ -29,6 +38,8 @@ function initializeEventListeners() {
     // Dashboard actions
     document.getElementById('quick-add-driver')?.addEventListener('click', async () => {
         await loadDriverTeamOptions();
+        const driverForm = document.getElementById('driver-form');
+        driverForm?.reset();
         toggleNewDriverTeamFields();
         UI.showModal('add-driver-modal');
     });
@@ -36,6 +47,8 @@ function initializeEventListeners() {
     // Driver management
     document.getElementById('add-driver-btn')?.addEventListener('click', async () => {
         await loadDriverTeamOptions();
+        const driverForm = document.getElementById('driver-form');
+        driverForm?.reset();
         toggleNewDriverTeamFields();
         UI.showModal('add-driver-modal');
     });
@@ -154,10 +167,23 @@ function toggleNewDriverTeamFields() {
 
     if (!teamSelect || !teamNameGroup || !teamColorGroup || !teamNameInput) return;
 
+    const teamColorInput = document.getElementById('new-driver-team-color');
     const creatingNewTeam = teamSelect.value === '__create_new__';
+
     teamNameGroup.style.display = creatingNewTeam ? 'block' : 'none';
     teamColorGroup.style.display = creatingNewTeam ? 'block' : 'none';
-    teamNameInput.required = creatingNewTeam;
+
+    teamNameInput.disabled = !creatingNewTeam;
+    if (teamColorInput) {
+        teamColorInput.disabled = !creatingNewTeam;
+    }
+
+    if (!creatingNewTeam) {
+        teamNameInput.value = '';
+        if (teamColorInput) {
+            teamColorInput.value = '#FF4444';
+        }
+    }
 }
 
 // ===== LOAD SAVED SETTINGS =====
@@ -237,6 +263,15 @@ function setupModalHandlers() {
 async function handleAddDriver(e) {
     e.preventDefault();
 
+    const driverForm = document.getElementById('driver-form');
+    const submitButton = driverForm?.querySelector('button[type="submit"]');
+    const originalButtonText = submitButton?.textContent;
+
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = 'Creating...';
+    }
+
     try {
         const driverName = document.getElementById('driver-name').value;
         const driverNumber = document.getElementById('driver-number').value;
@@ -260,10 +295,10 @@ async function handleAddDriver(e) {
                 return;
             }
 
-            teamId = await Database.teams.create({
+            teamId = await withTimeout(Database.teams.create({
                 name: newDriverTeamName.trim(),
                 color: newDriverTeamColor || '#FF4444'
-            });
+            }), 12000, 'Creating team timed out. Check your Firebase connection and try again.');
             createdTeamId = teamId;
         } else if (driverTeamSelection) {
             teamId = driverTeamSelection;
@@ -271,21 +306,25 @@ async function handleAddDriver(e) {
 
         // Create driver
         try {
-            const driverId = await Database.drivers.create({
+            const driverId = await withTimeout(Database.drivers.create({
                 name: driverName,
                 number: driverNumber ? parseInt(driverNumber, 10) : null,
                 teamId: teamId,
                 country: driverCountry,
                 bio: driverDescription
-            });
+            }), 12000, 'Creating driver timed out. Check your Firebase connection and try again.');
 
-            UI.showNotification('Driver added successfully!');
+            UI.showNotification(`Driver "${driverName}" added successfully!`);
             document.getElementById('driver-form').reset();
             toggleNewDriverTeamFields();
             UI.closeModal('add-driver-modal');
-            UI.loadDrivers();
-            UI.loadDashboard();
-            await loadDriverTeamOptions();
+
+            await Promise.allSettled([
+                UI.loadDrivers(),
+                UI.loadTeams(),
+                UI.loadDashboard(),
+                loadDriverTeamOptions()
+            ]);
 
             // Log activity
             console.log(`Driver "${driverName}" (#${driverNumber || 'N/A'}) created successfully`, driverId);
@@ -293,7 +332,7 @@ async function handleAddDriver(e) {
             // Prevent orphan teams when driver creation fails right after creating a team.
             if (createdTeamId) {
                 try {
-                    await Database.teams.delete(createdTeamId);
+                    await withTimeout(Database.teams.delete(createdTeamId), 12000, 'Timed out while rolling back temporary team creation.');
                 } catch (cleanupError) {
                     console.error('Rollback failed for newly created team:', cleanupError);
                 }
@@ -304,6 +343,11 @@ async function handleAddDriver(e) {
     } catch (error) {
         console.error('Error adding driver:', error);
         UI.showNotification('Error adding driver: ' + error.message, 'error');
+    } finally {
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.textContent = originalButtonText || 'Add Driver';
+        }
     }
 }
 
@@ -629,5 +673,6 @@ function getGameIcon(gameName) {
 window.UI = UI;
 window.Database = Database;
 window.loadSampleData = loadSampleData;
+window.loadDriverTeamOptions = loadDriverTeamOptions;
 
 console.log('Application initialized. Press Ctrl+Shift+D to load sample data.');

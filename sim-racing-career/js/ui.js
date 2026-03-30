@@ -411,12 +411,30 @@ const UI = {
     async deleteTeam(teamId) {
         if (confirm('Are you sure you want to delete this team?')) {
             try {
+                // Keep data consistent by unassigning drivers before deleting the team.
+                const drivers = await Database.drivers.getByTeam(teamId);
+                if (drivers.length > 0) {
+                    await Promise.all(drivers.map((driver) =>
+                        Database.drivers.update(driver.id, { teamId: null })
+                    ));
+                }
+
                 await Database.teams.delete(teamId);
-                UI.loadTeams();
+
+                await Promise.allSettled([
+                    this.loadTeams(),
+                    this.loadDrivers(),
+                    this.loadDashboard()
+                ]);
+
+                if (typeof window.loadDriverTeamOptions === 'function') {
+                    await window.loadDriverTeamOptions();
+                }
+
                 this.showNotification('Team deleted successfully');
             } catch (error) {
                 console.error('Error deleting team:', error);
-                this.showNotification('Error deleting team', 'error');
+                this.showNotification('Error deleting team: ' + (error.message || 'Unknown error'), 'error');
             }
         }
     },
@@ -613,9 +631,50 @@ const UI = {
 
     // ===== UTILITIES =====
     showNotification(message, type = 'success') {
-        // Simple notification - you might want to create a more robust notification system
         console.log(`[${type.toUpperCase()}] ${message}`);
-        alert(message);
+
+        let container = document.getElementById('toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toast-container';
+            container.style.position = 'fixed';
+            container.style.top = '1rem';
+            container.style.right = '1rem';
+            container.style.zIndex = '9999';
+            container.style.display = 'flex';
+            container.style.flexDirection = 'column';
+            container.style.gap = '0.5rem';
+            document.body.appendChild(container);
+        }
+
+        const toast = document.createElement('div');
+        toast.textContent = message;
+        toast.style.minWidth = '260px';
+        toast.style.maxWidth = '420px';
+        toast.style.padding = '0.75rem 1rem';
+        toast.style.borderRadius = '8px';
+        toast.style.boxShadow = '0 8px 20px rgba(0,0,0,0.2)';
+        toast.style.color = '#fff';
+        toast.style.fontWeight = '600';
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(-8px)';
+        toast.style.transition = 'opacity 160ms ease, transform 160ms ease';
+        toast.style.backgroundColor = type === 'error' ? '#c62828' : '#2e7d32';
+
+        container.appendChild(toast);
+
+        requestAnimationFrame(() => {
+            toast.style.opacity = '1';
+            toast.style.transform = 'translateY(0)';
+        });
+
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateY(-8px)';
+            setTimeout(() => {
+                toast.remove();
+            }, 180);
+        }, 3000);
     },
 
     formatDate(date) {
