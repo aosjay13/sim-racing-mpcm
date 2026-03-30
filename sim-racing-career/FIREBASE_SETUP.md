@@ -166,6 +166,31 @@ const firebaseConfig = {
 };
 ```
 
+## Quick Setup Option (No File Editing)
+
+If you do not want to edit files, you can store config in your browser for this app:
+
+1. Open `app.html`
+2. Open browser devtools console
+3. Run:
+
+```javascript
+SRMPCFirebase.setConfig({
+  apiKey: "AIza...",
+  authDomain: "your-project.firebaseapp.com",
+  projectId: "your-project-id",
+  storageBucket: "your-project.appspot.com",
+  messagingSenderId: "123456789",
+  appId: "1:123456789:web:abc123def456"
+});
+```
+
+To clear a saved browser config later:
+
+```javascript
+SRMPCFirebase.clearConfig();
+```
+
 ## Firestore Backup
 
 ### Auto Backup (Recommended)

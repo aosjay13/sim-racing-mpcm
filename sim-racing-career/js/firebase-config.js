@@ -3,24 +3,109 @@
 // Get these from https://console.firebase.google.com
 
 const firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT_ID.appspot.com",
-    messagingSenderId: "YOUR_SENDER_ID",
-    appId: "YOUR_APP_ID"
+    apiKey: "AIzaSyAcpomoHaYuSEVCBi_FzzDT9rARmCC6--8",
+    authDomain: "sim-racing-career-228a3.firebaseapp.com",
+    projectId: "sim-racing-career-228a3",
+    storageBucket: "sim-racing-career-228a3.firebasestorage.app",
+    messagingSenderId: "349016304868",
+    appId: "1:349016304868:web:79f80e44da0342372ad0f1"
+};
+
+const FIREBASE_CONFIG_STORAGE_KEY = 'srmpc_firebase_config';
+
+function getStoredFirebaseConfig() {
+    try {
+        const raw = localStorage.getItem(FIREBASE_CONFIG_STORAGE_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw);
+    } catch (error) {
+        console.warn('Stored Firebase config is invalid JSON, ignoring it.');
+        return null;
+    }
+}
+
+function isValidFirebaseConfig(config) {
+    if (!config || typeof config !== 'object') return false;
+
+    const requiredKeys = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'];
+    const hasAllKeys = requiredKeys.every((key) => typeof config[key] === 'string' && config[key].trim() !== '');
+
+    if (!hasAllKeys) return false;
+
+    const hasPlaceholderValues = Object.values(config).some((value) =>
+        /YOUR_|your-project|YOUR_PROJECT/i.test(value)
+    );
+
+    return !hasPlaceholderValues;
+}
+
+function getFirebaseConfig() {
+    const storedConfig = getStoredFirebaseConfig();
+    if (isValidFirebaseConfig(storedConfig)) {
+        return storedConfig;
+    }
+    return firebaseConfig;
+}
+
+function normalizeFirebaseConfig(config) {
+    const normalized = { ...config };
+
+    // Compat SDKs are more reliable with appspot buckets.
+    if (typeof normalized.storageBucket === 'string' && normalized.storageBucket.endsWith('.firebasestorage.app')) {
+        normalized.storageBucket = normalized.storageBucket.replace('.firebasestorage.app', '.appspot.com');
+    }
+
+    return normalized;
+}
+
+window.SRMPCFirebase = {
+    setConfig(config) {
+        if (!isValidFirebaseConfig(config)) {
+            throw new Error('Invalid Firebase config. Include all required Firebase web app keys.');
+        }
+        localStorage.setItem(FIREBASE_CONFIG_STORAGE_KEY, JSON.stringify(config));
+        console.log('Firebase config saved. Reloading app...');
+        window.location.reload();
+    },
+
+    clearConfig() {
+        localStorage.removeItem(FIREBASE_CONFIG_STORAGE_KEY);
+        console.log('Stored Firebase config removed. Reloading app...');
+        window.location.reload();
+    }
 };
 
 // Initialize Firebase
 let db;
 let auth;
 let storage;
+let firebaseInitError;
 
 try {
-    const app = firebase.initializeApp(firebaseConfig);
+    const runtimeFirebaseConfig = normalizeFirebaseConfig(getFirebaseConfig());
+
+    if (!isValidFirebaseConfig(runtimeFirebaseConfig)) {
+        throw new Error('Firebase config is missing or still using placeholders.');
+    }
+
+    const app = firebase.initializeApp(runtimeFirebaseConfig);
     db = firebase.firestore(app);
-    auth = firebase.auth(app);
-    storage = firebase.storage(app);
+
+    try {
+        auth = firebase.auth(app);
+    } catch (error) {
+        console.warn('Firebase Auth init failed, continuing without auth:', error);
+    }
+
+    try {
+        storage = firebase.storage(app);
+    } catch (error) {
+        console.warn('Firebase Storage init failed, continuing without storage:', error);
+    }
+
+    if (!db) {
+        throw new Error('Firestore failed to initialize.');
+    }
 
     // Enable offline persistence
     db.enablePersistence().catch((err) => {
@@ -33,18 +118,37 @@ try {
 
     console.log('Firebase initialized successfully');
 } catch (error) {
+    firebaseInitError = error;
+    console.error('Firebase initialization error:', error);
     console.warn('Firebase not yet configured. Please update firebase-config.js with your credentials.');
+    console.warn('Or run this in the browser console to save config locally: SRMPCFirebase.setConfig({...})');
     console.warn('Get your config from: https://console.firebase.google.com');
 }
 
+window.getFirebaseInitStatus = function getFirebaseInitStatus() {
+    return {
+        initialized: Boolean(db),
+        hasAuth: Boolean(auth),
+        hasStorage: Boolean(storage),
+        error: firebaseInitError ? (firebaseInitError.message || String(firebaseInitError)) : null
+    };
+};
+
 // Firebase Helper Functions
 const DatabaseHelper = {
+    ensureFirebaseReady() {
+        if (db) return;
+        const debugStatus = window.getFirebaseInitStatus ? window.getFirebaseInitStatus() : null;
+        const initErrorMessage = debugStatus && debugStatus.error ? ` Root cause: ${debugStatus.error}` : '';
+        throw new Error(`Firebase not initialized.${initErrorMessage} Run getFirebaseInitStatus() in the browser console for details.`);
+    },
+
     /**
      * Add a new document to a collection
      */
     async addDocument(collectionName, data) {
         try {
-            if (!db) throw new Error('Firebase not initialized');
+            this.ensureFirebaseReady();
             const docRef = await db.collection(collectionName).add({
                 ...data,
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -62,7 +166,7 @@ const DatabaseHelper = {
      */
     async updateDocument(collectionName, docId, data) {
         try {
-            if (!db) throw new Error('Firebase not initialized');
+            this.ensureFirebaseReady();
             await db.collection(collectionName).doc(docId).update({
                 ...data,
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -78,7 +182,7 @@ const DatabaseHelper = {
      */
     async deleteDocument(collectionName, docId) {
         try {
-            if (!db) throw new Error('Firebase not initialized');
+            this.ensureFirebaseReady();
             await db.collection(collectionName).doc(docId).delete();
         } catch (error) {
             console.error(`Error deleting ${collectionName}:`, error);
@@ -91,7 +195,7 @@ const DatabaseHelper = {
      */
     async getDocument(collectionName, docId) {
         try {
-            if (!db) throw new Error('Firebase not initialized');
+            this.ensureFirebaseReady();
             const doc = await db.collection(collectionName).doc(docId).get();
             if (doc.exists) {
                 return { id: doc.id, ...doc.data() };
@@ -108,7 +212,7 @@ const DatabaseHelper = {
      */
     async getCollection(collectionName, constraints = []) {
         try {
-            if (!db) throw new Error('Firebase not initialized');
+            this.ensureFirebaseReady();
             let query = db.collection(collectionName);
 
             // Apply constraints if provided
@@ -133,7 +237,7 @@ const DatabaseHelper = {
      */
     async queryCollection(collectionName, filters = [], orderBy = null, limit = null) {
         try {
-            if (!db) throw new Error('Firebase not initialized');
+            this.ensureFirebaseReady();
             let query = db.collection(collectionName);
 
             // Apply filters
@@ -168,7 +272,7 @@ const DatabaseHelper = {
      */
     listenToCollection(collectionName, callback, constraints = []) {
         try {
-            if (!db) throw new Error('Firebase not initialized');
+            this.ensureFirebaseReady();
             let query = db.collection(collectionName);
 
             // Apply constraints if provided
@@ -195,7 +299,7 @@ const DatabaseHelper = {
      */
     async batchWrite(operations) {
         try {
-            if (!db) throw new Error('Firebase not initialized');
+            this.ensureFirebaseReady();
             const batch = db.batch();
 
             for (const op of operations) {
