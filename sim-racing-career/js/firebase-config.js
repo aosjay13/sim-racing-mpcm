@@ -492,10 +492,12 @@ const AuthService = {
     onAuthStateChanged(listener) {
         this._listeners.push(listener);
         try {
-            listener({
+            Promise.resolve(listener({
                 user: this._user,
                 isAdmin: this._isAdmin,
                 isAuthenticated: this.isAuthenticated()
+            })).catch((error) => {
+                console.error('Auth listener error:', error);
             });
         } catch (error) {
             console.error('Auth listener error:', error);
@@ -515,7 +517,9 @@ const AuthService = {
 
         this._listeners.forEach((listener) => {
             try {
-                listener(payload);
+                Promise.resolve(listener(payload)).catch((error) => {
+                    console.error('Auth listener execution error:', error);
+                });
             } catch (error) {
                 console.error('Auth listener execution error:', error);
             }

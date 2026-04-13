@@ -89,11 +89,29 @@ async function initializeAuthSession() {
         AppSession.isAuthenticated = state.isAuthenticated;
         AppSession.isAdmin = state.isAdmin;
 
-        if (!AppSession.isAuthenticated) {
-            AppSession.claimedDriverId = '';
-            AppSession.hasEnteredApp = false;
-        } else {
-            await hydrateSessionProfile();
+        try {
+            if (!AppSession.isAuthenticated) {
+                AppSession.claimedDriverId = '';
+                AppSession.hasEnteredApp = false;
+            } else {
+                await hydrateSessionProfile();
+            }
+        } catch (error) {
+            console.error('Session profile hydration failed, continuing with auth session:', error);
+
+            if (!AppSession.isAuthenticated) {
+                AppSession.claimedDriverId = '';
+            } else {
+                try {
+                    const saved = localStorage.getItem('srmpcUserProfile');
+                    if (saved) {
+                        const localProfile = JSON.parse(saved);
+                        AppSession.claimedDriverId = localProfile?.primaryDriver || '';
+                    }
+                } catch (parseError) {
+                    console.warn('Could not parse local profile fallback:', parseError);
+                }
+            }
         }
 
         updateAuthUI();
@@ -148,17 +166,23 @@ async function hydrateSessionProfile() {
         console.warn('Could not parse local profile cache:', error);
     }
 
-    let remoteProfile = await Database.users.getProfile(uid);
+    let remoteProfile = null;
 
-    if (!remoteProfile) {
-        await Database.users.upsertProfile(uid, {
-            displayName: AppSession.user.displayName || localProfile?.name || '',
-            email: AppSession.user.email || localProfile?.email || '',
-            primaryTeam: localProfile?.primaryTeam || '',
-            primaryDriver: localProfile?.primaryDriver || ''
-        });
-
+    try {
         remoteProfile = await Database.users.getProfile(uid);
+
+        if (!remoteProfile) {
+            await Database.users.upsertProfile(uid, {
+                displayName: AppSession.user.displayName || localProfile?.name || '',
+                email: AppSession.user.email || localProfile?.email || '',
+                primaryTeam: localProfile?.primaryTeam || '',
+                primaryDriver: localProfile?.primaryDriver || ''
+            });
+
+            remoteProfile = await Database.users.getProfile(uid);
+        }
+    } catch (error) {
+        console.warn('Remote profile sync failed; continuing with local/auth profile only:', error);
     }
 
     const mergedProfile = {
