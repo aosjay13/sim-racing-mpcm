@@ -228,6 +228,43 @@ function updateAuthUI() {
     const logoutBtn = document.getElementById('logout-btn');
     const roleBadge = document.getElementById('auth-role-badge');
     const emailForm = document.getElementById('auth-email-form');
+    const profileAccountType = document.getElementById('profile-account-type');
+    const workspaceBannerEyebrow = document.getElementById('workspace-banner-eyebrow');
+    const workspaceBannerTitle = document.getElementById('workspace-banner-title');
+    const workspaceBannerCopy = document.getElementById('workspace-banner-copy');
+
+    UI.applyRoleExperience({
+        isAuthenticated: AppSession.isAuthenticated,
+        isAdmin: AppSession.isAdmin
+    });
+
+    if (profileAccountType) {
+        profileAccountType.textContent = !AppSession.isAuthenticated
+            ? 'Guest'
+            : (AppSession.isAdmin ? 'Administrator' : 'Driver');
+    }
+
+    if (workspaceBannerEyebrow) {
+        workspaceBannerEyebrow.textContent = !AppSession.isAuthenticated
+            ? 'Guest Workspace'
+            : (AppSession.isAdmin ? 'Admin Workspace' : 'Driver Workspace');
+    }
+
+    if (workspaceBannerTitle) {
+        workspaceBannerTitle.textContent = !AppSession.isAuthenticated
+            ? 'Sign in to unlock your racing workspace.'
+            : (AppSession.isAdmin
+                ? 'Racing Manager is live. League control tools are unlocked.'
+                : 'Driver tools are live. Follow races, teams, and your season progress.');
+    }
+
+    if (workspaceBannerCopy) {
+        workspaceBannerCopy.textContent = !AppSession.isAuthenticated
+            ? 'Drivers get a live career hub. Admins get the full Racing Manager control surface.'
+            : (AppSession.isAdmin
+                ? 'Add drivers, add teams, schedule race events, manage sponsorships, and review pending submissions from one screen.'
+                : 'Browse the live roster, follow the race calendar, review standings, and use Driver Hub for your personal profile and garage.');
+    }
 
     if (loginBtn) {
         loginBtn.classList.toggle('hidden', AppSession.isAuthenticated);

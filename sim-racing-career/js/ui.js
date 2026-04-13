@@ -30,6 +30,79 @@ const UI = {
         return `$${Number(value || 0).toLocaleString()}`;
     },
 
+    showModal(modalId) {
+        const modal = document.getElementById(modalId);
+        if (!modal) {
+            this.showNotification(`Modal not found: ${modalId}`, 'error');
+            return;
+        }
+
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    },
+
+    closeModal(modalId) {
+        const modal = document.getElementById(modalId);
+        if (!modal) return;
+
+        modal.classList.remove('active');
+        document.body.style.overflow = 'auto';
+    },
+
+    applyRoleExperience({ isAuthenticated = false, isAdmin = false } = {}) {
+        const dashboardHeading = document.querySelector('#dashboard-view .card-featured h2');
+        const dashboardCopy = document.querySelector('#dashboard-view .card-featured p');
+        const quickAddDriverButton = document.getElementById('quick-add-driver');
+        const addDriverButton = document.getElementById('add-driver-btn');
+        const addTeamButton = document.getElementById('add-team-btn');
+        const addRaceButton = document.getElementById('add-race-btn');
+        const sponsorsNavButton = document.getElementById('sponsors-nav-btn');
+        const driverHubNavButton = document.getElementById('driver-hub-nav-btn');
+        const adminNavButton = document.getElementById('admin-nav-btn');
+
+        if (dashboardHeading) {
+            dashboardHeading.textContent = isAdmin
+                ? 'Racing Manager Command Center'
+                : 'Driver Career Dashboard';
+        }
+
+        if (dashboardCopy) {
+            dashboardCopy.textContent = isAdmin
+                ? 'Run the league from one screen. Build the roster, launch race weekends, manage sponsors, and keep every public view updated in real time.'
+                : 'Track your roster, schedule, standings, and race opportunities from the driver side of the championship.';
+        }
+
+        if (quickAddDriverButton) {
+            quickAddDriverButton.textContent = isAdmin ? '+ Add Driver' : 'Open Driver Hub';
+        }
+
+        if (addDriverButton) {
+            addDriverButton.textContent = isAdmin ? '+ New Driver' : '+ Request Driver Profile';
+        }
+
+        if (addTeamButton) {
+            addTeamButton.textContent = isAdmin ? '+ Create Team' : '+ Request Team';
+        }
+
+        if (addRaceButton) {
+            addRaceButton.textContent = isAdmin ? '+ Schedule Race' : 'View Race Rules';
+        }
+
+        if (sponsorsNavButton) {
+            sponsorsNavButton.textContent = isAdmin ? 'Sponsors' : 'Contracts';
+        }
+
+        if (driverHubNavButton) {
+            driverHubNavButton.textContent = 'Driver Hub';
+        }
+
+        if (adminNavButton) {
+            adminNavButton.textContent = 'Racing Manager';
+        }
+
+        document.body.dataset.role = !isAuthenticated ? 'guest' : (isAdmin ? 'admin' : 'driver');
+    },
+
     async getVisibleDrivers() {
         const drivers = await Database.drivers.getAll();
         if (this.isAdmin()) return drivers;

@@ -458,6 +458,26 @@ html, body {
     color: var(--tertiary);
 }
 
+body[data-role='admin'] .header {
+    border-bottom-color: var(--secondary-accent);
+    box-shadow: 0 12px 26px rgba(255, 215, 0, 0.12);
+}
+
+body[data-role='admin'] .card-featured {
+    border-color: rgba(255, 215, 0, 0.35);
+    box-shadow: 0 16px 36px rgba(255, 215, 0, 0.08);
+}
+
+body[data-role='driver'] .header {
+    border-bottom-color: var(--tertiary);
+    box-shadow: 0 12px 26px rgba(0, 217, 255, 0.12);
+}
+
+body[data-role='driver'] .card-featured {
+    border-color: rgba(0, 217, 255, 0.28);
+    box-shadow: 0 16px 36px rgba(0, 217, 255, 0.08);
+}
+
 .status-pill {
     display: inline-block;
     margin-top: 0.4rem;
@@ -507,6 +527,47 @@ html, body {
     background: var(--primary-accent);
     border-color: var(--primary-accent);
     transform: scale(1.1);
+}
+
+/* ===== WORKSPACE BANNER ===== */
+.workspace-banner {
+    max-width: 1400px;
+    margin: 1.25rem auto 0;
+    padding: 1.2rem 2rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 18px;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.workspace-banner-eyebrow {
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 0.75rem;
+    margin-bottom: 0.3rem;
+}
+
+.workspace-banner h2 {
+    font-size: clamp(1.2rem, 2.4vw, 1.8rem);
+}
+
+.workspace-banner-copy {
+    max-width: 48ch;
+    color: var(--text-secondary);
+}
+
+body[data-role='admin'] .workspace-banner {
+    border-color: rgba(255, 215, 0, 0.28);
+    background: linear-gradient(135deg, rgba(255, 215, 0, 0.12), rgba(255, 255, 255, 0.03));
+}
+
+body[data-role='driver'] .workspace-banner {
+    border-color: rgba(0, 217, 255, 0.28);
+    background: linear-gradient(135deg, rgba(0, 217, 255, 0.12), rgba(255, 255, 255, 0.03));
 }
 
 /* ===== MAIN CONTAINER ===== */
