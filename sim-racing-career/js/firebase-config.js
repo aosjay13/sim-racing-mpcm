@@ -140,25 +140,46 @@ try {
             });
         });
 
-        // Sign in anonymously so authenticated Firestore rules can be enforced.
-        // Requires Anonymous sign-in to be enabled in Firebase Console > Authentication > Sign-in providers.
+        // Sign in anonymously only when no real user is already present.
+        // We wait for the first auth state event so that a user returning from a
+        // Google redirect is never overwritten by a fresh anonymous session.
         if (runtimeFirebaseConfig.enableAnonymousAuth !== false) {
-            authReadyPromise = auth.signInAnonymously()
-                .then(() => {
-                    console.log('Signed in anonymously for Firestore access');
-                })
-                .catch((error) => {
-                    if (error.code === 'auth/configuration-not-found' || error.code === 'auth/operation-not-allowed') {
-                        console.warn(
-                            'Anonymous Authentication is not enabled in your Firebase project. ' +
-                            'Go to Firebase Console > Authentication > Sign-in providers and enable Anonymous. ' +
-                            'Continuing without auth — open Firestore rules are required until this is done.'
-                        );
-                    } else {
-                        console.error('Anonymous sign-in failed:', error);
+            authReadyPromise = new Promise((resolveAuthReady) => {
+                const unsub = auth.onAuthStateChanged(async (firstUser) => {
+                    unsub(); // fire once only
+
+                    if (firstUser && !firstUser.isAnonymous) {
+                        // Real user already present (e.g. returning from Google redirect).
+                        // Do NOT overwrite with an anonymous session.
+                        console.log('Real user detected on load, skipping anonymous sign-in.');
+                        resolveAuthReady();
+                        return;
                     }
-                    // Resolve so Firestore operations are not blocked.
+
+                    if (!firstUser) {
+                        // No session at all — create an anonymous one for Firestore access.
+                        try {
+                            await auth.signInAnonymously();
+                            console.log('Signed in anonymously for Firestore access');
+                        } catch (error) {
+                            if (
+                                error.code === 'auth/configuration-not-found' ||
+                                error.code === 'auth/operation-not-allowed'
+                            ) {
+                                console.warn(
+                                    'Anonymous Authentication is not enabled in your Firebase project. ' +
+                                    'Go to Firebase Console > Authentication > Sign-in providers and enable Anonymous. ' +
+                                    'Continuing without auth — open Firestore rules are required until this is done.'
+                                );
+                            } else {
+                                console.error('Anonymous sign-in failed:', error);
+                            }
+                        }
+                    }
+
+                    resolveAuthReady();
                 });
+            });
         }
     } catch (error) {
         console.warn('Firebase Auth init failed, continuing without auth:', error);
@@ -434,7 +455,10 @@ const AuthService = {
         }
 
         auth.getRedirectResult().catch((error) => {
-            console.error('Google redirect sign-in failed:', error);
+            // auth/no-auth-event fires on every normal page load with no pending redirect — safe to ignore.
+            if (error.code !== 'auth/no-auth-event') {
+                console.error('Google redirect sign-in failed:', error);
+            }
         });
 
         this._readyPromise = new Promise((resolve) => {
