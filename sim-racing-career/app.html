@@ -82,14 +82,14 @@
                     <span class="logo-fallback-text">Phoenix SRMPC</span>
                 </div>
                 <nav class="nav-main">
-                    <button class="nav-btn active" data-view="dashboard">Dashboard</button>
+                    <button class="nav-btn active" id="dashboard-nav-btn" data-view="dashboard">Dashboard</button>
                     <button class="nav-btn" data-view="calendar">Calendar</button>
                     <button class="nav-btn" data-view="drivers">Drivers</button>
                     <button class="nav-btn" data-view="teams">Teams</button>
                     <button class="nav-btn" data-view="standings">Standings</button>
-                    <button class="nav-btn" data-view="sponsors">Sponsors</button>
+                    <button class="nav-btn" id="sponsors-nav-btn" data-view="sponsors">Sponsors</button>
                     <button class="nav-btn hidden" id="driver-hub-nav-btn" data-view="driver-hub">Driver Hub</button>
-                    <button class="nav-btn hidden" id="admin-nav-btn" data-view="admin">Admin</button>
+                    <button class="nav-btn hidden" id="admin-nav-btn" data-view="admin">Racing Manager</button>
                 </nav>
                 <div class="header-actions">
                     <span id="auth-role-badge" class="auth-role-badge">Guest</span>
@@ -430,8 +430,64 @@
             <!-- Admin View -->
             <section id="admin-view" class="view">
                 <div class="view-header">
-                    <h2>Admin Controls</h2>
+                    <h2>Racing Manager</h2>
                     <button class="btn btn-secondary" id="admin-refresh-btn" type="button">Refresh</button>
+                </div>
+
+                <div class="admin-command-center card card-featured">
+                    <div class="card-header">
+                        <h3>League Control Tower</h3>
+                        <span class="badge-new">Admin</span>
+                    </div>
+                    <p>Direct the championship from one place. Build the roster, launch events, and keep the league moving without leaving the manager workspace.</p>
+                    <div class="admin-command-actions">
+                        <button class="btn btn-primary" id="admin-quick-add-driver" type="button">+ Add Driver</button>
+                        <button class="btn btn-secondary" id="admin-quick-add-team" type="button">+ Add Team</button>
+                        <button class="btn btn-secondary" id="admin-quick-add-race" type="button">+ Schedule Race</button>
+                    </div>
+                </div>
+
+                <div class="admin-manager-kpis">
+                    <div class="stat-card">
+                        <div class="stat-value" id="admin-kpi-drivers">0</div>
+                        <div class="stat-label">Approved Drivers</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="admin-kpi-teams">0</div>
+                        <div class="stat-label">Approved Teams</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="admin-kpi-races">0</div>
+                        <div class="stat-label">Scheduled Races</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="admin-kpi-pending">0</div>
+                        <div class="stat-label">Pending Reviews</div>
+                    </div>
+                </div>
+
+                <div class="admin-ops-grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Race Director Desk</h3>
+                        </div>
+                        <div class="form" style="padding-top: 1rem;">
+                            <div id="admin-upcoming-races-list">
+                                <p class="empty-state">No upcoming races on the board.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Operations Feed</h3>
+                        </div>
+                        <div class="form" style="padding-top: 1rem;">
+                            <div id="admin-operations-feed">
+                                <p class="empty-state">Manager insights will appear here.</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="admin-grid">

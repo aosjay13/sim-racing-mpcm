@@ -15,9 +15,7 @@ const UI = {
     },
 
     canEditTeam(team) {
-        if (this.isAdmin()) return true;
-        const uid = window.AppSession?.user?.uid || '';
-        return Boolean(uid && team?.ownerUid && team.ownerUid === uid);
+        return this.isAdmin();
     },
 
     normalizeDate(value) {
@@ -46,6 +44,21 @@ const UI = {
 
     // ===== VIEW MANAGEMENT =====
     switchView(viewName) {
+        if (viewName === 'admin' && !this.isAdmin()) {
+            this.showNotification('Administrator access required for this workspace.', 'error');
+            viewName = this.isAuthenticatedUser() ? 'driver-hub' : 'dashboard';
+        }
+
+        if (viewName === 'driver-hub' && (!this.isAuthenticatedUser() || this.isAdmin())) {
+            this.showNotification('Driver Hub is only available to signed-in drivers.', 'error');
+            viewName = this.isAdmin() ? 'dashboard' : 'calendar';
+        }
+
+        if (viewName === 'sponsors' && !this.isAdmin()) {
+            this.showNotification('Sponsors are managed from the admin workspace.', 'error');
+            viewName = this.isAuthenticatedUser() ? 'driver-hub' : 'dashboard';
+        }
+
         // Hide all views
         document.querySelectorAll('.view').forEach(view => {
             view.classList.remove('active');
@@ -82,69 +95,26 @@ const UI = {
             case 'calendar':
                 this.loadCalendar();
                 break;
+            case 'teams':
+                this.loadTeams();
+                break;
+            case 'standings':
+                this.loadStandings();
+                break;
             case 'sponsors':
                 this.loadSponsors();
                 break;
-            async toggleRaceSignup() {
-                const raceId = this.currentRaceDetailsId;
-                if (!raceId) {
-                    this.showNotification('No race selected.', 'error');
-                    return;
-                }
-
-                const user = window.AuthService?.getCurrentUser?.();
-                if (!user || user.isAnonymous) {
-                    this.showNotification('Sign in to manage race sign-up.', 'error');
-                    return;
-                }
-
-                const driverId = window.AppSession?.claimedDriverId || '';
-                if (!driverId) {
-                    this.showNotification('Pick your driver in Profile before signing up.', 'error');
-                    return;
-                }
-
-                const signedUp = await Database.raceSignups.isSignedUp({
-                    raceId,
-                    driverId,
-                    userId: user.uid
-                });
-
-                const selectedCarId = document.getElementById('race-signup-car')?.value || '';
-
-                try {
-                    if (signedUp) {
-                        await Database.raceSignups.remove({
-                            raceId,
-                            driverId,
-                            userId: user.uid
-                        });
-                        this.showNotification('You have withdrawn from this race.');
-                    } else {
-                        if (!selectedCarId) {
-                            this.showNotification('Select an owned compatible car before signing up.', 'error');
-                            return;
-                        }
-
-                        await Database.raceSignups.create({
-                            raceId,
-                            driverId,
-                            userId: user.uid,
-                            selectedCarId
-                        });
-                        this.showNotification('You are signed up for this race.');
-                    }
-
-                    await Promise.allSettled([
-                        this.openRaceDetails(raceId),
-                        this.loadCalendar(),
-                        this.loadDashboard()
-                    ]);
-                } catch (error) {
-                    console.error('Error toggling race signup:', error);
-                    this.showNotification('Could not update sign-up: ' + error.message, 'error');
-                }
-            },
+            case 'driver-hub':
+                this.loadDriverHub();
+                break;
+            case 'admin':
+                this.loadAdminPanel();
+                break;
+            default:
+                this.loadDashboard();
+                break;
+        }
+    },
 
             // ===== SPONSORS =====
             focusSponsorshipForm() {
@@ -1083,6 +1053,101 @@ const UI = {
         }
     },
 
+    async loadAdminCommandCenter() {
+        if (!this.isAdmin()) {
+            const upcomingList = document.getElementById('admin-upcoming-races-list');
+            const operationsFeed = document.getElementById('admin-operations-feed');
+            ['admin-kpi-drivers', 'admin-kpi-teams', 'admin-kpi-races', 'admin-kpi-pending'].forEach((id) => {
+                const element = document.getElementById(id);
+                if (element) element.textContent = '0';
+            });
+            if (upcomingList) upcomingList.innerHTML = '<p class="empty-state">Admin access required.</p>';
+            if (operationsFeed) operationsFeed.innerHTML = '<p class="empty-state">Admin access required.</p>';
+            return;
+        }
+
+        try {
+            const [drivers, teams, races, pendingDrivers, pendingTeams] = await Promise.all([
+                Database.drivers.getAll(),
+                Database.teams.getAll(),
+                Database.races.getAll(),
+                Database.drivers.getPending(),
+                Database.teams.getPending()
+            ]);
+
+            const approvedDrivers = drivers.filter((driver) => (driver.status || 'approved') === 'approved');
+            const approvedTeams = teams.filter((team) => (team.status || 'approved') === 'approved');
+            const scheduledRaces = races
+                .filter((race) => (race.status || 'scheduled') === 'scheduled')
+                .sort((a, b) => this.normalizeDate(a.date) - this.normalizeDate(b.date));
+            const pendingCount = pendingDrivers.length + pendingTeams.length;
+
+            const setText = (id, value) => {
+                const element = document.getElementById(id);
+                if (element) element.textContent = String(value);
+            };
+
+            setText('admin-kpi-drivers', approvedDrivers.length);
+            setText('admin-kpi-teams', approvedTeams.length);
+            setText('admin-kpi-races', scheduledRaces.length);
+            setText('admin-kpi-pending', pendingCount);
+
+            const upcomingList = document.getElementById('admin-upcoming-races-list');
+            if (upcomingList) {
+                if (!scheduledRaces.length) {
+                    upcomingList.innerHTML = '<p class="empty-state">No upcoming races on the board.</p>';
+                } else {
+                    upcomingList.innerHTML = scheduledRaces.slice(0, 4).map((race) => `
+                        <div class="moderation-item">
+                            <div class="moderation-item-header">
+                                <div>
+                                    <p class="moderation-title">${race.name}</p>
+                                    <p class="moderation-meta">${this.normalizeDate(race.date).toLocaleString()}</p>
+                                    <p class="moderation-meta">${race.game || 'Unassigned game'}${race.track ? ` • ${race.track}` : ''}</p>
+                                </div>
+                                <span class="status-pill status-approved">scheduled</span>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+            }
+
+            const operationsFeed = document.getElementById('admin-operations-feed');
+            if (operationsFeed) {
+                const feedItems = [
+                    {
+                        title: pendingCount ? `${pendingCount} submissions waiting for review` : 'Moderation queue is clear',
+                        copy: pendingCount
+                            ? `${pendingDrivers.length} driver requests and ${pendingTeams.length} team requests are ready for action.`
+                            : 'No pending driver or team submissions are blocking the grid.'
+                    },
+                    {
+                        title: scheduledRaces.length ? `${scheduledRaces.length} race events scheduled` : 'No races scheduled yet',
+                        copy: scheduledRaces.length
+                            ? `Next up: ${scheduledRaces[0].name} on ${this.normalizeDate(scheduledRaces[0].date).toLocaleDateString()}.`
+                            : 'Use Schedule Race to put the next event on the calendar.'
+                    },
+                    {
+                        title: `${approvedDrivers.length} active drivers across ${approvedTeams.length} teams`,
+                        copy: approvedTeams.length
+                            ? 'Roster changes propagate into the public league views after each successful admin action.'
+                            : 'Start by building teams, then slot drivers into your championship structure.'
+                    }
+                ];
+
+                operationsFeed.innerHTML = feedItems.map((item) => `
+                    <div class="ops-feed-item">
+                        <div class="ops-feed-title">${item.title}</div>
+                        <div class="ops-feed-copy">${item.copy}</div>
+                    </div>
+                `).join('');
+            }
+        } catch (error) {
+            console.error('Error loading admin command center:', error);
+            this.showNotification('Could not load admin command center: ' + error.message, 'error');
+        }
+    },
+
     async loadAdminPanel() {
         if (!this.isAdmin()) {
             const moderationList = document.getElementById('moderation-queue-list');
@@ -1091,10 +1156,12 @@ const UI = {
             if (moderationList) moderationList.innerHTML = '<p class="empty-state">Admin access required.</p>';
             if (adminList) adminList.innerHTML = '<p class="empty-state">Admin access required.</p>';
             if (payoutList) payoutList.innerHTML = '<p class="empty-state">Admin access required.</p>';
+            await this.loadAdminCommandCenter();
             return;
         }
 
         await Promise.allSettled([
+            this.loadAdminCommandCenter(),
             this.loadModerationQueue(),
             this.loadAdminList(),
             this.loadGamesCatalog(),
@@ -1195,6 +1262,7 @@ const UI = {
 
             this.showNotification(`${type} ${action}d successfully.`);
             await Promise.allSettled([
+                this.loadAdminCommandCenter(),
                 this.loadModerationQueue(),
                 this.loadDrivers(),
                 this.loadTeams(),
@@ -1265,7 +1333,7 @@ const UI = {
             form?.reset();
             const statusSelect = document.getElementById('admin-is-active');
             if (statusSelect) statusSelect.value = 'true';
-            await this.loadAdminList();
+            await Promise.allSettled([this.loadAdminList(), this.loadAdminCommandCenter()]);
         } catch (error) {
             console.error('Error saving admin:', error);
             this.showNotification('Could not save admin: ' + error.message, 'error');
@@ -1281,7 +1349,7 @@ const UI = {
         try {
             await Database.admins.setActive(uid, Boolean(isActive));
             this.showNotification('Admin status updated.');
-            await this.loadAdminList();
+            await Promise.allSettled([this.loadAdminList(), this.loadAdminCommandCenter()]);
         } catch (error) {
             console.error('Error updating admin status:', error);
             this.showNotification('Could not update admin: ' + error.message, 'error');
@@ -1301,7 +1369,7 @@ const UI = {
         try {
             await Database.admins.remove(uid);
             this.showNotification('Admin removed.');
-            await this.loadAdminList();
+            await Promise.allSettled([this.loadAdminList(), this.loadAdminCommandCenter()]);
         } catch (error) {
             console.error('Error removing admin:', error);
             this.showNotification('Could not remove admin: ' + error.message, 'error');
