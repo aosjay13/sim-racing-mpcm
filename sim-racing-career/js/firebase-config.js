@@ -418,6 +418,15 @@ const AuthService = {
     _user: null,
     _readyPromise: Promise.resolve(),
 
+    isEmbeddedContext() {
+        try {
+            return window.self !== window.top;
+        } catch (error) {
+            // Accessing window.top can throw in cross-origin embeds.
+            return true;
+        }
+    },
+
     init() {
         if (!auth) {
             this._readyPromise = Promise.resolve();
@@ -500,6 +509,30 @@ const AuthService = {
         provider.setCustomParameters({ prompt: 'select_account' });
         const currentUser = auth.currentUser;
 
+        const startRedirectFlow = async (preferLinkForAnonymous = false) => {
+            if (preferLinkForAnonymous && currentUser?.isAnonymous) {
+                try {
+                    await currentUser.linkWithRedirect(provider);
+                    return { redirectStarted: true };
+                } catch (linkRedirectError) {
+                    if (
+                        linkRedirectError.code === 'auth/provider-already-linked' ||
+                        linkRedirectError.code === 'auth/credential-already-in-use' ||
+                        linkRedirectError.code === 'auth/email-already-in-use'
+                    ) {
+                        await auth.signOut();
+                        await auth.signInWithRedirect(provider);
+                        return { redirectStarted: true };
+                    }
+
+                    throw linkRedirectError;
+                }
+            }
+
+            await auth.signInWithRedirect(provider);
+            return { redirectStarted: true };
+        };
+
         const signInWithPopupFlow = async () => {
             await auth.signInWithPopup(provider);
             await this.waitUntilReady();
@@ -507,6 +540,12 @@ const AuthService = {
         };
 
         try {
+            // Embedded surfaces (for example Google Sites iframes) are less reliable with popup auth.
+            // Redirect is more consistent in these contexts.
+            if (this.isEmbeddedContext()) {
+                return await startRedirectFlow(true);
+            }
+
             if (currentUser?.isAnonymous) {
                 try {
                     await currentUser.linkWithPopup(provider);
@@ -521,19 +560,27 @@ const AuthService = {
                         await auth.signOut();
                         return await signInWithPopupFlow();
                     }
+
+                    if (
+                        linkError.code === 'auth/popup-blocked' ||
+                        linkError.code === 'auth/cancelled-popup-request' ||
+                        linkError.code === 'auth/popup-closed-by-user'
+                    ) {
+                        return await startRedirectFlow(true);
+                    }
+
                     throw linkError;
                 }
             }
 
             return await signInWithPopupFlow();
         } catch (error) {
-            if (error.code === 'auth/popup-blocked' || error.code === 'auth/cancelled-popup-request') {
-                await auth.signInWithRedirect(provider);
-                return { redirectStarted: true };
-            }
-
-            if (error.code === 'auth/popup-closed-by-user') {
-                throw new Error('Sign-in popup was closed before completing authentication.');
+            if (
+                error.code === 'auth/popup-blocked' ||
+                error.code === 'auth/cancelled-popup-request' ||
+                error.code === 'auth/popup-closed-by-user'
+            ) {
+                return await startRedirectFlow(true);
             }
 
             if (error.code === 'auth/unauthorized-domain') {
@@ -556,6 +603,87 @@ const AuthService = {
             }
 
             throw error;
+        }
+    },
+
+    normalizeAuthError(error) {
+        if (!error?.code) {
+            return error?.message || 'Authentication failed.';
+        }
+
+        if (error.code === 'auth/invalid-email') {
+            return 'Enter a valid email address.';
+        }
+
+        if (error.code === 'auth/missing-password' || error.code === 'auth/internal-error') {
+            return 'Enter your email and password.';
+        }
+
+        if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+            return 'Email or password is incorrect.';
+        }
+
+        if (error.code === 'auth/email-already-in-use') {
+            return 'That email is already in use. Sign in instead, or use password reset in Firebase Console.';
+        }
+
+        if (error.code === 'auth/weak-password') {
+            return 'Password must be at least 6 characters.';
+        }
+
+        if (error.code === 'auth/operation-not-allowed') {
+            return 'Email/password sign-in is disabled in Firebase Authentication. Enable the Email/Password provider and try again.';
+        }
+
+        if (error.code === 'auth/too-many-requests') {
+            return 'Too many failed attempts. Wait a bit and try again.';
+        }
+
+        return error.message || 'Authentication failed.';
+    },
+
+    async signInWithEmailPassword(email, password) {
+        if (!auth) {
+            throw new Error('Authentication is not configured.');
+        }
+
+        const normalizedEmail = String(email || '').trim();
+        const normalizedPassword = String(password || '');
+
+        try {
+            if (auth.currentUser?.isAnonymous) {
+                await auth.signOut();
+            }
+
+            await auth.signInWithEmailAndPassword(normalizedEmail, normalizedPassword);
+            await this.waitUntilReady();
+            return { user: this._user };
+        } catch (error) {
+            throw new Error(this.normalizeAuthError(error));
+        }
+    },
+
+    async registerWithEmailPassword(email, password) {
+        if (!auth) {
+            throw new Error('Authentication is not configured.');
+        }
+
+        const normalizedEmail = String(email || '').trim();
+        const normalizedPassword = String(password || '');
+
+        try {
+            const currentUser = auth.currentUser;
+            if (currentUser?.isAnonymous) {
+                const credential = firebase.auth.EmailAuthProvider.credential(normalizedEmail, normalizedPassword);
+                await currentUser.linkWithCredential(credential);
+            } else {
+                await auth.createUserWithEmailAndPassword(normalizedEmail, normalizedPassword);
+            }
+
+            await this.waitUntilReady();
+            return { user: this._user };
+        } catch (error) {
+            throw new Error(this.normalizeAuthError(error));
         }
     },
 

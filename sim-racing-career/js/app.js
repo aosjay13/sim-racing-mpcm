@@ -7,7 +7,8 @@ const AppSession = {
     claimedDriverId: '',
     loginIntent: 'driver',
     hasEnteredApp: false,
-    authInFlight: false
+    authInFlight: false,
+    authAutoLaunchAttempted: false
 };
 
 // ===== APPLICATION INITIALIZATION =====
@@ -35,6 +36,10 @@ function updateAuthDiagnostics() {
 
     if (host.includes('github.dev') || host.includes('app.github.dev')) {
         hints.push('Preview domains usually require adding this exact host to Firebase Auth Authorized domains.');
+    }
+
+    if (window.AuthService?.isEmbeddedContext?.()) {
+        hints.push('Embedded mode detected: Google sign-in will open in a separate browser tab.');
     }
 
     if (!status?.hasAuth) {
@@ -71,6 +76,14 @@ async function initializeAuthSession() {
 
     await window.AuthService.waitUntilReady();
 
+    const params = new URLSearchParams(window.location.search);
+    const authIntentParam = params.get('authIntent');
+    const shouldAutoLaunchAuth = params.get('authLaunch') === '1';
+
+    if (authIntentParam === 'admin' || authIntentParam === 'driver') {
+        AppSession.loginIntent = authIntentParam;
+    }
+
     window.AuthService.onAuthStateChanged(async (state) => {
         AppSession.user = state.user;
         AppSession.isAuthenticated = state.isAuthenticated;
@@ -87,6 +100,12 @@ async function initializeAuthSession() {
 
         if (AppSession.isAuthenticated && !AppSession.hasEnteredApp) {
             AppSession.hasEnteredApp = true;
+
+            if (window.location.search.includes('authLaunch=1')) {
+                const cleanedUrl = window.location.pathname + window.location.hash;
+                window.history.replaceState({}, document.title, cleanedUrl);
+            }
+
             if (AppSession.loginIntent === 'admin' && !AppSession.isAdmin) {
                 UI.showNotification('Admin access was not found for this account. Opening Driver portal instead.', 'error');
             }
@@ -106,6 +125,11 @@ async function initializeAuthSession() {
             UI.loadDriverHub(),
             loadDriverTeamOptions()
         ]);
+
+        if (!AppSession.isAuthenticated && shouldAutoLaunchAuth && !AppSession.authAutoLaunchAttempted) {
+            AppSession.authAutoLaunchAttempted = true;
+            await handleLogin();
+        }
     });
 }
 
@@ -166,6 +190,7 @@ function updateAuthUI() {
     const loginBtn = document.getElementById('login-btn');
     const logoutBtn = document.getElementById('logout-btn');
     const roleBadge = document.getElementById('auth-role-badge');
+    const emailForm = document.getElementById('auth-email-form');
 
     if (loginBtn) {
         loginBtn.classList.toggle('hidden', AppSession.isAuthenticated);
@@ -186,6 +211,10 @@ function updateAuthUI() {
         } else {
             roleBadge.textContent = 'Guest';
         }
+    }
+
+    if (emailForm) {
+        emailForm.classList.toggle('hidden', AppSession.isAuthenticated);
     }
 
     updateShellVisibility();
@@ -277,7 +306,12 @@ async function handleLogin() {
     const loginBtn = document.getElementById('login-btn');
     const driverBtn = document.getElementById('auth-driver-login-btn');
     const adminBtn = document.getElementById('auth-admin-login-btn');
-    [loginBtn, driverBtn, adminBtn].forEach((button) => {
+    const emailDriverBtn = document.getElementById('auth-email-driver-btn');
+    const emailAdminBtn = document.getElementById('auth-email-admin-btn');
+    const emailInput = document.getElementById('auth-email');
+    const passwordInput = document.getElementById('auth-password');
+    const createAccountInput = document.getElementById('auth-create-account');
+    [loginBtn, driverBtn, adminBtn, emailDriverBtn, emailAdminBtn, emailInput, passwordInput, createAccountInput].forEach((button) => {
         if (button) button.disabled = true;
     });
 
@@ -295,14 +329,83 @@ async function handleLogin() {
         updateAuthDiagnostics();
     } finally {
         AppSession.authInFlight = false;
-        [loginBtn, driverBtn, adminBtn].forEach((button) => {
+        [loginBtn, driverBtn, adminBtn, emailDriverBtn, emailAdminBtn, emailInput, passwordInput, createAccountInput].forEach((button) => {
             if (button) button.disabled = false;
+        });
+    }
+}
+
+async function handleEmailPasswordAuth(intent) {
+    if (!window.AuthService) {
+        UI.showNotification('Authentication service is unavailable.', 'error');
+        return;
+    }
+
+    if (AppSession.authInFlight) {
+        return;
+    }
+
+    const email = document.getElementById('auth-email')?.value?.trim() || '';
+    const password = document.getElementById('auth-password')?.value || '';
+    const createAccount = Boolean(document.getElementById('auth-create-account')?.checked);
+
+    if (!email || !password) {
+        UI.showNotification('Enter both email and password.', 'error');
+        return;
+    }
+
+    AppSession.loginIntent = intent === 'admin' ? 'admin' : 'driver';
+    AppSession.authInFlight = true;
+
+    const loginBtn = document.getElementById('login-btn');
+    const driverBtn = document.getElementById('auth-driver-login-btn');
+    const adminBtn = document.getElementById('auth-admin-login-btn');
+    const emailDriverBtn = document.getElementById('auth-email-driver-btn');
+    const emailAdminBtn = document.getElementById('auth-email-admin-btn');
+    const emailInput = document.getElementById('auth-email');
+    const passwordInput = document.getElementById('auth-password');
+    const createAccountInput = document.getElementById('auth-create-account');
+    [loginBtn, driverBtn, adminBtn, emailDriverBtn, emailAdminBtn, emailInput, passwordInput, createAccountInput].forEach((control) => {
+        if (control) control.disabled = true;
+    });
+
+    try {
+        if (createAccount) {
+            await window.AuthService.registerWithEmailPassword(email, password);
+            UI.showNotification('Account created and signed in.');
+        } else {
+            await window.AuthService.signInWithEmailPassword(email, password);
+            UI.showNotification('Signed in successfully.');
+        }
+    } catch (error) {
+        console.error('Email/password auth error:', error);
+        UI.showNotification('Sign in failed: ' + error.message, 'error');
+    } finally {
+        AppSession.authInFlight = false;
+        [loginBtn, driverBtn, adminBtn, emailDriverBtn, emailAdminBtn, emailInput, passwordInput, createAccountInput].forEach((control) => {
+            if (control) control.disabled = false;
         });
     }
 }
 
 async function handleIntentLogin(intent) {
     AppSession.loginIntent = intent === 'admin' ? 'admin' : 'driver';
+
+    if (window.AuthService?.isEmbeddedContext?.()) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('authIntent', AppSession.loginIntent);
+        url.searchParams.set('authLaunch', '1');
+
+        const launched = window.open(url.toString(), '_blank', 'noopener,noreferrer');
+        if (launched) {
+            UI.showNotification('Opened sign-in in a new tab to complete Google authentication.');
+            return;
+        }
+
+        UI.showNotification('Please allow pop-ups for this site to complete login in a new tab.', 'error');
+        return;
+    }
+
     await handleLogin();
 }
 
@@ -326,6 +429,15 @@ function initializeEventListeners() {
 
     document.getElementById('auth-admin-login-btn')?.addEventListener('click', () => {
         handleIntentLogin('admin');
+    });
+
+    document.getElementById('auth-email-form')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        await handleEmailPasswordAuth('driver');
+    });
+
+    document.getElementById('auth-email-admin-btn')?.addEventListener('click', async () => {
+        await handleEmailPasswordAuth('admin');
     });
 
     // Navigation buttons

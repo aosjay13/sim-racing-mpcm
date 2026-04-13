@@ -44,6 +44,32 @@
                     <span class="auth-panel-action">Continue with Google as Admin</span>
                 </button>
             </div>
+            <div class="auth-fallback-divider" aria-hidden="true">
+                <span>Or use email</span>
+            </div>
+            <form id="auth-email-form" class="auth-fallback-form">
+                <div class="auth-fallback-grid">
+                    <div class="auth-fallback-field">
+                        <label for="auth-email">Email</label>
+                        <input id="auth-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+                    </div>
+                    <div class="auth-fallback-field">
+                        <label for="auth-password">Password</label>
+                        <input id="auth-password" name="password" type="password" autocomplete="current-password" placeholder="At least 6 characters" required>
+                    </div>
+                </div>
+                <div class="auth-fallback-row">
+                    <label class="auth-fallback-check" for="auth-create-account">
+                        <input id="auth-create-account" name="createAccount" type="checkbox">
+                        <span>Create a new account instead of signing in</span>
+                    </label>
+                    <span class="auth-fallback-copy">Uses Firebase Email/Password auth. Admin access still depends on your admins record.</span>
+                </div>
+                <div class="auth-fallback-actions">
+                    <button id="auth-email-driver-btn" class="btn btn-secondary" type="submit">Continue as Driver</button>
+                    <button id="auth-email-admin-btn" class="btn btn-primary" type="button">Continue as Admin</button>
+                </div>
+            </form>
         </div>
     </section>
 

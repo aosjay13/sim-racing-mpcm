@@ -105,6 +105,103 @@ html, body {
     gap: 1rem;
 }
 
+.auth-fallback-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    margin: 1.35rem 0 1rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-size: 0.78rem;
+}
+
+.auth-fallback-divider::before,
+.auth-fallback-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+}
+
+.auth-fallback-form {
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.auth-fallback-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.9rem;
+}
+
+.auth-fallback-field {
+    display: grid;
+    gap: 0.4rem;
+}
+
+.auth-fallback-field label {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+}
+
+.auth-fallback-field input {
+    width: 100%;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: rgba(10, 10, 10, 0.9);
+    color: var(--text-primary);
+    padding: 0.8rem 0.9rem;
+    font: inherit;
+}
+
+.auth-fallback-field input:focus-visible {
+    outline: 2px solid var(--secondary-accent);
+    outline-offset: 1px;
+    border-color: var(--secondary-accent);
+}
+
+.auth-fallback-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 0.9rem;
+}
+
+.auth-fallback-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.92rem;
+}
+
+.auth-fallback-copy {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    text-align: right;
+}
+
+.auth-fallback-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.auth-fallback-form button:disabled,
+.auth-fallback-form input:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+
 .auth-panel {
     border: 1px solid var(--border-color);
     border-radius: 12px;
@@ -1280,6 +1377,20 @@ html, body {
 
     .auth-gate-panels {
         grid-template-columns: 1fr;
+    }
+
+    .auth-fallback-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .auth-fallback-row,
+    .auth-fallback-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .auth-fallback-copy {
+        text-align: left;
     }
 
     .header {
