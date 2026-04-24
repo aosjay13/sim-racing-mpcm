@@ -5,11 +5,54 @@ const AppSession = {
     isAuthenticated: false,
     isAdmin: false,
     claimedDriverId: '',
-    loginIntent: 'driver',
+    loginIntent: '',
     hasEnteredApp: false,
     authInFlight: false,
     authAutoLaunchAttempted: false
 };
+
+function refreshAuthRoleUI() {
+    const selectedRoleEl = document.getElementById('auth-selected-role');
+    const submitBtn = document.getElementById('auth-submit-btn');
+    const driverPanel = document.getElementById('auth-driver-login-btn');
+    const adminPanel = document.getElementById('auth-admin-login-btn');
+
+    const roleIsSelected = AppSession.loginIntent === 'admin' || AppSession.loginIntent === 'driver';
+    const selectedRoleLabel = AppSession.loginIntent === 'admin'
+        ? 'Administrator / Game Master'
+        : (AppSession.loginIntent === 'driver' ? 'Driver' : 'Not selected');
+
+    if (selectedRoleEl) {
+        selectedRoleEl.textContent = selectedRoleLabel;
+    }
+
+    if (submitBtn) {
+        submitBtn.textContent = roleIsSelected
+            ? `Sign In as ${AppSession.loginIntent === 'admin' ? 'Admin' : 'Driver'}`
+            : 'Select Driver or Admin First';
+        submitBtn.disabled = !roleIsSelected;
+    }
+
+    if (driverPanel) {
+        driverPanel.classList.toggle('auth-panel-selected', AppSession.loginIntent === 'driver');
+    }
+
+    if (adminPanel) {
+        adminPanel.classList.toggle('auth-panel-selected', AppSession.loginIntent === 'admin');
+    }
+}
+
+function refreshUsernameHelper() {
+    const usernameInput = document.getElementById('auth-email');
+    const helperEl = document.getElementById('auth-username-helper');
+    if (!helperEl) return;
+
+    const normalized = String(usernameInput?.value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]/g, '');
+    helperEl.textContent = `No email needed. Internal auth ID preview: ${(normalized || 'your_username')}@srmpc.local`;
+}
 
 // ===== APPLICATION INITIALIZATION =====
 document.addEventListener('DOMContentLoaded', async function() {
@@ -20,6 +63,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     await initializeAuthSession();
     loadDriverTeamOptions();
     toggleNewDriverTeamFields();
+    refreshAuthRoleUI();
+    refreshUsernameHelper();
 });
 
 function updateAuthDiagnostics() {
@@ -369,12 +414,25 @@ function requireAdmin(message = 'Administrator access required for this action.'
 }
 
 async function handleLogin() {
-    await handleEmailPasswordAuth(AppSession.loginIntent || 'driver');
+    await handleEmailPasswordAuth(AppSession.loginIntent);
 }
 
 async function handleEmailPasswordAuth(intent) {
+    const notify = (message, type = 'success') => {
+        if (window.UI && typeof window.UI.showNotification === 'function') {
+            window.UI.showNotification(message, type);
+            return;
+        }
+        // Fallback so auth flow never crashes if UI wiring is delayed.
+        if (type === 'error') {
+            console.error(message);
+        } else {
+            console.log(message);
+        }
+    };
+
     if (!window.AuthService) {
-        UI.showNotification('Authentication service is unavailable.', 'error');
+        notify('Authentication service is unavailable.', 'error');
         return;
     }
 
@@ -393,47 +451,68 @@ async function handleEmailPasswordAuth(intent) {
         errorEl.textContent = '';
     }
 
+    const selectedIntent = intent === 'admin' || intent === 'driver' ? intent : AppSession.loginIntent;
+    if (selectedIntent !== 'admin' && selectedIntent !== 'driver') {
+        if (errorEl) {
+            errorEl.textContent = 'Select Driver or Admin/Game Master first.';
+            errorEl.style.display = 'block';
+        }
+        notify('Select Driver or Admin/Game Master first.', 'error');
+        return;
+    }
+
     if (!username || !password) {
         if (errorEl) {
             errorEl.textContent = 'Enter both username and password.';
             errorEl.style.display = 'block';
         }
-        UI.showNotification('Enter both username and password.', 'error');
+        notify('Enter both username and password.', 'error');
         return;
     }
 
-    AppSession.loginIntent = intent === 'admin' ? 'admin' : 'driver';
+    AppSession.loginIntent = selectedIntent;
     AppSession.authInFlight = true;
 
     const loginBtn = document.getElementById('login-btn');
     const driverBtn = document.getElementById('auth-driver-login-btn');
     const adminBtn = document.getElementById('auth-admin-login-btn');
-    const emailDriverBtn = document.getElementById('auth-email-driver-btn');
-    const emailAdminBtn = document.getElementById('auth-email-admin-btn');
+    const submitBtn = document.getElementById('auth-submit-btn');
     const emailInput = document.getElementById('auth-email');
     const passwordInput = document.getElementById('auth-password');
+    const displayNameInput = document.getElementById('auth-display-name');
     const createAccountInput = document.getElementById('auth-create-account');
-    [loginBtn, driverBtn, adminBtn, emailDriverBtn, emailAdminBtn, emailInput, passwordInput, createAccountInput].forEach((control) => {
+    [loginBtn, driverBtn, adminBtn, submitBtn, emailInput, passwordInput, displayNameInput, createAccountInput].forEach((control) => {
         if (control) control.disabled = true;
     });
 
     try {
         if (createAccount) {
-            await window.AuthService.registerWithUsernamePassword({
-                username,
-                password,
-                displayName,
-                requestedRole: AppSession.loginIntent
-            });
+            try {
+                await window.AuthService.registerWithUsernamePassword({
+                    username,
+                    password,
+                    displayName,
+                    requestedRole: selectedIntent
+                });
 
-            if (AppSession.loginIntent === 'admin') {
-                UI.showNotification('Account created. Admin/Game Master access is pending approval.', 'success');
-            } else {
-                UI.showNotification('Account created and signed in as Driver.', 'success');
+                if (selectedIntent === 'admin') {
+                    notify('Account created. Admin/Game Master access is pending approval.', 'success');
+                } else {
+                    notify('Account created and signed in as Driver.', 'success');
+                }
+            } catch (createError) {
+                // If username already exists, attempt sign-in with provided password.
+                const createMessage = (createError?.message || '').toLowerCase();
+                if (createMessage.includes('already in use') || createMessage.includes('already exists')) {
+                    await window.AuthService.signInWithUsernamePassword(username, password);
+                    notify('Account already exists — signed you in instead.', 'success');
+                } else {
+                    throw createError;
+                }
             }
         } else {
             await window.AuthService.signInWithUsernamePassword(username, password);
-            UI.showNotification('Signed in successfully.');
+            notify('Signed in successfully.');
         }
     } catch (error) {
         console.error('Email/password auth error:', error);
@@ -441,10 +520,10 @@ async function handleEmailPasswordAuth(intent) {
             errorEl.textContent = error.message || 'Sign in failed.';
             errorEl.style.display = 'block';
         }
-        UI.showNotification('Sign in failed: ' + error.message, 'error');
+        notify('Sign in failed: ' + (error.message || 'Unknown error'), 'error');
     } finally {
         AppSession.authInFlight = false;
-        [loginBtn, driverBtn, adminBtn, emailDriverBtn, emailAdminBtn, emailInput, passwordInput, createAccountInput].forEach((control) => {
+        [loginBtn, driverBtn, adminBtn, submitBtn, emailInput, passwordInput, displayNameInput, createAccountInput].forEach((control) => {
             if (control) control.disabled = false;
         });
     }
@@ -452,9 +531,12 @@ async function handleEmailPasswordAuth(intent) {
 
 async function handleIntentLogin(intent) {
     AppSession.loginIntent = intent === 'admin' ? 'admin' : 'driver';
+    refreshAuthRoleUI();
 
-    // Username/password flow: portal button selects the intended role and submits current credentials.
-    await handleEmailPasswordAuth(AppSession.loginIntent);
+    const usernameInput = document.getElementById('auth-email');
+    if (usernameInput) {
+        usernameInput.focus();
+    }
 }
 
 async function handleLogout() {
@@ -481,12 +563,10 @@ function initializeEventListeners() {
 
     document.getElementById('auth-email-form')?.addEventListener('submit', async (event) => {
         event.preventDefault();
-        await handleEmailPasswordAuth(AppSession.loginIntent || 'driver');
+        await handleEmailPasswordAuth(AppSession.loginIntent);
     });
 
-    document.getElementById('auth-email-admin-btn')?.addEventListener('click', async () => {
-        await handleEmailPasswordAuth('admin');
-    });
+    document.getElementById('auth-email')?.addEventListener('input', refreshUsernameHelper);
 
     // Navigation buttons use delegation so role-based visibility changes do not break clicks.
     document.querySelector('.nav-main')?.addEventListener('click', (event) => {

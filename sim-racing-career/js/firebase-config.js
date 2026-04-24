@@ -640,19 +640,19 @@ const AuthService = {
         }
 
         if (error.code === 'auth/invalid-email') {
-            return 'Enter a valid email address.';
+            return 'Invalid username or password.';
         }
 
         if (error.code === 'auth/missing-password' || error.code === 'auth/internal-error') {
-            return 'Enter your email and password.';
+            return 'Enter your username and password.';
         }
 
         if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
-            return 'Email or password is incorrect.';
+            return 'Username or password is incorrect.';
         }
 
         if (error.code === 'auth/email-already-in-use') {
-            return 'That email is already in use. Sign in instead, or use password reset in Firebase Console.';
+            return 'That username already exists. Sign in instead.';
         }
 
         if (error.code === 'auth/weak-password') {
@@ -660,15 +660,11 @@ const AuthService = {
         }
 
         if (error.code === 'auth/operation-not-allowed') {
-            return 'Email/password sign-in is disabled in Firebase Authentication. Enable the Email/Password provider and try again.';
+            return 'Username/password sign-in backend is disabled in Firebase Authentication. Enable Email/Password provider and try again.';
         }
 
         if (error.code === 'auth/too-many-requests') {
             return 'Too many failed attempts. Wait a bit and try again.';
-        }
-
-        if (error.code === 'auth/invalid-email') {
-            return 'Invalid username or password.';
         }
 
         return error.message || 'Authentication failed.';
