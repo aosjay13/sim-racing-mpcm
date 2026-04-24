@@ -5,40 +5,22 @@ const AppSession = {
     isAuthenticated: false,
     isAdmin: false,
     claimedDriverId: '',
-    loginIntent: '',
+    loginIntent: 'driver',
     hasEnteredApp: false,
     authInFlight: false,
     authAutoLaunchAttempted: false
 };
 
 function refreshAuthRoleUI() {
-    const selectedRoleEl = document.getElementById('auth-selected-role');
-    const submitBtn = document.getElementById('auth-submit-btn');
-    const driverPanel = document.getElementById('auth-driver-login-btn');
-    const adminPanel = document.getElementById('auth-admin-login-btn');
+    const driverBtn = document.getElementById('auth-email-driver-btn');
+    const gameMasterBtn = document.getElementById('auth-email-admin-btn');
 
-    const roleIsSelected = AppSession.loginIntent === 'admin' || AppSession.loginIntent === 'driver';
-    const selectedRoleLabel = AppSession.loginIntent === 'admin'
-        ? 'Administrator / Game Master'
-        : (AppSession.loginIntent === 'driver' ? 'Driver' : 'Not selected');
-
-    if (selectedRoleEl) {
-        selectedRoleEl.textContent = selectedRoleLabel;
+    if (driverBtn) {
+        driverBtn.classList.toggle('auth-panel-selected', AppSession.loginIntent === 'driver');
     }
 
-    if (submitBtn) {
-        submitBtn.textContent = roleIsSelected
-            ? `Sign In as ${AppSession.loginIntent === 'admin' ? 'Admin' : 'Driver'}`
-            : 'Select Driver or Admin First';
-        submitBtn.disabled = !roleIsSelected;
-    }
-
-    if (driverPanel) {
-        driverPanel.classList.toggle('auth-panel-selected', AppSession.loginIntent === 'driver');
-    }
-
-    if (adminPanel) {
-        adminPanel.classList.toggle('auth-panel-selected', AppSession.loginIntent === 'admin');
+    if (gameMasterBtn) {
+        gameMasterBtn.classList.toggle('auth-panel-selected', AppSession.loginIntent === 'admin');
     }
 }
 
@@ -474,14 +456,13 @@ async function handleEmailPasswordAuth(intent) {
     AppSession.authInFlight = true;
 
     const loginBtn = document.getElementById('login-btn');
-    const driverBtn = document.getElementById('auth-driver-login-btn');
-    const adminBtn = document.getElementById('auth-admin-login-btn');
-    const submitBtn = document.getElementById('auth-submit-btn');
+    const driverBtn = document.getElementById('auth-email-driver-btn');
+    const adminBtn = document.getElementById('auth-email-admin-btn');
     const emailInput = document.getElementById('auth-email');
     const passwordInput = document.getElementById('auth-password');
     const displayNameInput = document.getElementById('auth-display-name');
     const createAccountInput = document.getElementById('auth-create-account');
-    [loginBtn, driverBtn, adminBtn, submitBtn, emailInput, passwordInput, displayNameInput, createAccountInput].forEach((control) => {
+    [loginBtn, driverBtn, adminBtn, emailInput, passwordInput, displayNameInput, createAccountInput].forEach((control) => {
         if (control) control.disabled = true;
     });
 
@@ -523,7 +504,7 @@ async function handleEmailPasswordAuth(intent) {
         notify('Sign in failed: ' + (error.message || 'Unknown error'), 'error');
     } finally {
         AppSession.authInFlight = false;
-        [loginBtn, driverBtn, adminBtn, submitBtn, emailInput, passwordInput, displayNameInput, createAccountInput].forEach((control) => {
+        [loginBtn, driverBtn, adminBtn, emailInput, passwordInput, displayNameInput, createAccountInput].forEach((control) => {
             if (control) control.disabled = false;
         });
     }
@@ -553,17 +534,17 @@ async function handleLogout() {
 
 // ===== EVENT LISTENERS SETUP =====
 function initializeEventListeners() {
-    document.getElementById('auth-driver-login-btn')?.addEventListener('click', () => {
-        handleIntentLogin('driver');
-    });
-
-    document.getElementById('auth-admin-login-btn')?.addEventListener('click', () => {
-        handleIntentLogin('admin');
-    });
-
     document.getElementById('auth-email-form')?.addEventListener('submit', async (event) => {
         event.preventDefault();
         await handleEmailPasswordAuth(AppSession.loginIntent);
+    });
+
+    document.getElementById('auth-email-driver-btn')?.addEventListener('click', async () => {
+        await handleEmailPasswordAuth('driver');
+    });
+
+    document.getElementById('auth-email-admin-btn')?.addEventListener('click', async () => {
+        await handleEmailPasswordAuth('admin');
     });
 
     document.getElementById('auth-email')?.addEventListener('input', refreshUsernameHelper);

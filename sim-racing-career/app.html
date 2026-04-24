@@ -30,25 +30,8 @@
                 <span class="status-pill status-rejected">Protected admin controls</span>
             </div>
             <p id="auth-gate-diagnostics" class="auth-gate-diagnostics hidden"></p>
-            <div class="auth-gate-panels">
-                <button id="auth-driver-login-btn" class="auth-panel auth-panel-driver" type="button" onclick="handleIntentLogin('driver')">
-                    <span class="auth-panel-icon" aria-hidden="true">🏎️</span>
-                    <span class="auth-panel-label">Driver Portal</span>
-                    <span class="auth-panel-copy">Step 1: choose Driver role, then sign in or create your account below.</span>
-                    <span class="auth-panel-action">Select Driver Role</span>
-                </button>
-                <button id="auth-admin-login-btn" class="auth-panel auth-panel-admin" type="button" onclick="handleIntentLogin('admin')">
-                    <span class="auth-panel-icon" aria-hidden="true">🛠️</span>
-                    <span class="auth-panel-label">Admin / Game Master Portal</span>
-                    <span class="auth-panel-copy">Step 1: choose Admin/Game Master role, then sign in or request admin access below.</span>
-                    <span class="auth-panel-action">Select Admin Role</span>
-                </button>
-            </div>
             <div class="auth-fallback-divider" aria-hidden="true">
                 <span>Username Login</span>
-            </div>
-            <div id="auth-role-choice" class="auth-role-choice">
-                Selected role: <strong id="auth-selected-role">Not selected</strong>
             </div>
             <form id="auth-email-form" class="auth-fallback-form">
                 <div class="auth-fallback-grid">
@@ -74,7 +57,8 @@
                     <span class="auth-fallback-copy">Admin/Game Master accounts require approval before admin access is granted.</span>
                 </div>
                 <div class="auth-fallback-actions">
-                    <button id="auth-submit-btn" class="btn btn-primary" type="submit" disabled>Select Driver or Admin First</button>
+                    <button id="auth-email-driver-btn" class="btn btn-secondary" type="button">Sign In as Driver</button>
+                    <button id="auth-email-admin-btn" class="btn btn-primary" type="button">Sign In as Game Master</button>
                 </div>
                 <p id="auth-email-error" class="auth-email-error" style="display:none;"></p>
             </form>

@@ -310,16 +310,6 @@ html, body {
     box-shadow: 0 0 0 2px rgba(255, 215, 0, 0.2) inset;
 }
 
-.auth-role-choice {
-    margin: 0.9rem 0 0.7rem;
-    color: var(--text-secondary);
-    font-size: 0.9rem;
-}
-
-.auth-role-choice strong {
-    color: var(--text-primary);
-}
-
 .auth-username-helper {
     margin-top: 0.35rem;
     font-size: 0.78rem;
