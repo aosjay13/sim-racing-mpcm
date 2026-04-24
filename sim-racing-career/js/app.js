@@ -430,8 +430,18 @@ async function handleEmailPasswordAuth(intent) {
     const email = document.getElementById('auth-email')?.value?.trim() || '';
     const password = document.getElementById('auth-password')?.value || '';
     const createAccount = Boolean(document.getElementById('auth-create-account')?.checked);
+    const errorEl = document.getElementById('auth-email-error');
+
+    if (errorEl) {
+        errorEl.style.display = 'none';
+        errorEl.textContent = '';
+    }
 
     if (!email || !password) {
+        if (errorEl) {
+            errorEl.textContent = 'Enter both email and password.';
+            errorEl.style.display = 'block';
+        }
         UI.showNotification('Enter both email and password.', 'error');
         return;
     }
@@ -461,6 +471,10 @@ async function handleEmailPasswordAuth(intent) {
         }
     } catch (error) {
         console.error('Email/password auth error:', error);
+        if (errorEl) {
+            errorEl.textContent = error.message || 'Sign in failed.';
+            errorEl.style.display = 'block';
+        }
         UI.showNotification('Sign in failed: ' + error.message, 'error');
     } finally {
         AppSession.authInFlight = false;
@@ -474,18 +488,17 @@ async function handleIntentLogin(intent) {
     AppSession.loginIntent = intent === 'admin' ? 'admin' : 'driver';
 
     if (window.AuthService?.isEmbeddedContext?.()) {
+        // First try opening a new tab for environments that block popup auth in iframes.
         const url = new URL(window.location.href);
         url.searchParams.set('authIntent', AppSession.loginIntent);
         url.searchParams.set('authLaunch', '1');
 
         const launched = window.open(url.toString(), '_blank', 'noopener,noreferrer');
         if (launched) {
-            UI.showNotification('Opened sign-in in a new tab to complete Google authentication.');
+            UI.showNotification('Sign-in tab opened — complete Google sign-in there, then return here.');
             return;
         }
-
-        UI.showNotification('Please allow pop-ups for this site to complete login in a new tab.', 'error');
-        return;
+        // Popup blocked: fall through to handleLogin(), which will use redirect flow.
     }
 
     await handleLogin();

@@ -31,13 +31,13 @@
             </div>
             <p id="auth-gate-diagnostics" class="auth-gate-diagnostics hidden"></p>
             <div class="auth-gate-panels">
-                <button id="auth-driver-login-btn" class="auth-panel auth-panel-driver" type="button">
+                <button id="auth-driver-login-btn" class="auth-panel auth-panel-driver" type="button" onclick="handleIntentLogin('driver')">
                     <span class="auth-panel-icon" aria-hidden="true">🏎️</span>
                     <span class="auth-panel-label">Driver Portal</span>
                     <span class="auth-panel-copy">Manage your profile, garage, races, and earnings.</span>
                     <span class="auth-panel-action">Continue with Google as Driver</span>
                 </button>
-                <button id="auth-admin-login-btn" class="auth-panel auth-panel-admin" type="button">
+                <button id="auth-admin-login-btn" class="auth-panel auth-panel-admin" type="button" onclick="handleIntentLogin('admin')">
                     <span class="auth-panel-icon" aria-hidden="true">🛠️</span>
                     <span class="auth-panel-label">Admin Portal</span>
                     <span class="auth-panel-copy">Moderate, configure races, and control league operations.</span>
@@ -66,9 +66,10 @@
                     <span class="auth-fallback-copy">Uses Firebase Email/Password auth. Admin access still depends on your admins record.</span>
                 </div>
                 <div class="auth-fallback-actions">
-                    <button id="auth-email-driver-btn" class="btn btn-secondary" type="submit">Continue as Driver</button>
-                    <button id="auth-email-admin-btn" class="btn btn-primary" type="button">Continue as Admin</button>
+                    <button id="auth-email-driver-btn" class="btn btn-secondary" type="button" onclick="handleEmailPasswordAuth('driver')">Continue as Driver</button>
+                    <button id="auth-email-admin-btn" class="btn btn-primary" type="button" onclick="handleEmailPasswordAuth('admin')">Continue as Admin</button>
                 </div>
+                <p id="auth-email-error" class="auth-email-error" style="display:none;"></p>
             </form>
         </div>
     </section>

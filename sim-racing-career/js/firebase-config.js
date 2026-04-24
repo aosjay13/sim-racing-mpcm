@@ -679,10 +679,6 @@ const AuthService = {
         const normalizedPassword = String(password || '');
 
         try {
-            if (auth.currentUser?.isAnonymous) {
-                await auth.signOut();
-            }
-
             await auth.signInWithEmailAndPassword(normalizedEmail, normalizedPassword);
             await this.waitUntilReady();
             return { user: this._user };
@@ -700,13 +696,7 @@ const AuthService = {
         const normalizedPassword = String(password || '');
 
         try {
-            const currentUser = auth.currentUser;
-            if (currentUser?.isAnonymous) {
-                const credential = firebase.auth.EmailAuthProvider.credential(normalizedEmail, normalizedPassword);
-                await currentUser.linkWithCredential(credential);
-            } else {
-                await auth.createUserWithEmailAndPassword(normalizedEmail, normalizedPassword);
-            }
+            await auth.createUserWithEmailAndPassword(normalizedEmail, normalizedPassword);
 
             await this.waitUntilReady();
             return { user: this._user };
