@@ -1140,12 +1140,13 @@ const UI = {
         }
 
         try {
-            const [drivers, teams, races, pendingDrivers, pendingTeams] = await Promise.all([
+            const [drivers, teams, races, pendingDrivers, pendingTeams, accountRequests] = await Promise.all([
                 Database.drivers.getAll(),
                 Database.teams.getAll(),
                 Database.races.getAll(),
                 Database.drivers.getPending(),
-                Database.teams.getPending()
+                Database.teams.getPending(),
+                Database.accounts.getAll()
             ]);
 
             const approvedDrivers = drivers.filter((driver) => (driver.status || 'approved') === 'approved');
@@ -1153,7 +1154,8 @@ const UI = {
             const scheduledRaces = races
                 .filter((race) => (race.status || 'scheduled') === 'scheduled')
                 .sort((a, b) => this.normalizeDate(a.date) - this.normalizeDate(b.date));
-            const pendingCount = pendingDrivers.length + pendingTeams.length;
+            const pendingAccess = accountRequests.filter((request) => ['pending', 'joined'].includes(request.status || ''));
+            const pendingCount = pendingDrivers.length + pendingTeams.length + pendingAccess.length;
 
             const setText = (id, value) => {
                 const element = document.getElementById(id);
@@ -1191,7 +1193,7 @@ const UI = {
                     {
                         title: pendingCount ? `${pendingCount} submissions waiting for review` : 'Moderation queue is clear',
                         copy: pendingCount
-                            ? `${pendingDrivers.length} driver requests and ${pendingTeams.length} team requests are ready for action.`
+                            ? `${pendingDrivers.length} driver requests, ${pendingTeams.length} team requests, and ${pendingAccess.length} account access events are ready for action.`
                             : 'No pending driver or team submissions are blocking the grid.'
                     },
                     {
@@ -1226,9 +1228,11 @@ const UI = {
             const moderationList = document.getElementById('moderation-queue-list');
             const adminList = document.getElementById('admin-list');
             const payoutList = document.getElementById('admin-payout-audit-list');
+            const accountList = document.getElementById('account-request-list');
             if (moderationList) moderationList.innerHTML = '<p class="empty-state">Admin access required.</p>';
             if (adminList) adminList.innerHTML = '<p class="empty-state">Admin access required.</p>';
             if (payoutList) payoutList.innerHTML = '<p class="empty-state">Admin access required.</p>';
+            if (accountList) accountList.innerHTML = '<p class="empty-state">Admin access required.</p>';
             await this.loadAdminCommandCenter();
             return;
         }
@@ -1236,11 +1240,126 @@ const UI = {
         await Promise.allSettled([
             this.loadAdminCommandCenter(),
             this.loadModerationQueue(),
+            this.loadAccountRequests(),
             this.loadAdminList(),
             this.loadGamesCatalog(),
             this.loadCarsCatalog(),
             this.loadAdminPayoutActivity()
         ]);
+    },
+
+    async loadAccountRequests() {
+        if (!this.isAdmin()) return;
+
+        const list = document.getElementById('account-request-list');
+        if (!list) return;
+
+        const requests = await Database.accounts.getAll();
+        requests.sort((a, b) => this.normalizeDate(b.createdAt) - this.normalizeDate(a.createdAt));
+
+        if (!requests.length) {
+            list.innerHTML = '<p class="empty-state">No new account requests.</p>';
+            return;
+        }
+
+        list.innerHTML = requests.slice(0, 25).map((request) => {
+            const requestedRole = request.requestedRole === 'admin' ? 'Admin/Game Master' : 'Driver';
+            const status = request.status || 'joined';
+            const canReview = status === 'pending';
+            const canMarkSeen = status === 'joined';
+
+            return `
+                <div class="moderation-item">
+                    <div class="moderation-item-header">
+                        <div>
+                            <p class="moderation-title">${request.displayName || request.username || request.uid}</p>
+                            <p class="moderation-meta">Username: ${request.username || 'N/A'}</p>
+                            <p class="moderation-meta">Requested role: ${requestedRole}</p>
+                            <p class="moderation-meta">UID: ${request.uid}</p>
+                            <p class="moderation-meta">Created: ${this.normalizeDate(request.createdAt).toLocaleString()}</p>
+                        </div>
+                        <span class="status-pill status-${status === 'approved' ? 'approved' : status === 'rejected' ? 'rejected' : 'pending'}">${status}</span>
+                    </div>
+                    ${(canReview || canMarkSeen) ? `
+                        <div class="card-actions" style="padding: 0; border: none;">
+                            ${canReview ? `<button type="button" onclick="UI.reviewAccountRequest('${request.id}', 'approve')">Approve Admin Access</button>` : ''}
+                            ${canReview ? `<button type="button" onclick="UI.reviewAccountRequest('${request.id}', 'reject')">Reject</button>` : ''}
+                            ${canMarkSeen ? `<button type="button" onclick="UI.reviewAccountRequest('${request.id}', 'seen')">Mark Seen</button>` : ''}
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }).join('');
+    },
+
+    async reviewAccountRequest(requestId, action) {
+        if (!this.isAdmin()) {
+            this.showNotification('Only admins can review account access requests.', 'error');
+            return;
+        }
+
+        const requests = await Database.accounts.getAll();
+        const request = requests.find((item) => item.id === requestId);
+        if (!request) {
+            this.showNotification('Account request not found.', 'error');
+            return;
+        }
+
+        const actorUid = window.AuthService?.getCurrentUser?.()?.uid || null;
+
+        try {
+            if (action === 'approve') {
+                await Database.admins.upsert(request.uid, {
+                    displayName: request.displayName || request.username || request.uid,
+                    email: '',
+                    isActive: true
+                });
+
+                await Database.accounts.updateRequest(requestId, {
+                    status: 'approved',
+                    reviewedByUid: actorUid,
+                    reviewedAt: new Date()
+                });
+
+                await Database.users.upsertProfile(request.uid, {
+                    displayName: request.displayName || request.username || '',
+                    username: request.username || '',
+                    requestedRole: 'admin',
+                    roleStatus: 'approved'
+                });
+                this.showNotification('Admin/Game Master access approved.');
+            } else if (action === 'reject') {
+                await Database.accounts.updateRequest(requestId, {
+                    status: 'rejected',
+                    reviewedByUid: actorUid,
+                    reviewedAt: new Date()
+                });
+
+                await Database.users.upsertProfile(request.uid, {
+                    displayName: request.displayName || request.username || '',
+                    username: request.username || '',
+                    requestedRole: 'driver',
+                    roleStatus: 'rejected'
+                });
+                this.showNotification('Admin/Game Master access request rejected.');
+            } else {
+                await Database.accounts.updateRequest(requestId, {
+                    status: 'seen',
+                    reviewedByUid: actorUid,
+                    reviewedAt: new Date()
+                });
+                this.showNotification('New driver join marked as seen.');
+            }
+
+            await Promise.allSettled([
+                this.loadAccountRequests(),
+                this.loadAdminCommandCenter(),
+                this.loadAdminList()
+            ]);
+        } catch (error) {
+            console.error('Error reviewing account request:', error);
+            this.showNotification('Could not process account request: ' + error.message, 'error');
+        }
     },
 
     async loadModerationQueue() {

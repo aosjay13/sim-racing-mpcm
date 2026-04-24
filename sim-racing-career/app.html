@@ -23,7 +23,7 @@
                 <span class="badge-new">Secure Access</span>
             </div>
             <h1>League Entry Portal</h1>
-            <p>Choose your lane and sign in with Google to continue into your role-specific workspace.</p>
+            <p>Use a username and password to enter your workspace. Choose Driver or Admin/Game Master to set your intended role.</p>
             <div class="auth-gate-highlights">
                 <span class="status-pill status-approved">Live data</span>
                 <span class="status-pill status-pending">Role-based access</span>
@@ -34,28 +34,32 @@
                 <button id="auth-driver-login-btn" class="auth-panel auth-panel-driver" type="button" onclick="handleIntentLogin('driver')">
                     <span class="auth-panel-icon" aria-hidden="true">🏎️</span>
                     <span class="auth-panel-label">Driver Portal</span>
-                    <span class="auth-panel-copy">Manage your profile, garage, races, and earnings.</span>
-                    <span class="auth-panel-action">Continue with Google as Driver</span>
+                    <span class="auth-panel-copy">Sign in with your username/password as a driver or create a new driver account.</span>
+                    <span class="auth-panel-action">Continue as Driver</span>
                 </button>
                 <button id="auth-admin-login-btn" class="auth-panel auth-panel-admin" type="button" onclick="handleIntentLogin('admin')">
                     <span class="auth-panel-icon" aria-hidden="true">🛠️</span>
-                    <span class="auth-panel-label">Admin Portal</span>
-                    <span class="auth-panel-copy">Moderate, configure races, and control league operations.</span>
-                    <span class="auth-panel-action">Continue with Google as Admin</span>
+                    <span class="auth-panel-label">Admin / Game Master Portal</span>
+                    <span class="auth-panel-copy">Sign in as an approved admin or request admin access when creating your account.</span>
+                    <span class="auth-panel-action">Continue as Admin</span>
                 </button>
             </div>
             <div class="auth-fallback-divider" aria-hidden="true">
-                <span>Or use email</span>
+                <span>Username Login</span>
             </div>
             <form id="auth-email-form" class="auth-fallback-form">
                 <div class="auth-fallback-grid">
                     <div class="auth-fallback-field">
-                        <label for="auth-email">Email</label>
-                        <input id="auth-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+                        <label for="auth-email">Username</label>
+                        <input id="auth-email" name="username" type="text" autocomplete="username" placeholder="your_username" required>
                     </div>
                     <div class="auth-fallback-field">
                         <label for="auth-password">Password</label>
                         <input id="auth-password" name="password" type="password" autocomplete="current-password" placeholder="At least 6 characters" required>
+                    </div>
+                    <div class="auth-fallback-field" id="auth-display-name-field">
+                        <label for="auth-display-name">Display Name (new accounts)</label>
+                        <input id="auth-display-name" name="displayName" type="text" autocomplete="nickname" placeholder="How others see you">
                     </div>
                 </div>
                 <div class="auth-fallback-row">
@@ -63,7 +67,7 @@
                         <input id="auth-create-account" name="createAccount" type="checkbox">
                         <span>Create a new account instead of signing in</span>
                     </label>
-                    <span class="auth-fallback-copy">Uses Firebase Email/Password auth. Admin access still depends on your admins record.</span>
+                    <span class="auth-fallback-copy">Admin/Game Master accounts require approval before admin access is granted.</span>
                 </div>
                 <div class="auth-fallback-actions">
                     <button id="auth-email-driver-btn" class="btn btn-secondary" type="button" onclick="handleEmailPasswordAuth('driver')">Continue as Driver</button>
@@ -514,6 +518,17 @@
                             </div>
                             <div id="moderation-queue-list">
                                 <p class="empty-state">No pending submissions.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Account Access Requests</h3>
+                        </div>
+                        <div class="form" style="padding-top: 1rem;">
+                            <div id="account-request-list">
+                                <p class="empty-state">No new account requests.</p>
                             </div>
                         </div>
                     </div>

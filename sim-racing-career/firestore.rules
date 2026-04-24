@@ -163,6 +163,12 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    match /accountRequests/{requestId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
     match /users/{userId} {
       allow read, write: if isSignedIn() && request.auth.uid == userId;
     }

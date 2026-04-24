@@ -78,7 +78,6 @@ async function initializeAuthSession() {
 
     const params = new URLSearchParams(window.location.search);
     const authIntentParam = params.get('authIntent');
-    const shouldAutoLaunchAuth = params.get('authLaunch') === '1';
 
     if (authIntentParam === 'admin' || authIntentParam === 'driver') {
         AppSession.loginIntent = authIntentParam;
@@ -156,11 +155,6 @@ async function initializeAuthSession() {
             UI.loadDriverHub(),
             loadDriverTeamOptions()
         ]);
-
-        if (!AppSession.isAuthenticated && shouldAutoLaunchAuth && !AppSession.authAutoLaunchAttempted) {
-            AppSession.authAutoLaunchAttempted = true;
-            await handleLogin();
-        }
     });
 }
 
@@ -375,46 +369,7 @@ function requireAdmin(message = 'Administrator access required for this action.'
 }
 
 async function handleLogin() {
-    if (!window.AuthService) {
-        UI.showNotification('Authentication service is unavailable.', 'error');
-        return;
-    }
-
-    if (AppSession.authInFlight) {
-        return;
-    }
-
-    AppSession.authInFlight = true;
-    const loginBtn = document.getElementById('login-btn');
-    const driverBtn = document.getElementById('auth-driver-login-btn');
-    const adminBtn = document.getElementById('auth-admin-login-btn');
-    const emailDriverBtn = document.getElementById('auth-email-driver-btn');
-    const emailAdminBtn = document.getElementById('auth-email-admin-btn');
-    const emailInput = document.getElementById('auth-email');
-    const passwordInput = document.getElementById('auth-password');
-    const createAccountInput = document.getElementById('auth-create-account');
-    [loginBtn, driverBtn, adminBtn, emailDriverBtn, emailAdminBtn, emailInput, passwordInput, createAccountInput].forEach((button) => {
-        if (button) button.disabled = true;
-    });
-
-    try {
-        const loginResult = await window.AuthService.signInWithGoogle();
-        if (loginResult?.redirectStarted) {
-            UI.showNotification('Redirecting to Google sign-in...');
-            return;
-        }
-        UI.showNotification('Signed in successfully.');
-    } catch (error) {
-        console.error('Login error:', error);
-        const host = window.location.hostname || 'current host';
-        UI.showNotification('Sign in failed: ' + error.message + ' [host: ' + host + ']', 'error');
-        updateAuthDiagnostics();
-    } finally {
-        AppSession.authInFlight = false;
-        [loginBtn, driverBtn, adminBtn, emailDriverBtn, emailAdminBtn, emailInput, passwordInput, createAccountInput].forEach((button) => {
-            if (button) button.disabled = false;
-        });
-    }
+    await handleEmailPasswordAuth(AppSession.loginIntent || 'driver');
 }
 
 async function handleEmailPasswordAuth(intent) {
@@ -427,9 +382,10 @@ async function handleEmailPasswordAuth(intent) {
         return;
     }
 
-    const email = document.getElementById('auth-email')?.value?.trim() || '';
+    const username = document.getElementById('auth-email')?.value?.trim() || '';
     const password = document.getElementById('auth-password')?.value || '';
     const createAccount = Boolean(document.getElementById('auth-create-account')?.checked);
+    const displayName = document.getElementById('auth-display-name')?.value?.trim() || '';
     const errorEl = document.getElementById('auth-email-error');
 
     if (errorEl) {
@@ -437,12 +393,12 @@ async function handleEmailPasswordAuth(intent) {
         errorEl.textContent = '';
     }
 
-    if (!email || !password) {
+    if (!username || !password) {
         if (errorEl) {
-            errorEl.textContent = 'Enter both email and password.';
+            errorEl.textContent = 'Enter both username and password.';
             errorEl.style.display = 'block';
         }
-        UI.showNotification('Enter both email and password.', 'error');
+        UI.showNotification('Enter both username and password.', 'error');
         return;
     }
 
@@ -463,10 +419,20 @@ async function handleEmailPasswordAuth(intent) {
 
     try {
         if (createAccount) {
-            await window.AuthService.registerWithEmailPassword(email, password);
-            UI.showNotification('Account created and signed in.');
+            await window.AuthService.registerWithUsernamePassword({
+                username,
+                password,
+                displayName,
+                requestedRole: AppSession.loginIntent
+            });
+
+            if (AppSession.loginIntent === 'admin') {
+                UI.showNotification('Account created. Admin/Game Master access is pending approval.', 'success');
+            } else {
+                UI.showNotification('Account created and signed in as Driver.', 'success');
+            }
         } else {
-            await window.AuthService.signInWithEmailPassword(email, password);
+            await window.AuthService.signInWithUsernamePassword(username, password);
             UI.showNotification('Signed in successfully.');
         }
     } catch (error) {
@@ -487,21 +453,8 @@ async function handleEmailPasswordAuth(intent) {
 async function handleIntentLogin(intent) {
     AppSession.loginIntent = intent === 'admin' ? 'admin' : 'driver';
 
-    if (window.AuthService?.isEmbeddedContext?.()) {
-        // First try opening a new tab for environments that block popup auth in iframes.
-        const url = new URL(window.location.href);
-        url.searchParams.set('authIntent', AppSession.loginIntent);
-        url.searchParams.set('authLaunch', '1');
-
-        const launched = window.open(url.toString(), '_blank', 'noopener,noreferrer');
-        if (launched) {
-            UI.showNotification('Sign-in tab opened — complete Google sign-in there, then return here.');
-            return;
-        }
-        // Popup blocked: fall through to handleLogin(), which will use redirect flow.
-    }
-
-    await handleLogin();
+    // Username/password flow: portal button selects the intended role and submits current credentials.
+    await handleEmailPasswordAuth(AppSession.loginIntent);
 }
 
 async function handleLogout() {
@@ -528,7 +481,7 @@ function initializeEventListeners() {
 
     document.getElementById('auth-email-form')?.addEventListener('submit', async (event) => {
         event.preventDefault();
-        await handleEmailPasswordAuth('driver');
+        await handleEmailPasswordAuth(AppSession.loginIntent || 'driver');
     });
 
     document.getElementById('auth-email-admin-btn')?.addEventListener('click', async () => {

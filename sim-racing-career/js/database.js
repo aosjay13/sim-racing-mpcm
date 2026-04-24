@@ -752,8 +752,11 @@ const Database = {
             const payload = {
                 displayName: profileData.displayName || '',
                 email: profileData.email || '',
+                username: profileData.username || existing?.username || '',
                 primaryTeam: profileData.primaryTeam || '',
                 primaryDriver: profileData.primaryDriver || '',
+                requestedRole: profileData.requestedRole || existing?.requestedRole || 'driver',
+                roleStatus: profileData.roleStatus || existing?.roleStatus || 'approved',
                 updatedAt: new Date()
             };
 
@@ -779,6 +782,54 @@ const Database = {
         async getProfile(userId) {
             if (!userId) return null;
             return await DatabaseHelper.getDocument('users', userId);
+        }
+    },
+
+    // ===== ACCOUNT ACCESS REQUESTS =====
+    accounts: {
+        async createRequest({ uid, username, displayName, requestedRole }) {
+            if (!uid) throw new Error('User ID is required');
+
+            const role = requestedRole === 'admin' ? 'admin' : 'driver';
+            const existingRequests = await DatabaseHelper.getCollection('accountRequests', [['uid', '==', uid]]);
+            if (existingRequests.length > 0) {
+                const latest = existingRequests
+                    .sort((a, b) => getDateValue(b.updatedAt || b.createdAt) - getDateValue(a.updatedAt || a.createdAt))[0];
+                await DatabaseHelper.updateDocument('accountRequests', latest.id, {
+                    username: username || latest.username || '',
+                    displayName: displayName || latest.displayName || username || '',
+                    requestedRole: role,
+                    status: role === 'admin' ? 'pending' : 'joined',
+                    reviewedByUid: null,
+                    reviewedAt: null,
+                    reviewNote: ''
+                });
+                return latest.id;
+            }
+
+            return await DatabaseHelper.addDocument('accountRequests', {
+                uid,
+                username: username || '',
+                displayName: displayName || username || '',
+                requestedRole: role,
+                status: role === 'admin' ? 'pending' : 'joined',
+                reviewedByUid: null,
+                reviewedAt: null,
+                reviewNote: ''
+            });
+        },
+
+        async getAll() {
+            return await DatabaseHelper.getCollection('accountRequests');
+        },
+
+        async getPending() {
+            return await DatabaseHelper.getCollection('accountRequests', [['status', '==', 'pending']]);
+        },
+
+        async updateRequest(requestId, updates = {}) {
+            if (!requestId) throw new Error('Request ID is required');
+            await DatabaseHelper.updateDocument('accountRequests', requestId, updates);
         }
     },
 

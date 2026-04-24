@@ -667,7 +667,78 @@ const AuthService = {
             return 'Too many failed attempts. Wait a bit and try again.';
         }
 
+        if (error.code === 'auth/invalid-email') {
+            return 'Invalid username or password.';
+        }
+
         return error.message || 'Authentication failed.';
+    },
+
+    normalizeUsername(username) {
+        const normalized = String(username || '').trim().toLowerCase();
+        if (!normalized) {
+            throw new Error('Username is required.');
+        }
+
+        if (!/^[a-z0-9._-]{3,24}$/.test(normalized)) {
+            throw new Error('Username must be 3-24 chars using letters, numbers, dot, underscore, or dash.');
+        }
+
+        return normalized;
+    },
+
+    usernameToInternalEmail(username) {
+        const normalized = this.normalizeUsername(username);
+        return `${normalized}@srmpc.local`;
+    },
+
+    async signInWithUsernamePassword(username, password) {
+        const internalEmail = this.usernameToInternalEmail(username);
+        return await this.signInWithEmailPassword(internalEmail, password);
+    },
+
+    async registerWithUsernamePassword({ username, password, displayName = '', requestedRole = 'driver' } = {}) {
+        if (!auth) {
+            throw new Error('Authentication is not configured.');
+        }
+
+        const normalizedUsername = this.normalizeUsername(username);
+        const normalizedPassword = String(password || '');
+        if (normalizedPassword.length < 6) {
+            throw new Error('Password must be at least 6 characters.');
+        }
+
+        const role = requestedRole === 'admin' ? 'admin' : 'driver';
+        const internalEmail = this.usernameToInternalEmail(normalizedUsername);
+
+        try {
+            await auth.createUserWithEmailAndPassword(internalEmail, normalizedPassword);
+            await this.waitUntilReady();
+
+            const uid = this._user?.uid;
+            if (uid && window.Database?.users) {
+                await window.Database.users.upsertProfile(uid, {
+                    displayName: displayName || normalizedUsername,
+                    email: '',
+                    username: normalizedUsername,
+                    requestedRole: role,
+                    roleStatus: role === 'admin' ? 'pending' : 'approved'
+                });
+            }
+
+            if (uid && window.Database?.accounts) {
+                await window.Database.accounts.createRequest({
+                    uid,
+                    username: normalizedUsername,
+                    displayName: displayName || normalizedUsername,
+                    requestedRole: role
+                });
+            }
+
+            return { user: this._user };
+        } catch (error) {
+            throw new Error(this.normalizeAuthError(error));
+        }
     },
 
     async signInWithEmailPassword(email, password) {

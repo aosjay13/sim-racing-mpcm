@@ -270,7 +270,7 @@ html, body {
 }
 
 .auth-panel-action::before {
-    content: 'G';
+    content: '→';
     display: inline-flex;
     align-items: center;
     justify-content: center;
