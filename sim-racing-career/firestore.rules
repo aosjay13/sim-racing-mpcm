@@ -164,9 +164,12 @@ service cloud.firestore {
     }
 
     match /accountRequests/{requestId} {
-      allow read: if isAdmin();
+      // Admins can read all; users can read their own request (requestId == uid).
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == requestId);
       allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
-      allow update, delete: if isAdmin();
+      // Users can update their own request; admins can update/delete any.
+      allow update: if isAdmin() || (isSignedIn() && request.auth.uid == requestId && resource.data.uid == request.auth.uid);
+      allow delete: if isAdmin();
     }
 
     match /users/{userId} {

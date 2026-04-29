@@ -791,23 +791,10 @@ const Database = {
             if (!uid) throw new Error('User ID is required');
 
             const role = requestedRole === 'admin' ? 'admin' : 'driver';
-            const existingRequests = await DatabaseHelper.getCollection('accountRequests', [['uid', '==', uid]]);
-            if (existingRequests.length > 0) {
-                const latest = existingRequests
-                    .sort((a, b) => getDateValue(b.updatedAt || b.createdAt) - getDateValue(a.updatedAt || a.createdAt))[0];
-                await DatabaseHelper.updateDocument('accountRequests', latest.id, {
-                    username: username || latest.username || '',
-                    displayName: displayName || latest.displayName || username || '',
-                    requestedRole: role,
-                    status: role === 'admin' ? 'pending' : 'joined',
-                    reviewedByUid: null,
-                    reviewedAt: null,
-                    reviewNote: ''
-                });
-                return latest.id;
-            }
 
-            return await DatabaseHelper.addDocument('accountRequests', {
+            // Use uid as stable document ID and set() to avoid a read that non-admins can't do.
+            await DatabaseHelper.ensureFirebaseReady();
+            await db.collection('accountRequests').doc(uid).set({
                 uid,
                 username: username || '',
                 displayName: displayName || username || '',
@@ -815,8 +802,12 @@ const Database = {
                 status: role === 'admin' ? 'pending' : 'joined',
                 reviewedByUid: null,
                 reviewedAt: null,
-                reviewNote: ''
-            });
+                reviewNote: '',
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+
+            return uid;
         },
 
         async getAll() {
@@ -1362,25 +1353,6 @@ Database.integrity = {
         };
     },
 
-
-Database.payoutAudits = {
-    async logManualAdjustment({ actorUid, userId, amount, reason, driverId, transactionId, adjustmentType }) {
-        return await DatabaseHelper.addDocument('payoutAudits', {
-            actorUid: actorUid || null,
-            userId,
-            amount: Number(amount || 0),
-            reason: reason || '',
-            driverId: driverId || null,
-            transactionId: transactionId || null,
-            adjustmentType: adjustmentType || 'manual'
-        });
-    },
-
-    async getAll() {
-        const audits = await DatabaseHelper.getCollection('payoutAudits');
-        return audits.sort((a, b) => getDateValue(b.createdAt) - getDateValue(a.createdAt));
-    }
-};
     async logRaceAudit({ raceId, action, actorUid, previousResults, nextResults, resultsVersion }) {
         await DatabaseHelper.addDocument('raceResultAudits', {
             raceId,
@@ -1607,6 +1579,25 @@ Database.payoutAudits = {
             nextResults: [],
             resultsVersion: 0
         });
+    }
+};
+
+Database.payoutAudits = {
+    async logManualAdjustment({ actorUid, userId, amount, reason, driverId, transactionId, adjustmentType }) {
+        return await DatabaseHelper.addDocument('payoutAudits', {
+            actorUid: actorUid || null,
+            userId,
+            amount: Number(amount || 0),
+            reason: reason || '',
+            driverId: driverId || null,
+            transactionId: transactionId || null,
+            adjustmentType: adjustmentType || 'manual'
+        });
+    },
+
+    async getAll() {
+        const audits = await DatabaseHelper.getCollection('payoutAudits');
+        return audits.sort((a, b) => getDateValue(b.createdAt) - getDateValue(a.createdAt));
     }
 };
 

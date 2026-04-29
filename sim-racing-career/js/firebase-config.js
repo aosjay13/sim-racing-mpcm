@@ -713,30 +713,33 @@ const AuthService = {
         const internalEmail = this.usernameToInternalEmail(normalizedUsername);
 
         try {
-            await auth.createUserWithEmailAndPassword(internalEmail, normalizedPassword);
+            const credential = await auth.createUserWithEmailAndPassword(internalEmail, normalizedPassword);
+            // Use the credential UID directly — more reliable than this._user which may not be updated yet
+            const uid = credential?.user?.uid || auth.currentUser?.uid;
+
+            if (uid) {
+                if (window.Database?.users) {
+                    await window.Database.users.upsertProfile(uid, {
+                        displayName: displayName || normalizedUsername,
+                        email: '',
+                        username: normalizedUsername,
+                        requestedRole: role,
+                        roleStatus: role === 'admin' ? 'pending' : 'approved'
+                    }).catch((e) => console.warn('Profile write failed (non-fatal):', e));
+                }
+
+                if (window.Database?.accounts) {
+                    await window.Database.accounts.createRequest({
+                        uid,
+                        username: normalizedUsername,
+                        displayName: displayName || normalizedUsername,
+                        requestedRole: role
+                    }).catch((e) => console.warn('Account request write failed (non-fatal):', e));
+                }
+            }
+
             await this.waitUntilReady();
-
-            const uid = this._user?.uid;
-            if (uid && window.Database?.users) {
-                await window.Database.users.upsertProfile(uid, {
-                    displayName: displayName || normalizedUsername,
-                    email: '',
-                    username: normalizedUsername,
-                    requestedRole: role,
-                    roleStatus: role === 'admin' ? 'pending' : 'approved'
-                });
-            }
-
-            if (uid && window.Database?.accounts) {
-                await window.Database.accounts.createRequest({
-                    uid,
-                    username: normalizedUsername,
-                    displayName: displayName || normalizedUsername,
-                    requestedRole: role
-                });
-            }
-
-            return { user: this._user };
+            return { user: this._user || credential?.user };
         } catch (error) {
             throw new Error(this.normalizeAuthError(error));
         }
