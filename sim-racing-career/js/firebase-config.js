@@ -671,13 +671,18 @@ const AuthService = {
     },
 
     normalizeUsername(username) {
-        const normalized = String(username || '').trim().toLowerCase();
-        if (!normalized) {
+        const raw = String(username || '').trim().toLowerCase();
+        if (!raw) {
             throw new Error('Username is required.');
         }
 
+        // Accept either plain username OR the internal local auth alias.
+        const normalized = raw.endsWith('@srmpc.local')
+            ? raw.slice(0, -'@srmpc.local'.length)
+            : raw;
+
         if (!/^[a-z0-9._-]{3,24}$/.test(normalized)) {
-            throw new Error('Username must be 3-24 chars using letters, numbers, dot, underscore, or dash.');
+            throw new Error('Username must be 3-24 chars using letters, numbers, dot, underscore, or dash (you can also sign in with username@srmpc.local).');
         }
 
         return normalized;

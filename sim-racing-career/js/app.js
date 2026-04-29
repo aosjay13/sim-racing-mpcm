@@ -30,11 +30,15 @@ function refreshUsernameHelper() {
     if (!helperEl) return;
 
     const raw = String(usernameInput?.value || '').trim();
-    const normalized = raw.toLowerCase().replace(/[^a-z0-9._-]/g, '');
+    const rawLower = raw.toLowerCase();
+    const withoutAlias = rawLower.endsWith('@srmpc.local')
+        ? rawLower.slice(0, -'@srmpc.local'.length)
+        : rawLower;
+    const normalized = withoutAlias.replace(/[^a-z0-9._-]/g, '');
     const isValid = /^[a-z0-9._-]{3,24}$/.test(normalized);
 
     if (!raw) {
-        helperEl.textContent = '3–24 chars: letters, numbers, dot, underscore, or dash. Preview: your_username@srmpc.local';
+        helperEl.textContent = '3–24 chars: letters, numbers, dot, underscore, or dash. You can enter username or username@srmpc.local.';
         helperEl.style.color = '';
     } else if (!isValid) {
         helperEl.textContent = `Invalid username — 3–24 chars, letters/numbers/dot/underscore/dash only.`;
