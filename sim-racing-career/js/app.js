@@ -1449,5 +1449,7 @@ window.Database = Database;
 window.loadSampleData = loadSampleData;
 window.loadDriverTeamOptions = loadDriverTeamOptions;
 window.AppSession = AppSession;
+window.handleEmailPasswordAuth = handleEmailPasswordAuth;
+window.handleIntentLogin = handleIntentLogin;
 
 console.log('Application initialized. Press Ctrl+Shift+D to load sample data.');

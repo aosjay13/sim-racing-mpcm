@@ -57,8 +57,8 @@
                     <span class="auth-fallback-copy">Admin/Game Master accounts require approval before admin access is granted.</span>
                 </div>
                 <div class="auth-fallback-actions">
-                    <button id="auth-email-driver-btn" class="btn btn-secondary" type="button">Sign In as Driver</button>
-                    <button id="auth-email-admin-btn" class="btn btn-primary" type="button">Sign In as Game Master</button>
+                    <button id="auth-email-driver-btn" class="btn btn-secondary" type="button" onclick="handleEmailPasswordAuth('driver')">Sign In as Driver</button>
+                    <button id="auth-email-admin-btn" class="btn btn-primary" type="button" onclick="handleEmailPasswordAuth('admin')">Sign In as Game Master</button>
                 </div>
                 <p id="auth-email-error" class="auth-email-error" style="display:none;"></p>
             </form>
