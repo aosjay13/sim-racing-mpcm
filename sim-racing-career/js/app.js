@@ -29,11 +29,20 @@ function refreshUsernameHelper() {
     const helperEl = document.getElementById('auth-username-helper');
     if (!helperEl) return;
 
-    const normalized = String(usernameInput?.value || '')
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9._-]/g, '');
-    helperEl.textContent = `No email needed. Internal auth ID preview: ${(normalized || 'your_username')}@srmpc.local`;
+    const raw = String(usernameInput?.value || '').trim();
+    const normalized = raw.toLowerCase().replace(/[^a-z0-9._-]/g, '');
+    const isValid = /^[a-z0-9._-]{3,24}$/.test(normalized);
+
+    if (!raw) {
+        helperEl.textContent = '3–24 chars: letters, numbers, dot, underscore, or dash. Preview: your_username@srmpc.local';
+        helperEl.style.color = '';
+    } else if (!isValid) {
+        helperEl.textContent = `Invalid username — 3–24 chars, letters/numbers/dot/underscore/dash only.`;
+        helperEl.style.color = 'var(--color-error, #e74c3c)';
+    } else {
+        helperEl.textContent = `✓ Valid username. Internal auth ID: ${normalized}@srmpc.local`;
+        helperEl.style.color = 'var(--color-success, #2ecc71)';
+    }
 }
 
 // ===== APPLICATION INITIALIZATION =====

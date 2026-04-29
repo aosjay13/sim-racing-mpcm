@@ -37,8 +37,8 @@
                 <div class="auth-fallback-grid">
                     <div class="auth-fallback-field">
                         <label for="auth-email">Username</label>
-                        <input id="auth-email" name="username" type="text" autocomplete="username" placeholder="your_username" required>
-                        <small id="auth-username-helper" class="auth-username-helper">No email needed. Internal auth ID preview: your_username@srmpc.local</small>
+                        <input id="auth-email" name="username" type="text" autocomplete="username" placeholder="your_username" required minlength="3" maxlength="24" pattern="[a-zA-Z0-9._-]{3,24}">
+                        <small id="auth-username-helper" class="auth-username-helper">3–24 chars: letters, numbers, dot, underscore, or dash. Preview: your_username@srmpc.local</small>
                     </div>
                     <div class="auth-fallback-field">
                         <label for="auth-password">Password</label>
