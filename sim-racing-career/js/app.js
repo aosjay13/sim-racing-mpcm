@@ -542,24 +542,30 @@ async function handleEmailPasswordAuth(intent) {
         AppSession.isAdmin = false; // safe default; async admin check runs below
         AppSession.hasEnteredApp = true;
 
-        // Keep AuthService consistent so logout / listener code keeps working
+        // Keep AuthService consistent so logout / listener code keeps working.
+        // Must be done BEFORE calling UI.switchView so its isAuthenticatedUser()
+        // check returns true instead of seeing the anonymous session.
         if (window.AuthService) {
             window.AuthService._user = user;
             window.AuthService._isAdmin = false;
         }
 
         updateAuthUI();
-        UI.switchView('driver-hub');
+
+        const uiReady = window.UI || (typeof UI !== 'undefined' ? UI : null);
+        if (uiReady) {
+            uiReady.switchView('driver-hub');
+        }
 
         if (createAccount) {
-            UI.showNotification?.(
+            (window.UI || UI)?.showNotification?.(
                 selectedIntent === 'admin'
                     ? 'Account created. Game Master access is pending approval.'
                     : 'Account created — signed in as Driver.',
                 'success'
             );
         } else {
-            UI.showNotification?.('Signed in successfully.', 'success');
+            (window.UI || UI)?.showNotification?.('Signed in successfully.', 'success');
         }
 
         // ── Async admin check — update UI once we know ─────────────────────────
@@ -571,7 +577,8 @@ async function handleEmailPasswordAuth(intent) {
                 AppSession.isAdmin = isAdmin;
                 if (window.AuthService) window.AuthService._isAdmin = isAdmin;
                 updateAuthUI();
-                if (isAdmin) UI.switchView('admin');
+                const uiRef = window.UI || (typeof UI !== 'undefined' ? UI : null);
+                if (isAdmin && uiRef) uiRef.switchView('admin');
             } catch (_) {
                 // No admin record or Firestore unavailable — remain as driver
             }
