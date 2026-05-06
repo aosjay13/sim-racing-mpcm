@@ -197,22 +197,22 @@ async function initializeAuthSession() {
             }
 
             if (AppSession.loginIntent === 'admin' && !AppSession.isAdmin) {
-                UI.showNotification('Admin access was not found for this account. Opening Driver portal instead.', 'error');
+                window.UI?.showNotification('Admin access was not found for this account. Opening Driver portal instead.', 'error');
             }
 
             if (AppSession.isAdmin) {
-                UI.switchView('admin');
+                window.UI?.switchView('admin');
             } else {
-                UI.switchView('driver-hub');
+                window.UI?.switchView('driver-hub');
             }
         }
 
         Promise.allSettled([
-            UI.loadDashboard(),
-            UI.loadDrivers(),
-            UI.loadTeams(),
-            UI.loadStandings(),
-            UI.loadDriverHub(),
+            window.UI?.loadDashboard(),
+            window.UI?.loadDrivers(),
+            window.UI?.loadTeams(),
+            window.UI?.loadStandings(),
+            window.UI?.loadDriverHub(),
             loadDriverTeamOptions()
         ]);
     });
@@ -287,7 +287,7 @@ function updateAuthUI() {
     const workspaceBannerTitle = document.getElementById('workspace-banner-title');
     const workspaceBannerCopy = document.getElementById('workspace-banner-copy');
 
-    UI.applyRoleExperience({
+    window.UI?.applyRoleExperience({
         isAuthenticated: AppSession.isAuthenticated,
         isAdmin: AppSession.isAdmin
     });
@@ -389,30 +389,30 @@ function updateAuthUI() {
 
     if (adminNavBtn) {
         adminNavBtn.classList.toggle('hidden', !AppSession.isAdmin);
-        if (!AppSession.isAdmin && UI.currentView === 'admin') {
-            UI.switchView('dashboard');
+        if (!AppSession.isAdmin && window.UI?.currentView === 'admin') {
+            window.UI.switchView('dashboard');
         }
     }
 
     if (driverHubNavBtn) {
         const visible = AppSession.isAuthenticated && !AppSession.isAdmin;
         driverHubNavBtn.classList.toggle('hidden', !visible);
-        if (!visible && UI.currentView === 'driver-hub') {
-            UI.switchView('dashboard');
+        if (!visible && window.UI?.currentView === 'driver-hub') {
+            window.UI.switchView('dashboard');
         }
     }
 
     if (sponsorsNavBtn) {
         sponsorsNavBtn.classList.toggle('hidden', !AppSession.isAdmin);
-        if (!AppSession.isAdmin && UI.currentView === 'sponsors') {
-            UI.switchView(AppSession.isAuthenticated ? 'driver-hub' : 'dashboard');
+        if (!AppSession.isAdmin && window.UI?.currentView === 'sponsors') {
+            window.UI.switchView(AppSession.isAuthenticated ? 'driver-hub' : 'dashboard');
         }
     }
 }
 
 function requireAuthenticated(message = 'Please sign in to continue.') {
     if (!AppSession.isAuthenticated) {
-        UI.showNotification(message, 'error');
+        window.UI?.showNotification(message, 'error');
         return false;
     }
 
@@ -421,7 +421,7 @@ function requireAuthenticated(message = 'Please sign in to continue.') {
 
 function requireAdmin(message = 'Administrator access required for this action.') {
     if (!AppSession.isAdmin) {
-        UI.showNotification(message, 'error');
+        window.UI?.showNotification(message, 'error');
         return false;
     }
 
@@ -483,7 +483,7 @@ async function handleEmailPasswordAuth(intent) {
         firebaseEmail = authIdentifierRaw;
     } else {
         const normalized = authIdentifierRaw.toLowerCase()
-            .replace(/^(.+)@srmpc\.local$/, '$1'); // strip alias suffix if already present
+            .replace(/^(.+)@srmpc\.local$/, '$1');
         if (!/^[a-z0-9._-]{3,24}$/.test(normalized)) {
             showAuthError('Invalid username — 3–24 chars, letters/numbers/dot/underscore/dash only.');
             return;
@@ -506,8 +506,10 @@ async function handleEmailPasswordAuth(intent) {
     if (driverBtn) driverBtn.textContent = selectedIntent === 'driver' ? 'Signing in…' : 'Sign In as Driver';
     if (adminBtn) adminBtn.textContent = selectedIntent === 'admin' ? 'Signing in…' : 'Sign In as Game Master';
 
+    // ── Step 1: Firebase call only — scoped try-catch ──────────────────────────
+    let signedInUser = null;
+
     try {
-        // ── Direct Firebase call — no AuthService abstraction ──────────────────
         if (typeof firebase === 'undefined' || !firebase.auth) {
             throw new Error('Firebase is not loaded. Check your internet connection and reload.');
         }
@@ -523,7 +525,6 @@ async function handleEmailPasswordAuth(intent) {
                 }
             } catch (createError) {
                 if (createError.code === 'auth/email-already-in-use') {
-                    // Account already exists — sign in instead
                     credential = await fbAuth.signInWithEmailAndPassword(firebaseEmail, password);
                 } else {
                     throw createError;
@@ -533,61 +534,14 @@ async function handleEmailPasswordAuth(intent) {
             credential = await fbAuth.signInWithEmailAndPassword(firebaseEmail, password);
         }
 
-        const user = credential?.user;
-        if (!user) throw new Error('Firebase did not return a user. Try again.');
+        signedInUser = credential?.user || null;
 
-        // ── Immediately update app session and show the app ────────────────────
-        AppSession.user = user;
-        AppSession.isAuthenticated = true;
-        AppSession.isAdmin = false; // safe default; async admin check runs below
-        AppSession.hasEnteredApp = true;
+    } catch (firebaseError) {
+        // Only Firebase/network errors land here — UI errors will NOT be swallowed
+        console.error('[AUTH] Firebase sign-in failed:', firebaseError.code, firebaseError.message);
 
-        // Keep AuthService consistent so logout / listener code keeps working.
-        // Must be done BEFORE calling UI.switchView so its isAuthenticatedUser()
-        // check returns true instead of seeing the anonymous session.
-        if (window.AuthService) {
-            window.AuthService._user = user;
-            window.AuthService._isAdmin = false;
-        }
-
-        updateAuthUI();
-
-        if (window.UI) {
-            window.UI.switchView('driver-hub');
-        }
-
-        if (createAccount) {
-            window.UI?.showNotification?.(
-                selectedIntent === 'admin'
-                    ? 'Account created. Game Master access is pending approval.'
-                    : 'Account created — signed in as Driver.',
-                'success'
-            );
-        } else {
-            window.UI?.showNotification?.('Signed in successfully.', 'success');
-        }
-
-        // ── Async admin check — update UI once we know ─────────────────────────
-        (async () => {
-            try {
-                const fbDb = firebase.firestore();
-                const adminDoc = await fbDb.collection('admins').doc(user.uid).get();
-                const isAdmin = adminDoc.exists && adminDoc.data()?.isActive !== false;
-                AppSession.isAdmin = isAdmin;
-                if (window.AuthService) window.AuthService._isAdmin = isAdmin;
-                updateAuthUI();
-                const uiRef = window.UI;
-                if (isAdmin && uiRef) uiRef.switchView('admin');
-            } catch (_) {
-                // No admin record or Firestore unavailable — remain as driver
-            }
-        })();
-
-    } catch (error) {
-        console.error('[AUTH ERROR]', error.code, error.message);
-
-        const code = error.code || '';
-        let msg = error.message || 'Sign in failed.';
+        const code = firebaseError.code || '';
+        let msg = firebaseError.message || 'Sign in failed.';
 
         if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
             msg = 'Username or password is incorrect.';
@@ -610,12 +564,72 @@ async function handleEmailPasswordAuth(intent) {
         }
 
         showAuthError(msg);
-    } finally {
         AppSession.authInFlight = false;
         controls.forEach((c) => { if (c) c.disabled = false; });
         if (driverBtn) driverBtn.textContent = 'Sign In as Driver';
         if (adminBtn) adminBtn.textContent = 'Sign In as Game Master';
+        return;
     }
+
+    // ── Step 2: UI update — runs outside Firebase try-catch ───────────────────
+    // Any error here will appear in the browser console as a real JS error.
+    if (!signedInUser) {
+        showAuthError('Firebase did not return a user. Try again.');
+        AppSession.authInFlight = false;
+        controls.forEach((c) => { if (c) c.disabled = false; });
+        if (driverBtn) driverBtn.textContent = 'Sign In as Driver';
+        if (adminBtn) adminBtn.textContent = 'Sign In as Game Master';
+        return;
+    }
+
+    AppSession.user = signedInUser;
+    AppSession.isAuthenticated = true;
+    AppSession.isAdmin = false;
+    AppSession.hasEnteredApp = true;
+
+    if (window.AuthService) {
+        window.AuthService._user = signedInUser;
+        window.AuthService._isAdmin = false;
+    }
+
+    AppSession.authInFlight = false;
+    controls.forEach((c) => { if (c) c.disabled = false; });
+    if (driverBtn) driverBtn.textContent = 'Sign In as Driver';
+    if (adminBtn) adminBtn.textContent = 'Sign In as Game Master';
+
+    updateAuthUI();
+
+    // Show the correct view for this role
+    const uiObj = window.UI;
+    if (uiObj) {
+        uiObj.switchView('driver-hub');
+    } else {
+        console.error('[AUTH] UI object not available. Check that ui.js loaded correctly.');
+    }
+
+    window.UI?.showNotification?.(
+        createAccount
+            ? (selectedIntent === 'admin'
+                ? 'Account created. Game Master access is pending approval.'
+                : 'Account created — signed in as Driver.')
+            : 'Signed in successfully.',
+        'success'
+    );
+
+    // ── Step 3: Async admin check ───────────────────────────────────────────
+    (async () => {
+        try {
+            const fbDb = firebase.firestore();
+            const adminDoc = await fbDb.collection('admins').doc(signedInUser.uid).get();
+            const isAdmin = adminDoc.exists && adminDoc.data()?.isActive !== false;
+            AppSession.isAdmin = isAdmin;
+            if (window.AuthService) window.AuthService._isAdmin = isAdmin;
+            updateAuthUI();
+            if (isAdmin && window.UI) window.UI.switchView('admin');
+        } catch (_) {
+            // No admin record or Firestore unavailable — stay as driver
+        }
+    })();
 }
 
 async function handleIntentLogin(intent) {
@@ -633,10 +647,10 @@ async function handleLogout() {
 
     try {
         await window.AuthService.signOut();
-        UI.showNotification('Signed out successfully.');
+        window.UI?.showNotification('Signed out successfully.');
     } catch (error) {
         console.error('Logout error:', error);
-        UI.showNotification('Sign out failed: ' + error.message, 'error');
+        window.UI?.showNotification('Sign out failed: ' + error.message, 'error');
     }
 }
 

@@ -1638,6 +1638,8 @@ function getDateValue(value) {
 }
 
 // Export for use in other files
+window.Database = Database;
+
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = Database;
 }
