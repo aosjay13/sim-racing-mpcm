@@ -471,6 +471,7 @@ async function handleEmailPasswordAuth(intent) {
     }
 
     if (AppSession.authInFlight) {
+        showAuthError('Sign-in already in progress — please wait a moment.');
         return;
     }
 
@@ -565,6 +566,21 @@ async function handleEmailPasswordAuth(intent) {
                 await withTimeout(window.AuthService.signInWithUsernamePassword(authIdentifier.value, password), 12000, 'Sign in timed out. Check Firebase Authorized Domains and your network, then try again.');
             }
             notify('Signed in successfully.', 'success');
+        }
+
+        // Direct session update — belt-and-suspenders in case listener notification is delayed
+        const freshUser = window.AuthService?.getCurrentUser();
+        if (freshUser && !freshUser.isAnonymous) {
+            AppSession.user = freshUser;
+            AppSession.isAuthenticated = true;
+            AppSession.isAdmin = Boolean(window.AuthService?._isAdmin);
+            if (!AppSession.hasEnteredApp) {
+                AppSession.hasEnteredApp = true;
+                updateAuthUI();
+                UI.switchView(AppSession.isAdmin ? 'admin' : 'driver-hub');
+            } else {
+                updateAuthUI();
+            }
         }
     } catch (error) {
         console.error('Auth error:', error);

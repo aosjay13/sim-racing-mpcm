@@ -758,7 +758,7 @@ const AuthService = {
 
             await this.waitWithTimeout(this.waitUntilReady(), 5000);
 
-            if (!this._user && credential?.user) {
+            if ((!this._user || this._user.isAnonymous) && credential?.user) {
                 this._user = credential.user;
                 this._isAdmin = await this.resolveAdminStatus(credential.user);
                 this._notifyListeners();
@@ -783,7 +783,7 @@ const AuthService = {
 
             await this.waitWithTimeout(this.waitUntilReady(), 5000);
 
-            if (!this._user && credential?.user) {
+            if ((!this._user || this._user.isAnonymous) && credential?.user) {
                 this._user = credential.user;
                 this._isAdmin = await this.resolveAdminStatus(credential.user);
                 this._notifyListeners();
