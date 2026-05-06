@@ -457,6 +457,26 @@ function clearAuthError() {
 async function handleEmailPasswordAuth(intent) {
     clearAuthError();
 
+    // ── Visible debug panel ───────────────────────────────────────────────────
+    const debugPanel = document.getElementById('auth-debug-panel');
+    const debugSteps = document.getElementById('auth-debug-steps');
+    let stepNum = 0;
+    function debugStep(msg, ok = true) {
+        stepNum++;
+        if (!debugSteps) return;
+        const li = document.createElement('li');
+        li.style.color = ok ? '#7ec87e' : '#e05c5c';
+        li.textContent = msg;
+        debugSteps.appendChild(li);
+        if (debugPanel) debugPanel.style.display = 'block';
+    }
+    function debugClear() {
+        if (debugSteps) debugSteps.innerHTML = '';
+        if (debugPanel) debugPanel.style.display = 'none';
+        stepNum = 0;
+    }
+    debugClear();
+
     const resolvedIntent = intent === '__form_submit__' ? AppSession.loginIntent : intent;
     const selectedIntent = (resolvedIntent === 'admin' || resolvedIntent === 'driver') ? resolvedIntent : AppSession.loginIntent;
 
@@ -481,6 +501,7 @@ async function handleEmailPasswordAuth(intent) {
     let firebaseEmail;
     if (looksLikeEmail) {
         firebaseEmail = authIdentifierRaw;
+        debugStep(`Email format detected: ${firebaseEmail}`);
     } else {
         const normalized = authIdentifierRaw.toLowerCase()
             .replace(/^(.+)@srmpc\.local$/, '$1');
@@ -489,7 +510,10 @@ async function handleEmailPasswordAuth(intent) {
             return;
         }
         firebaseEmail = `${normalized}@srmpc.local`;
+        debugStep(`Username → ${firebaseEmail}`);
     }
+
+    debugStep(`Role: ${selectedIntent} | Domain: ${window.location.hostname}`);
 
     // Lock UI
     AppSession.loginIntent = selectedIntent;
@@ -513,32 +537,39 @@ async function handleEmailPasswordAuth(intent) {
         if (typeof firebase === 'undefined' || !firebase.auth) {
             throw new Error('Firebase is not loaded. Check your internet connection and reload.');
         }
+        debugStep('Firebase SDK: loaded ✓');
 
         const fbAuth = firebase.auth();
         let credential;
 
         if (createAccount) {
+            debugStep('Attempting account creation…');
             try {
                 credential = await fbAuth.createUserWithEmailAndPassword(firebaseEmail, password);
                 if (displayName && credential.user) {
                     await credential.user.updateProfile({ displayName }).catch(() => {});
                 }
+                debugStep('Account created ✓');
             } catch (createError) {
                 if (createError.code === 'auth/email-already-in-use') {
+                    debugStep('Account exists — signing in instead');
                     credential = await fbAuth.signInWithEmailAndPassword(firebaseEmail, password);
                 } else {
                     throw createError;
                 }
             }
         } else {
+            debugStep('Calling Firebase signInWithEmailAndPassword…');
             credential = await fbAuth.signInWithEmailAndPassword(firebaseEmail, password);
         }
 
         signedInUser = credential?.user || null;
+        debugStep(signedInUser ? `Firebase auth OK — uid: ${signedInUser.uid.slice(0,8)}…` : 'Firebase returned no user', Boolean(signedInUser));
 
     } catch (firebaseError) {
         // Only Firebase/network errors land here — UI errors will NOT be swallowed
         console.error('[AUTH] Firebase sign-in failed:', firebaseError.code, firebaseError.message);
+        debugStep(`FAILED: [${firebaseError.code || 'error'}] ${firebaseError.message}`, false);
 
         const code = firebaseError.code || '';
         let msg = firebaseError.message || 'Sign in failed.';
@@ -586,6 +617,7 @@ async function handleEmailPasswordAuth(intent) {
     AppSession.isAuthenticated = true;
     AppSession.isAdmin = false;
     AppSession.hasEnteredApp = true;
+    debugStep('AppSession updated ✓');
 
     if (window.AuthService) {
         window.AuthService._user = signedInUser;
@@ -598,12 +630,16 @@ async function handleEmailPasswordAuth(intent) {
     if (adminBtn) adminBtn.textContent = 'Sign In as Game Master';
 
     updateAuthUI();
+    debugStep('updateAuthUI() done ✓');
 
     // Show the correct view for this role
     const uiObj = window.UI;
     if (uiObj) {
+        debugStep('Switching to driver-hub view…');
         uiObj.switchView('driver-hub');
+        debugStep('View switched ✓ — sign-in complete!');
     } else {
+        debugStep('ERROR: window.UI is not defined — ui.js may not have loaded.', false);
         console.error('[AUTH] UI object not available. Check that ui.js loaded correctly.');
     }
 
