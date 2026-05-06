@@ -471,8 +471,7 @@ async function handleEmailPasswordAuth(intent) {
     }
 
     if (AppSession.authInFlight) {
-        // Reset stuck state so user can try again
-        AppSession.authInFlight = false;
+        return;
     }
 
     const authIdentifierRaw = document.getElementById('auth-email')?.value?.trim() || '';
