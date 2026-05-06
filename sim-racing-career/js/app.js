@@ -37,9 +37,14 @@ function refreshUsernameHelper() {
     const normalized = withoutAlias.replace(/[^a-z0-9._-]/g, '');
     const isValid = /^[a-z0-9._-]{3,24}$/.test(normalized);
 
+    const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw);
+
     if (!raw) {
-        helperEl.textContent = '3–24 chars: letters, numbers, dot, underscore, or dash. You can enter username or username@srmpc.local.';
+        helperEl.textContent = 'Use username (or username@srmpc.local) OR a full email address from Firebase Auth.';
         helperEl.style.color = '';
+    } else if (looksLikeEmail) {
+        helperEl.textContent = '✓ Using full email login.';
+        helperEl.style.color = 'var(--color-success, #2ecc71)';
     } else if (!isValid) {
         helperEl.textContent = `Invalid username — 3–24 chars, letters/numbers/dot/underscore/dash only.`;
         helperEl.style.color = 'var(--color-error, #e74c3c)';
@@ -47,6 +52,21 @@ function refreshUsernameHelper() {
         helperEl.textContent = `✓ Valid username. Internal auth ID: ${normalized}@srmpc.local`;
         helperEl.style.color = 'var(--color-success, #2ecc71)';
     }
+}
+
+function resolveAuthIdentifier(rawIdentifier) {
+    const identifier = String(rawIdentifier || '').trim();
+
+    if (!identifier) {
+        throw new Error('Enter your username or email.');
+    }
+
+    const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
+
+    return {
+        value: identifier,
+        type: looksLikeEmail ? 'email' : 'username'
+    };
 }
 
 // ===== APPLICATION INITIALIZATION =====
@@ -455,7 +475,7 @@ async function handleEmailPasswordAuth(intent) {
         AppSession.authInFlight = false;
     }
 
-    const username = document.getElementById('auth-email')?.value?.trim() || '';
+    const authIdentifierRaw = document.getElementById('auth-email')?.value?.trim() || '';
     const password = document.getElementById('auth-password')?.value || '';
     const displayName = document.getElementById('auth-display-name')?.value?.trim() || '';
     // createAccount only applies when form is submitted via Enter, not via role buttons
@@ -470,13 +490,21 @@ async function handleEmailPasswordAuth(intent) {
         return;
     }
 
-    if (!username) {
-        showAuthError('Enter your username.');
+    if (!authIdentifierRaw) {
+        showAuthError('Enter your username or email.');
         return;
     }
 
     if (!password) {
         showAuthError('Enter your password.');
+        return;
+    }
+
+    let authIdentifier;
+    try {
+        authIdentifier = resolveAuthIdentifier(authIdentifierRaw);
+    } catch (error) {
+        showAuthError(error.message || 'Enter your username or email.');
         return;
     }
 
@@ -499,8 +527,12 @@ async function handleEmailPasswordAuth(intent) {
         if (createAccount) {
             // Registration path — only used on explicit form submit with checkbox checked
             try {
+                if (authIdentifier.type === 'email') {
+                    throw new Error('Account creation from this screen supports username format. Use a username to create a new account, or sign in with your existing email account.');
+                }
+
                 await window.AuthService.registerWithUsernamePassword({
-                    username,
+                    username: authIdentifier.value,
                     password,
                     displayName,
                     requestedRole: selectedIntent
@@ -516,7 +548,11 @@ async function handleEmailPasswordAuth(intent) {
                 const msg = (createError?.message || '').toLowerCase();
                 if (msg.includes('already in use') || msg.includes('already exists') || msg.includes('that username')) {
                     // Account exists — sign in instead
-                    await window.AuthService.signInWithUsernamePassword(username, password);
+                    if (authIdentifier.type === 'email') {
+                        await window.AuthService.signInWithEmailPassword(authIdentifier.value, password);
+                    } else {
+                        await window.AuthService.signInWithUsernamePassword(authIdentifier.value, password);
+                    }
                     notify('Signed in successfully.', 'success');
                 } else {
                     throw createError;
@@ -524,7 +560,11 @@ async function handleEmailPasswordAuth(intent) {
             }
         } else {
             // Normal sign-in path
-            await window.AuthService.signInWithUsernamePassword(username, password);
+            if (authIdentifier.type === 'email') {
+                await window.AuthService.signInWithEmailPassword(authIdentifier.value, password);
+            } else {
+                await window.AuthService.signInWithUsernamePassword(authIdentifier.value, password);
+            }
             notify('Signed in successfully.', 'success');
         }
     } catch (error) {
