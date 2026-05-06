@@ -552,20 +552,19 @@ async function handleEmailPasswordAuth(intent) {
 
         updateAuthUI();
 
-        const uiReady = window.UI || (typeof UI !== 'undefined' ? UI : null);
-        if (uiReady) {
-            uiReady.switchView('driver-hub');
+        if (window.UI) {
+            window.UI.switchView('driver-hub');
         }
 
         if (createAccount) {
-            (window.UI || UI)?.showNotification?.(
+            window.UI?.showNotification?.(
                 selectedIntent === 'admin'
                     ? 'Account created. Game Master access is pending approval.'
                     : 'Account created — signed in as Driver.',
                 'success'
             );
         } else {
-            (window.UI || UI)?.showNotification?.('Signed in successfully.', 'success');
+            window.UI?.showNotification?.('Signed in successfully.', 'success');
         }
 
         // ── Async admin check — update UI once we know ─────────────────────────
@@ -577,7 +576,7 @@ async function handleEmailPasswordAuth(intent) {
                 AppSession.isAdmin = isAdmin;
                 if (window.AuthService) window.AuthService._isAdmin = isAdmin;
                 updateAuthUI();
-                const uiRef = window.UI || (typeof UI !== 'undefined' ? UI : null);
+                const uiRef = window.UI;
                 if (isAdmin && uiRef) uiRef.switchView('admin');
             } catch (_) {
                 // No admin record or Firestore unavailable — remain as driver

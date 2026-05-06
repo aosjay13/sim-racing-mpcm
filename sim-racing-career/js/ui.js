@@ -1,6 +1,6 @@
 // UI Management and Interactions
 
-const UI = {
+var UI = {
     // Track current view
     currentView: 'dashboard',
     currentMonth: new Date(),
