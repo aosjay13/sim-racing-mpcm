@@ -457,57 +457,41 @@ function clearAuthError() {
 async function handleEmailPasswordAuth(intent) {
     clearAuthError();
 
-    const notify = (message, type = 'success') => {
-        if (window.UI && typeof window.UI.showNotification === 'function') {
-            window.UI.showNotification(message, type);
-        } else {
-            console.log(`[${type.toUpperCase()}] ${message}`);
-        }
-    };
-
-    if (!window.AuthService) {
-        showAuthError('Authentication service is unavailable. Reload the page and try again.');
-        return;
-    }
-
-    if (AppSession.authInFlight) {
-        showAuthError('Sign-in already in progress — please wait a moment.');
-        return;
-    }
-
-    const authIdentifierRaw = document.getElementById('auth-email')?.value?.trim() || '';
-    const password = document.getElementById('auth-password')?.value || '';
-    const displayName = document.getElementById('auth-display-name')?.value?.trim() || '';
-    // createAccount only applies when form is submitted via Enter, not via role buttons
-    const createAccount = intent === '__form_submit__'
-        ? Boolean(document.getElementById('auth-create-account')?.checked)
-        : false;
     const resolvedIntent = intent === '__form_submit__' ? AppSession.loginIntent : intent;
-    const selectedIntent = resolvedIntent === 'admin' || resolvedIntent === 'driver' ? resolvedIntent : AppSession.loginIntent;
+    const selectedIntent = (resolvedIntent === 'admin' || resolvedIntent === 'driver') ? resolvedIntent : AppSession.loginIntent;
 
     if (selectedIntent !== 'admin' && selectedIntent !== 'driver') {
         showAuthError('Select Driver or Game Master before signing in.');
         return;
     }
 
-    if (!authIdentifierRaw) {
-        showAuthError('Enter your username or email.');
-        return;
+    const authIdentifierRaw = document.getElementById('auth-email')?.value?.trim() || '';
+    const password = document.getElementById('auth-password')?.value || '';
+    const displayName = document.getElementById('auth-display-name')?.value?.trim() || '';
+    const createAccount = intent === '__form_submit__'
+        ? Boolean(document.getElementById('auth-create-account')?.checked)
+        : false;
+
+    if (!authIdentifierRaw) { showAuthError('Enter your username or email.'); return; }
+    if (!password) { showAuthError('Enter your password.'); return; }
+    if (AppSession.authInFlight) { showAuthError('Sign-in already in progress — please wait.'); return; }
+
+    // Resolve to a Firebase email address
+    const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(authIdentifierRaw);
+    let firebaseEmail;
+    if (looksLikeEmail) {
+        firebaseEmail = authIdentifierRaw;
+    } else {
+        const normalized = authIdentifierRaw.toLowerCase()
+            .replace(/^(.+)@srmpc\.local$/, '$1'); // strip alias suffix if already present
+        if (!/^[a-z0-9._-]{3,24}$/.test(normalized)) {
+            showAuthError('Invalid username — 3–24 chars, letters/numbers/dot/underscore/dash only.');
+            return;
+        }
+        firebaseEmail = `${normalized}@srmpc.local`;
     }
 
-    if (!password) {
-        showAuthError('Enter your password.');
-        return;
-    }
-
-    let authIdentifier;
-    try {
-        authIdentifier = resolveAuthIdentifier(authIdentifierRaw);
-    } catch (error) {
-        showAuthError(error.message || 'Enter your username or email.');
-        return;
-    }
-
+    // Lock UI
     AppSession.loginIntent = selectedIntent;
     AppSession.authInFlight = true;
 
@@ -517,74 +501,109 @@ async function handleEmailPasswordAuth(intent) {
     const passwordInput = document.getElementById('auth-password');
     const displayNameInput = document.getElementById('auth-display-name');
     const createAccountInput = document.getElementById('auth-create-account');
-
     const controls = [driverBtn, adminBtn, emailInput, passwordInput, displayNameInput, createAccountInput];
     controls.forEach((c) => { if (c) c.disabled = true; });
     if (driverBtn) driverBtn.textContent = selectedIntent === 'driver' ? 'Signing in…' : 'Sign In as Driver';
     if (adminBtn) adminBtn.textContent = selectedIntent === 'admin' ? 'Signing in…' : 'Sign In as Game Master';
 
     try {
+        // ── Direct Firebase call — no AuthService abstraction ──────────────────
+        if (typeof firebase === 'undefined' || !firebase.auth) {
+            throw new Error('Firebase is not loaded. Check your internet connection and reload.');
+        }
+
+        const fbAuth = firebase.auth();
+        let credential;
+
         if (createAccount) {
-            // Registration path — only used on explicit form submit with checkbox checked
             try {
-                if (authIdentifier.type === 'email') {
-                    throw new Error('Account creation from this screen supports username format. Use a username to create a new account, or sign in with your existing email account.');
+                credential = await fbAuth.createUserWithEmailAndPassword(firebaseEmail, password);
+                if (displayName && credential.user) {
+                    await credential.user.updateProfile({ displayName }).catch(() => {});
                 }
-
-                await withTimeout(window.AuthService.registerWithUsernamePassword({
-                    username: authIdentifier.value,
-                    password,
-                    displayName,
-                    requestedRole: selectedIntent
-                }), 12000, 'Authentication timed out. Check Firebase Authorized Domains and your network, then try again.');
-
-                notify(
-                    selectedIntent === 'admin'
-                        ? 'Account created. Game Master access is pending approval.'
-                        : 'Account created — signed in as Driver.',
-                    'success'
-                );
             } catch (createError) {
-                const msg = (createError?.message || '').toLowerCase();
-                if (msg.includes('already in use') || msg.includes('already exists') || msg.includes('that username')) {
-                    // Account exists — sign in instead
-                    if (authIdentifier.type === 'email') {
-                        await withTimeout(window.AuthService.signInWithEmailPassword(authIdentifier.value, password), 12000, 'Sign in timed out. Check Firebase Authorized Domains and your network, then try again.');
-                    } else {
-                        await withTimeout(window.AuthService.signInWithUsernamePassword(authIdentifier.value, password), 12000, 'Sign in timed out. Check Firebase Authorized Domains and your network, then try again.');
-                    }
-                    notify('Signed in successfully.', 'success');
+                if (createError.code === 'auth/email-already-in-use') {
+                    // Account already exists — sign in instead
+                    credential = await fbAuth.signInWithEmailAndPassword(firebaseEmail, password);
                 } else {
                     throw createError;
                 }
             }
         } else {
-            // Normal sign-in path
-            if (authIdentifier.type === 'email') {
-                await withTimeout(window.AuthService.signInWithEmailPassword(authIdentifier.value, password), 12000, 'Sign in timed out. Check Firebase Authorized Domains and your network, then try again.');
-            } else {
-                await withTimeout(window.AuthService.signInWithUsernamePassword(authIdentifier.value, password), 12000, 'Sign in timed out. Check Firebase Authorized Domains and your network, then try again.');
-            }
-            notify('Signed in successfully.', 'success');
+            credential = await fbAuth.signInWithEmailAndPassword(firebaseEmail, password);
         }
 
-        // Direct session update — belt-and-suspenders in case listener notification is delayed
-        const freshUser = window.AuthService?.getCurrentUser();
-        if (freshUser && !freshUser.isAnonymous) {
-            AppSession.user = freshUser;
-            AppSession.isAuthenticated = true;
-            AppSession.isAdmin = Boolean(window.AuthService?._isAdmin);
-            if (!AppSession.hasEnteredApp) {
-                AppSession.hasEnteredApp = true;
-                updateAuthUI();
-                UI.switchView(AppSession.isAdmin ? 'admin' : 'driver-hub');
-            } else {
-                updateAuthUI();
-            }
+        const user = credential?.user;
+        if (!user) throw new Error('Firebase did not return a user. Try again.');
+
+        // ── Immediately update app session and show the app ────────────────────
+        AppSession.user = user;
+        AppSession.isAuthenticated = true;
+        AppSession.isAdmin = false; // safe default; async admin check runs below
+        AppSession.hasEnteredApp = true;
+
+        // Keep AuthService consistent so logout / listener code keeps working
+        if (window.AuthService) {
+            window.AuthService._user = user;
+            window.AuthService._isAdmin = false;
         }
+
+        updateAuthUI();
+        UI.switchView('driver-hub');
+
+        if (createAccount) {
+            UI.showNotification?.(
+                selectedIntent === 'admin'
+                    ? 'Account created. Game Master access is pending approval.'
+                    : 'Account created — signed in as Driver.',
+                'success'
+            );
+        } else {
+            UI.showNotification?.('Signed in successfully.', 'success');
+        }
+
+        // ── Async admin check — update UI once we know ─────────────────────────
+        (async () => {
+            try {
+                const fbDb = firebase.firestore();
+                const adminDoc = await fbDb.collection('admins').doc(user.uid).get();
+                const isAdmin = adminDoc.exists && adminDoc.data()?.isActive !== false;
+                AppSession.isAdmin = isAdmin;
+                if (window.AuthService) window.AuthService._isAdmin = isAdmin;
+                updateAuthUI();
+                if (isAdmin) UI.switchView('admin');
+            } catch (_) {
+                // No admin record or Firestore unavailable — remain as driver
+            }
+        })();
+
     } catch (error) {
-        console.error('Auth error:', error);
-        showAuthError(error.message || 'Sign in failed. Check your username and password.');
+        console.error('[AUTH ERROR]', error.code, error.message);
+
+        const code = error.code || '';
+        let msg = error.message || 'Sign in failed.';
+
+        if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+            msg = 'Username or password is incorrect.';
+        } else if (code === 'auth/invalid-email') {
+            msg = 'Invalid username or email format.';
+        } else if (code === 'auth/email-already-in-use') {
+            msg = 'That username already has an account. Uncheck "Create new account" to sign in instead.';
+        } else if (code === 'auth/weak-password') {
+            msg = 'Password must be at least 6 characters.';
+        } else if (code === 'auth/too-many-requests') {
+            msg = 'Too many failed attempts. Wait a few minutes and try again.';
+        } else if (code === 'auth/network-request-failed') {
+            msg = 'Network error. Check your connection and try again.';
+        } else if (code === 'auth/operation-not-allowed') {
+            msg = 'Email/password sign-in is disabled. Enable it in Firebase Console → Authentication → Sign-in methods.';
+        } else if (code === 'auth/unauthorized-domain') {
+            msg = `This domain (${window.location.hostname}) is not authorized. Add it in Firebase Console → Authentication → Settings → Authorized Domains.`;
+        } else if (code === 'auth/configuration-not-found') {
+            msg = 'Firebase Authentication is not configured for this project. Verify your firebase-config.js settings.';
+        }
+
+        showAuthError(msg);
     } finally {
         AppSession.authInFlight = false;
         controls.forEach((c) => { if (c) c.disabled = false; });
