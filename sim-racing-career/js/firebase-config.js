@@ -439,6 +439,13 @@ const AuthService = {
     _user: null,
     _readyPromise: Promise.resolve(),
 
+    waitWithTimeout(promise, timeoutMs = 8000) {
+        return Promise.race([
+            promise,
+            new Promise((resolve) => setTimeout(resolve, timeoutMs))
+        ]);
+    },
+
     isEmbeddedContext() {
         try {
             return window.self !== window.top;
@@ -462,11 +469,22 @@ const AuthService = {
         });
 
         this._readyPromise = new Promise((resolve) => {
+            let resolved = false;
+            const safeResolve = () => {
+                if (!resolved) {
+                    resolved = true;
+                    resolve();
+                }
+            };
+
+            // Safety net: never block app startup forever waiting on auth callback.
+            setTimeout(safeResolve, 9000);
+
             auth.onAuthStateChanged(async (user) => {
                 this._user = user || null;
                 this._isAdmin = await this.resolveAdminStatus(user);
                 this._notifyListeners();
-                resolve();
+                safeResolve();
             });
         });
 
@@ -474,8 +492,8 @@ const AuthService = {
     },
 
     async waitUntilReady() {
-        await (authStateReady || Promise.resolve());
-        await this._readyPromise;
+        await this.waitWithTimeout(authStateReady || Promise.resolve(), 8000);
+        await this.waitWithTimeout(this._readyPromise, 8000);
     },
 
     async resolveAdminStatus(user) {
@@ -738,7 +756,14 @@ const AuthService = {
                 }
             }
 
-            await this.waitUntilReady();
+            await this.waitWithTimeout(this.waitUntilReady(), 5000);
+
+            if (!this._user && credential?.user) {
+                this._user = credential.user;
+                this._isAdmin = await this.resolveAdminStatus(credential.user);
+                this._notifyListeners();
+            }
+
             return { user: this._user || credential?.user };
         } catch (error) {
             throw new Error(this.normalizeAuthError(error));
@@ -754,9 +779,17 @@ const AuthService = {
         const normalizedPassword = String(password || '');
 
         try {
-            await auth.signInWithEmailAndPassword(normalizedEmail, normalizedPassword);
-            await this.waitUntilReady();
-            return { user: this._user };
+            const credential = await auth.signInWithEmailAndPassword(normalizedEmail, normalizedPassword);
+
+            await this.waitWithTimeout(this.waitUntilReady(), 5000);
+
+            if (!this._user && credential?.user) {
+                this._user = credential.user;
+                this._isAdmin = await this.resolveAdminStatus(credential.user);
+                this._notifyListeners();
+            }
+
+            return { user: this._user || credential?.user };
         } catch (error) {
             throw new Error(this.normalizeAuthError(error));
         }

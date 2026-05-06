@@ -530,12 +530,12 @@ async function handleEmailPasswordAuth(intent) {
                     throw new Error('Account creation from this screen supports username format. Use a username to create a new account, or sign in with your existing email account.');
                 }
 
-                await window.AuthService.registerWithUsernamePassword({
+                await withTimeout(window.AuthService.registerWithUsernamePassword({
                     username: authIdentifier.value,
                     password,
                     displayName,
                     requestedRole: selectedIntent
-                });
+                }), 12000, 'Authentication timed out. Check Firebase Authorized Domains and your network, then try again.');
 
                 notify(
                     selectedIntent === 'admin'
@@ -548,9 +548,9 @@ async function handleEmailPasswordAuth(intent) {
                 if (msg.includes('already in use') || msg.includes('already exists') || msg.includes('that username')) {
                     // Account exists — sign in instead
                     if (authIdentifier.type === 'email') {
-                        await window.AuthService.signInWithEmailPassword(authIdentifier.value, password);
+                        await withTimeout(window.AuthService.signInWithEmailPassword(authIdentifier.value, password), 12000, 'Sign in timed out. Check Firebase Authorized Domains and your network, then try again.');
                     } else {
-                        await window.AuthService.signInWithUsernamePassword(authIdentifier.value, password);
+                        await withTimeout(window.AuthService.signInWithUsernamePassword(authIdentifier.value, password), 12000, 'Sign in timed out. Check Firebase Authorized Domains and your network, then try again.');
                     }
                     notify('Signed in successfully.', 'success');
                 } else {
@@ -560,9 +560,9 @@ async function handleEmailPasswordAuth(intent) {
         } else {
             // Normal sign-in path
             if (authIdentifier.type === 'email') {
-                await window.AuthService.signInWithEmailPassword(authIdentifier.value, password);
+                await withTimeout(window.AuthService.signInWithEmailPassword(authIdentifier.value, password), 12000, 'Sign in timed out. Check Firebase Authorized Domains and your network, then try again.');
             } else {
-                await window.AuthService.signInWithUsernamePassword(authIdentifier.value, password);
+                await withTimeout(window.AuthService.signInWithUsernamePassword(authIdentifier.value, password), 12000, 'Sign in timed out. Check Firebase Authorized Domains and your network, then try again.');
             }
             notify('Signed in successfully.', 'success');
         }
