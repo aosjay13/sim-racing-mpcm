@@ -415,10 +415,26 @@ const AuthService = {
 
     init() {
         this._readyPromise = (async () => {
+            // If there's a stored admin session from a previous passcode, clear it
+            // so the user is required to re-authenticate with the current passcode.
             const session = this._loadSession();
-            if (session) {
+            if (session && session.isAdmin) {
+                // Validate the stored admin session against the current passcode key.
+                // We use a version stamp to invalidate sessions from old passcodes.
+                const storedVersion = localStorage.getItem('srmpc_passcode_version');
+                const currentVersion = 'v3';
+                if (storedVersion !== currentVersion) {
+                    localStorage.removeItem(this._SESSION_KEY);
+                    localStorage.removeItem(this._PASSCODE_HASH_KEY);
+                    localStorage.setItem('srmpc_passcode_version', currentVersion);
+                } else {
+                    this._isAuthenticated = true;
+                    this._isAdmin = session.isAdmin;
+                    this._displayName = session.displayName || '';
+                }
+            } else if (session) {
                 this._isAuthenticated = true;
-                this._isAdmin = session.isAdmin;
+                this._isAdmin = false;
                 this._displayName = session.displayName || '';
             }
             // Defer listener notification so callers can register first
