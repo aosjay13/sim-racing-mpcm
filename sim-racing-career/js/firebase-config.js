@@ -97,14 +97,10 @@ window.SRMPCFirebase = {
     }
 };
 
-// Initialize Firebase
+// Initialize Firebase (Firestore only — auth is handled locally via passcode)
 let db;
-let auth;
 let storage;
-let appCheck;
 let firebaseInitError;
-let authReadyPromise = Promise.resolve();
-let authStateReady = null;
 
 try {
     const runtimeFirebaseConfig = normalizeFirebaseConfig(getFirebaseConfig());
@@ -115,75 +111,6 @@ try {
 
     const app = firebase.initializeApp(runtimeFirebaseConfig);
     db = firebase.firestore(app);
-
-    // Optional App Check: strongly recommended in production.
-    if (runtimeFirebaseConfig.appCheckSiteKey && typeof firebase.appCheck === 'function') {
-        const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-        if (isLocalHost && runtimeFirebaseConfig.appCheckDebugToken) {
-            self.FIREBASE_APPCHECK_DEBUG_TOKEN = runtimeFirebaseConfig.appCheckDebugToken;
-        }
-
-        appCheck = firebase.appCheck();
-        appCheck.activate(runtimeFirebaseConfig.appCheckSiteKey, true);
-        console.log('Firebase App Check enabled');
-    } else {
-        console.warn('Firebase App Check is not configured. Add appCheckSiteKey to strengthen abuse protection.');
-    }
-
-    try {
-        auth = firebase.auth(app);
-
-        authStateReady = new Promise((resolve) => {
-            const unsubscribe = auth.onAuthStateChanged(() => {
-                resolve();
-                unsubscribe();
-            });
-        });
-
-        // Sign in anonymously only when no real user is already present.
-        // We wait for the first auth state event so that a user returning from a
-        // Google redirect is never overwritten by a fresh anonymous session.
-        if (runtimeFirebaseConfig.enableAnonymousAuth !== false) {
-            authReadyPromise = new Promise((resolveAuthReady) => {
-                const unsub = auth.onAuthStateChanged(async (firstUser) => {
-                    unsub(); // fire once only
-
-                    if (firstUser && !firstUser.isAnonymous) {
-                        // Real user already present (e.g. returning from Google redirect).
-                        // Do NOT overwrite with an anonymous session.
-                        console.log('Real user detected on load, skipping anonymous sign-in.');
-                        resolveAuthReady();
-                        return;
-                    }
-
-                    if (!firstUser) {
-                        // No session at all — create an anonymous one for Firestore access.
-                        try {
-                            await auth.signInAnonymously();
-                            console.log('Signed in anonymously for Firestore access');
-                        } catch (error) {
-                            if (
-                                error.code === 'auth/configuration-not-found' ||
-                                error.code === 'auth/operation-not-allowed'
-                            ) {
-                                console.warn(
-                                    'Anonymous Authentication is not enabled in your Firebase project. ' +
-                                    'Go to Firebase Console > Authentication > Sign-in providers and enable Anonymous. ' +
-                                    'Continuing without auth — open Firestore rules are required until this is done.'
-                                );
-                            } else {
-                                console.error('Anonymous sign-in failed:', error);
-                            }
-                        }
-                    }
-
-                    resolveAuthReady();
-                });
-            });
-        }
-    } catch (error) {
-        console.warn('Firebase Auth init failed, continuing without auth:', error);
-    }
 
     try {
         storage = firebase.storage(app);
@@ -197,14 +124,14 @@ try {
 
     // Enable offline persistence
     db.enablePersistence().catch((err) => {
-        if (err.code == 'failed-precondition') {
+        if (err.code === 'failed-precondition') {
             console.warn('Multiple tabs open, persistence can only be enabled in one tab at a time.');
-        } else if (err.code == 'unimplemented') {
+        } else if (err.code === 'unimplemented') {
             console.warn('The current browser does not support all of the features required to enable persistence');
         }
     });
 
-    console.log('Firebase initialized successfully');
+    console.log('Firebase (Firestore) initialized successfully');
 } catch (error) {
     firebaseInitError = error;
     console.error('Firebase initialization error:', error);
@@ -217,9 +144,7 @@ try {
 window.getFirebaseInitStatus = function getFirebaseInitStatus() {
     return {
         initialized: Boolean(db),
-        hasAuth: Boolean(auth),
         hasStorage: Boolean(storage),
-        hasAppCheck: Boolean(appCheck),
         error: firebaseInitError ? (firebaseInitError.message || String(firebaseInitError)) : null
     };
 };
@@ -243,7 +168,6 @@ const DatabaseHelper = {
     async addDocument(collectionName, data) {
         try {
             await this.ensureFirebaseReady();
-            await authReadyPromise;
             const docRef = await db.collection(collectionName).add({
                 ...data,
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -262,7 +186,6 @@ const DatabaseHelper = {
     async updateDocument(collectionName, docId, data) {
         try {
             await this.ensureFirebaseReady();
-            await authReadyPromise;
             await db.collection(collectionName).doc(docId).update({
                 ...data,
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -279,7 +202,6 @@ const DatabaseHelper = {
     async deleteDocument(collectionName, docId) {
         try {
             await this.ensureFirebaseReady();
-            await authReadyPromise;
             await db.collection(collectionName).doc(docId).delete();
         } catch (error) {
             console.error(`Error deleting ${collectionName}:`, error);
@@ -293,7 +215,6 @@ const DatabaseHelper = {
     async getDocument(collectionName, docId) {
         try {
             await this.ensureFirebaseReady();
-            await authReadyPromise;
             const doc = await db.collection(collectionName).doc(docId).get();
             if (doc.exists) {
                 return { id: doc.id, ...doc.data() };
@@ -311,7 +232,6 @@ const DatabaseHelper = {
     async getCollection(collectionName, constraints = []) {
         try {
             await this.ensureFirebaseReady();
-            await authReadyPromise;
             let query = db.collection(collectionName);
 
             // Apply constraints if provided
@@ -337,7 +257,6 @@ const DatabaseHelper = {
     async queryCollection(collectionName, filters = [], orderBy = null, limit = null) {
         try {
             await this.ensureFirebaseReady();
-            await authReadyPromise;
             let query = db.collection(collectionName);
 
             // Apply filters
@@ -373,30 +292,22 @@ const DatabaseHelper = {
     listenToCollection(collectionName, callback, constraints = []) {
         try {
             this.ensureFirebaseReadySync();
-            let unsubscribe = () => {};
+            let query = db.collection(collectionName);
 
-            authReadyPromise
-                .then(() => {
-                    let query = db.collection(collectionName);
+            // Apply constraints if provided
+            for (const [field, operator, value] of constraints) {
+                query = query.where(field, operator, value);
+            }
 
-                    // Apply constraints if provided
-                    for (const [field, operator, value] of constraints) {
-                        query = query.where(field, operator, value);
-                    }
-
-                    unsubscribe = query.onSnapshot((snapshot) => {
-                        const documents = [];
-                        snapshot.forEach(doc => {
-                            documents.push({ id: doc.id, ...doc.data() });
-                        });
-                        callback(documents);
-                    }, (error) => {
-                        console.error(`Error listening to ${collectionName}:`, error);
-                    });
-                })
-                .catch((error) => {
-                    console.error(`Auth not ready for ${collectionName} listener:`, error);
+            const unsubscribe = query.onSnapshot((snapshot) => {
+                const documents = [];
+                snapshot.forEach(doc => {
+                    documents.push({ id: doc.id, ...doc.data() });
                 });
+                callback(documents);
+            }, (error) => {
+                console.error(`Error listening to ${collectionName}:`, error);
+            });
 
             return () => unsubscribe();
         } catch (error) {
@@ -411,7 +322,6 @@ const DatabaseHelper = {
     async batchWrite(operations) {
         try {
             await this.ensureFirebaseReady();
-            await authReadyPromise;
             const batch = db.batch();
 
             for (const op of operations) {
@@ -433,397 +343,161 @@ const DatabaseHelper = {
     }
 };
 
+// ===== PASSCODE-BASED AUTH (replaces Firebase Auth) =====
 const AuthService = {
+    _PASSCODE_HASH_KEY: 'srmpc_admin_passcode_hash',
+    _SESSION_KEY: 'srmpc_session',
+    _SESSION_TTL_MS: 8 * 60 * 60 * 1000, // 8 hours
     _listeners: [],
     _isAdmin: false,
-    _user: null,
-    _readyPromise: Promise.resolve(),
+    _displayName: '',
+    _isAuthenticated: false,
 
-    waitWithTimeout(promise, timeoutMs = 8000) {
-        return Promise.race([
-            promise,
-            new Promise((resolve) => setTimeout(resolve, timeoutMs))
-        ]);
+    async _sha256(text) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(text);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     },
 
-    isEmbeddedContext() {
+    hasAdminPasscode() {
+        return Boolean(localStorage.getItem(this._PASSCODE_HASH_KEY));
+    },
+
+    async setAdminPasscode(passcode) {
+        const trimmed = String(passcode || '').trim();
+        if (trimmed.length < 4) {
+            throw new Error('Passcode must be at least 4 characters.');
+        }
+        const hash = await this._sha256(trimmed);
+        localStorage.setItem(this._PASSCODE_HASH_KEY, hash);
+        console.log('Admin passcode saved.');
+    },
+
+    async verifyAdminPasscode(passcode) {
+        const storedHash = localStorage.getItem(this._PASSCODE_HASH_KEY);
+        if (!storedHash) return false;
+        const hash = await this._sha256(String(passcode || '').trim());
+        return hash === storedHash;
+    },
+
+    _saveSession(isAdmin, displayName) {
+        const session = {
+            isAdmin: Boolean(isAdmin),
+            displayName: displayName || '',
+            isAuthenticated: true,
+            expiresAt: Date.now() + this._SESSION_TTL_MS
+        };
+        localStorage.setItem(this._SESSION_KEY, JSON.stringify(session));
+    },
+
+    _loadSession() {
         try {
-            return window.self !== window.top;
-        } catch (error) {
-            // Accessing window.top can throw in cross-origin embeds.
-            return true;
+            const raw = localStorage.getItem(this._SESSION_KEY);
+            if (!raw) return null;
+            const session = JSON.parse(raw);
+            if (!session || !session.expiresAt || session.expiresAt < Date.now()) {
+                localStorage.removeItem(this._SESSION_KEY);
+                return null;
+            }
+            return session;
+        } catch {
+            return null;
         }
     },
 
     init() {
-        if (!auth) {
-            this._readyPromise = Promise.resolve();
-            return this._readyPromise;
+        const session = this._loadSession();
+        if (session) {
+            this._isAuthenticated = true;
+            this._isAdmin = session.isAdmin;
+            this._displayName = session.displayName || '';
         }
-
-        auth.getRedirectResult().catch((error) => {
-            // auth/no-auth-event fires on every normal page load with no pending redirect — safe to ignore.
-            if (error.code !== 'auth/no-auth-event') {
-                console.error('Google redirect sign-in failed:', error);
-            }
-        });
-
-        this._readyPromise = new Promise((resolve) => {
-            let resolved = false;
-            const safeResolve = () => {
-                if (!resolved) {
-                    resolved = true;
-                    resolve();
-                }
-            };
-
-            // Safety net: never block app startup forever waiting on auth callback.
-            setTimeout(safeResolve, 9000);
-
-            auth.onAuthStateChanged(async (user) => {
-                this._user = user || null;
-                this._isAdmin = await this.resolveAdminStatus(user);
-                this._notifyListeners();
-                safeResolve();
-            });
-        });
-
-        return this._readyPromise;
+        // Defer listener notification so callers can register first
+        Promise.resolve().then(() => this._notifyListeners());
+        return Promise.resolve();
     },
 
     async waitUntilReady() {
-        await this.waitWithTimeout(authStateReady || Promise.resolve(), 8000);
-        await this.waitWithTimeout(this._readyPromise, 8000);
-    },
-
-    async resolveAdminStatus(user) {
-        if (!user || !db || user.isAnonymous) return false;
-        try {
-            const adminDoc = await db.collection('admins').doc(user.uid).get();
-            return adminDoc.exists && adminDoc.data()?.isActive !== false;
-        } catch (error) {
-            console.error('Error resolving admin status:', error);
-            return false;
-        }
+        return Promise.resolve();
     },
 
     onAuthStateChanged(listener) {
         this._listeners.push(listener);
-        try {
-            Promise.resolve(listener({
-                user: this._user,
-                isAdmin: this._isAdmin,
-                isAuthenticated: this.isAuthenticated()
-            })).catch((error) => {
-                console.error('Auth listener error:', error);
-            });
-        } catch (error) {
-            console.error('Auth listener error:', error);
-        }
-
+        // Notify immediately with current state
+        Promise.resolve().then(() => {
+            try {
+                listener({
+                    user: this._isAuthenticated ? { displayName: this._displayName, uid: 'local' } : null,
+                    isAdmin: this._isAdmin,
+                    isAuthenticated: this._isAuthenticated
+                });
+            } catch (e) {
+                console.error('Auth listener error:', e);
+            }
+        });
         return () => {
-            this._listeners = this._listeners.filter((cb) => cb !== listener);
+            this._listeners = this._listeners.filter(cb => cb !== listener);
         };
     },
 
     _notifyListeners() {
         const payload = {
-            user: this._user,
+            user: this._isAuthenticated ? { displayName: this._displayName, uid: 'local' } : null,
             isAdmin: this._isAdmin,
-            isAuthenticated: this.isAuthenticated()
+            isAuthenticated: this._isAuthenticated
         };
-
-        this._listeners.forEach((listener) => {
+        this._listeners.forEach(listener => {
             try {
-                Promise.resolve(listener(payload)).catch((error) => {
-                    console.error('Auth listener execution error:', error);
-                });
-            } catch (error) {
-                console.error('Auth listener execution error:', error);
+                listener(payload);
+            } catch (e) {
+                console.error('Auth listener execution error:', e);
             }
         });
     },
 
-    async signInWithGoogle() {
-        if (!auth) {
-            throw new Error('Authentication is not configured.');
-        }
-
-        const provider = new firebase.auth.GoogleAuthProvider();
-        provider.addScope('email');
-        provider.addScope('profile');
-        provider.setCustomParameters({ prompt: 'select_account' });
-        const currentUser = auth.currentUser;
-
-        const startRedirectFlow = async (preferLinkForAnonymous = false) => {
-            if (preferLinkForAnonymous && currentUser?.isAnonymous) {
-                try {
-                    await currentUser.linkWithRedirect(provider);
-                    return { redirectStarted: true };
-                } catch (linkRedirectError) {
-                    if (
-                        linkRedirectError.code === 'auth/provider-already-linked' ||
-                        linkRedirectError.code === 'auth/credential-already-in-use' ||
-                        linkRedirectError.code === 'auth/email-already-in-use'
-                    ) {
-                        await auth.signOut();
-                        await auth.signInWithRedirect(provider);
-                        return { redirectStarted: true };
-                    }
-
-                    throw linkRedirectError;
-                }
-            }
-
-            await auth.signInWithRedirect(provider);
-            return { redirectStarted: true };
-        };
-
-        const signInWithPopupFlow = async () => {
-            await auth.signInWithPopup(provider);
-            await this.waitUntilReady();
-            return { redirectStarted: false, user: this._user };
-        };
-
-        try {
-            // Embedded surfaces (for example Google Sites iframes) are less reliable with popup auth.
-            // Redirect is more consistent in these contexts.
-            if (this.isEmbeddedContext()) {
-                return await startRedirectFlow(true);
-            }
-
-            if (currentUser?.isAnonymous) {
-                try {
-                    await currentUser.linkWithPopup(provider);
-                    await this.waitUntilReady();
-                    return { redirectStarted: false, user: this._user };
-                } catch (linkError) {
-                    if (
-                        linkError.code === 'auth/provider-already-linked' ||
-                        linkError.code === 'auth/credential-already-in-use' ||
-                        linkError.code === 'auth/email-already-in-use'
-                    ) {
-                        await auth.signOut();
-                        return await signInWithPopupFlow();
-                    }
-
-                    if (
-                        linkError.code === 'auth/popup-blocked' ||
-                        linkError.code === 'auth/cancelled-popup-request' ||
-                        linkError.code === 'auth/popup-closed-by-user'
-                    ) {
-                        return await startRedirectFlow(true);
-                    }
-
-                    throw linkError;
-                }
-            }
-
-            return await signInWithPopupFlow();
-        } catch (error) {
-            if (
-                error.code === 'auth/popup-blocked' ||
-                error.code === 'auth/cancelled-popup-request' ||
-                error.code === 'auth/popup-closed-by-user'
-            ) {
-                return await startRedirectFlow(true);
-            }
-
-            if (error.code === 'auth/unauthorized-domain') {
-                const hostname = window.location.hostname || 'this domain';
-                throw new Error(
-                    'Google sign-in is blocked for ' + hostname + '. Add this exact host in Firebase Authentication > Settings > Authorized domains (including preview hostnames).'
-                );
-            }
-
-            if (error.code === 'auth/operation-not-allowed') {
-                throw new Error('Google sign-in is disabled in Firebase Authentication. Enable the Google provider and try again.');
-            }
-
-            if (error.code === 'auth/operation-not-supported-in-this-environment') {
-                throw new Error('Google popup sign-in is not supported in this preview environment. Open the app in a regular browser tab and try again.');
-            }
-
-            if (error.code === 'auth/network-request-failed') {
-                throw new Error('Network request failed during Google sign-in. Check connectivity and try again.');
-            }
-
-            throw error;
-        }
+    async enterAsDriver(displayName) {
+        this._isAuthenticated = true;
+        this._isAdmin = false;
+        this._displayName = (displayName || 'Driver').trim() || 'Driver';
+        this._saveSession(false, this._displayName);
+        this._notifyListeners();
+        return { isAdmin: false, displayName: this._displayName };
     },
 
-    normalizeAuthError(error) {
-        if (!error?.code) {
-            return error?.message || 'Authentication failed.';
+    async unlockAdmin(passcode) {
+        if (!this.hasAdminPasscode()) {
+            // Signal that a passcode needs to be set up first
+            throw new Error('NO_PASSCODE_SET');
         }
-
-        if (error.code === 'auth/invalid-email') {
-            return 'Invalid username or password.';
+        const valid = await this.verifyAdminPasscode(passcode);
+        if (!valid) {
+            throw new Error('Incorrect passcode.');
         }
-
-        if (error.code === 'auth/missing-password' || error.code === 'auth/internal-error') {
-            return 'Enter your username and password.';
-        }
-
-        if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
-            return 'Username or password is incorrect.';
-        }
-
-        if (error.code === 'auth/email-already-in-use') {
-            return 'That username already exists. Sign in instead.';
-        }
-
-        if (error.code === 'auth/weak-password') {
-            return 'Password must be at least 6 characters.';
-        }
-
-        if (error.code === 'auth/operation-not-allowed') {
-            return 'Username/password sign-in backend is disabled in Firebase Authentication. Enable Email/Password provider and try again.';
-        }
-
-        if (error.code === 'auth/too-many-requests') {
-            return 'Too many failed attempts. Wait a bit and try again.';
-        }
-
-        return error.message || 'Authentication failed.';
-    },
-
-    normalizeUsername(username) {
-        const raw = String(username || '').trim().toLowerCase();
-        if (!raw) {
-            throw new Error('Username is required.');
-        }
-
-        // Accept either plain username OR the internal local auth alias.
-        const normalized = raw.endsWith('@srmpc.local')
-            ? raw.slice(0, -'@srmpc.local'.length)
-            : raw;
-
-        if (!/^[a-z0-9._-]{3,24}$/.test(normalized)) {
-            throw new Error('Username must be 3-24 chars using letters, numbers, dot, underscore, or dash (you can also sign in with username@srmpc.local).');
-        }
-
-        return normalized;
-    },
-
-    usernameToInternalEmail(username) {
-        const normalized = this.normalizeUsername(username);
-        return `${normalized}@srmpc.local`;
-    },
-
-    async signInWithUsernamePassword(username, password) {
-        const internalEmail = this.usernameToInternalEmail(username);
-        return await this.signInWithEmailPassword(internalEmail, password);
-    },
-
-    async registerWithUsernamePassword({ username, password, displayName = '', requestedRole = 'driver' } = {}) {
-        if (!auth) {
-            throw new Error('Authentication is not configured.');
-        }
-
-        const normalizedUsername = this.normalizeUsername(username);
-        const normalizedPassword = String(password || '');
-        if (normalizedPassword.length < 6) {
-            throw new Error('Password must be at least 6 characters.');
-        }
-
-        const role = requestedRole === 'admin' ? 'admin' : 'driver';
-        const internalEmail = this.usernameToInternalEmail(normalizedUsername);
-
-        try {
-            const credential = await auth.createUserWithEmailAndPassword(internalEmail, normalizedPassword);
-            // Use the credential UID directly — more reliable than this._user which may not be updated yet
-            const uid = credential?.user?.uid || auth.currentUser?.uid;
-
-            if (uid) {
-                if (window.Database?.users) {
-                    await window.Database.users.upsertProfile(uid, {
-                        displayName: displayName || normalizedUsername,
-                        email: '',
-                        username: normalizedUsername,
-                        requestedRole: role,
-                        roleStatus: role === 'admin' ? 'pending' : 'approved'
-                    }).catch((e) => console.warn('Profile write failed (non-fatal):', e));
-                }
-
-                if (window.Database?.accounts) {
-                    await window.Database.accounts.createRequest({
-                        uid,
-                        username: normalizedUsername,
-                        displayName: displayName || normalizedUsername,
-                        requestedRole: role
-                    }).catch((e) => console.warn('Account request write failed (non-fatal):', e));
-                }
-            }
-
-            await this.waitWithTimeout(this.waitUntilReady(), 5000);
-
-            if ((!this._user || this._user.isAnonymous) && credential?.user) {
-                this._user = credential.user;
-                this._isAdmin = await this.resolveAdminStatus(credential.user);
-                this._notifyListeners();
-            }
-
-            return { user: this._user || credential?.user };
-        } catch (error) {
-            throw new Error(this.normalizeAuthError(error));
-        }
-    },
-
-    async signInWithEmailPassword(email, password) {
-        if (!auth) {
-            throw new Error('Authentication is not configured.');
-        }
-
-        const normalizedEmail = String(email || '').trim();
-        const normalizedPassword = String(password || '');
-
-        try {
-            const credential = await auth.signInWithEmailAndPassword(normalizedEmail, normalizedPassword);
-
-            await this.waitWithTimeout(this.waitUntilReady(), 5000);
-
-            if ((!this._user || this._user.isAnonymous) && credential?.user) {
-                this._user = credential.user;
-                this._isAdmin = await this.resolveAdminStatus(credential.user);
-                this._notifyListeners();
-            }
-
-            return { user: this._user || credential?.user };
-        } catch (error) {
-            throw new Error(this.normalizeAuthError(error));
-        }
-    },
-
-    async registerWithEmailPassword(email, password) {
-        if (!auth) {
-            throw new Error('Authentication is not configured.');
-        }
-
-        const normalizedEmail = String(email || '').trim();
-        const normalizedPassword = String(password || '');
-
-        try {
-            await auth.createUserWithEmailAndPassword(normalizedEmail, normalizedPassword);
-
-            await this.waitUntilReady();
-            return { user: this._user };
-        } catch (error) {
-            throw new Error(this.normalizeAuthError(error));
-        }
+        this._isAuthenticated = true;
+        this._isAdmin = true;
+        this._displayName = 'Game Master';
+        this._saveSession(true, 'Game Master');
+        this._notifyListeners();
+        return { isAdmin: true };
     },
 
     async signOut() {
-        if (!auth) return;
-        await auth.signOut();
+        this._isAuthenticated = false;
+        this._isAdmin = false;
+        this._displayName = '';
+        localStorage.removeItem(this._SESSION_KEY);
+        this._notifyListeners();
     },
 
     getCurrentUser() {
-        return this._user;
+        if (!this._isAuthenticated) return null;
+        return { displayName: this._displayName, uid: 'local' };
     },
 
     isAuthenticated() {
-        return Boolean(this._user && !this._user.isAnonymous);
+        return this._isAuthenticated;
     },
 
     isAdmin() {

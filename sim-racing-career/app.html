@@ -5,12 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Phoenix's Sim Racing Multiplayer Career Mode (SRMPC)</title>
     <link rel="stylesheet" href="css/style.css">
-    <!-- Firebase -->
+    <!-- Firebase (Firestore only — auth handled locally) -->
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-storage-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-check-compat.js"></script>
 </head>
 <body>
     <section id="auth-gate" class="auth-gate">
@@ -23,48 +21,49 @@
                 <span class="badge-new">Secure Access</span>
             </div>
             <h1>League Entry Portal</h1>
-            <p>Use a username and password to enter your workspace. Choose Driver or Admin/Game Master to set your intended role.</p>
+            <p>Enter as Driver to access your racing workspace, or unlock Game Master controls with the admin passcode.</p>
             <div class="auth-gate-highlights">
                 <span class="status-pill status-approved">Live data</span>
                 <span class="status-pill status-pending">Role-based access</span>
                 <span class="status-pill status-rejected">Protected admin controls</span>
             </div>
-            <p id="auth-gate-diagnostics" class="auth-gate-diagnostics hidden"></p>
+
+            <!-- Driver entry panel -->
             <div class="auth-fallback-divider" aria-hidden="true">
-                <span>Username Login</span>
+                <span>Enter as Driver</span>
+            </div>
+            <form id="auth-driver-form" class="auth-fallback-form">
+                <div class="auth-fallback-grid">
+                    <div class="auth-fallback-field">
+                        <label for="auth-display-name">Display Name <span style="font-weight:400;opacity:0.6;">(optional)</span></label>
+                        <input id="auth-display-name" name="displayName" type="text" autocomplete="nickname" placeholder="How others see you">
+                    </div>
+                </div>
+                <div class="auth-fallback-actions">
+                    <button id="auth-email-driver-btn" class="btn btn-secondary" type="submit">Enter as Driver</button>
+                </div>
+            </form>
+
+            <!-- Game Master entry panel -->
+            <div class="auth-fallback-divider" aria-hidden="true">
+                <span>Game Master Access</span>
             </div>
             <form id="auth-email-form" class="auth-fallback-form">
                 <div class="auth-fallback-grid">
                     <div class="auth-fallback-field">
-                        <label for="auth-email">Username or Email</label>
-                        <input id="auth-email" name="username" type="text" autocomplete="username" placeholder="your_username or you@example.com" required>
-                        <small id="auth-username-helper" class="auth-username-helper">Use username (or username@srmpc.local) OR a full email address from Firebase Auth.</small>
+                        <label for="auth-password" id="auth-passcode-label">Admin Passcode</label>
+                        <input id="auth-password" name="passcode" type="password" autocomplete="current-password" placeholder="Enter admin passcode">
+                        <small id="auth-username-helper" class="auth-username-helper">Enter the admin passcode to unlock Game Master controls.</small>
                     </div>
-                    <div class="auth-fallback-field">
-                        <label for="auth-password">Password</label>
-                        <input id="auth-password" name="password" type="password" autocomplete="current-password" placeholder="At least 6 characters" required>
+                    <div class="auth-fallback-field" id="auth-passcode-confirm-field" style="display:none;">
+                        <label for="auth-passcode-confirm">Confirm Passcode</label>
+                        <input id="auth-passcode-confirm" name="passcodeConfirm" type="password" autocomplete="new-password" placeholder="Confirm passcode">
                     </div>
-                    <div class="auth-fallback-field" id="auth-display-name-field">
-                        <label for="auth-display-name">Display Name (new accounts)</label>
-                        <input id="auth-display-name" name="displayName" type="text" autocomplete="nickname" placeholder="How others see you">
-                    </div>
-                </div>
-                <div class="auth-fallback-row">
-                    <label class="auth-fallback-check" for="auth-create-account">
-                        <input id="auth-create-account" name="createAccount" type="checkbox">
-                        <span>Create a new account instead of signing in</span>
-                    </label>
-                    <span class="auth-fallback-copy">Admin/Game Master accounts require approval before admin access is granted.</span>
                 </div>
                 <div class="auth-fallback-actions">
-                    <button id="auth-email-driver-btn" class="btn btn-secondary" type="button">Sign In as Driver</button>
-                    <button id="auth-email-admin-btn" class="btn btn-primary" type="button">Sign In as Game Master</button>
+                    <button id="auth-email-admin-btn" class="btn btn-primary" type="submit">Unlock Game Master</button>
                 </div>
                 <p id="auth-email-error" class="auth-email-error" style="display:none;"></p>
-                <div id="auth-debug-panel" style="display:none;margin-top:1rem;padding:0.75rem;background:#111;border:1px solid #333;border-radius:8px;font-family:monospace;font-size:0.78rem;color:#aaa;line-height:1.6;">
-                    <strong style="color:#fff;">Sign-in diagnostics</strong>
-                    <ol id="auth-debug-steps" style="margin:0.5rem 0 0 1rem;padding:0;"></ol>
-                </div>
             </form>
         </div>
     </section>

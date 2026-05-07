@@ -11,118 +11,35 @@ const AppSession = {
     authAutoLaunchAttempted: false
 };
 
-function refreshAuthRoleUI() {
-    const driverBtn = document.getElementById('auth-email-driver-btn');
-    const gameMasterBtn = document.getElementById('auth-email-admin-btn');
-
-    if (driverBtn) {
-        driverBtn.classList.toggle('auth-panel-selected', AppSession.loginIntent === 'driver');
-    }
-
-    if (gameMasterBtn) {
-        gameMasterBtn.classList.toggle('auth-panel-selected', AppSession.loginIntent === 'admin');
-    }
-}
-
-function refreshUsernameHelper() {
-    const usernameInput = document.getElementById('auth-email');
-    const helperEl = document.getElementById('auth-username-helper');
-    if (!helperEl) return;
-
-    const raw = String(usernameInput?.value || '').trim();
-    const rawLower = raw.toLowerCase();
-    const withoutAlias = rawLower.endsWith('@srmpc.local')
-        ? rawLower.slice(0, -'@srmpc.local'.length)
-        : rawLower;
-    const normalized = withoutAlias.replace(/[^a-z0-9._-]/g, '');
-    const isValid = /^[a-z0-9._-]{3,24}$/.test(normalized);
-
-    const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw);
-
-    if (!raw) {
-        helperEl.textContent = 'Use username (or username@srmpc.local) OR a full email address from Firebase Auth.';
-        helperEl.style.color = '';
-    } else if (looksLikeEmail) {
-        helperEl.textContent = '✓ Using full email login.';
-        helperEl.style.color = 'var(--color-success, #2ecc71)';
-    } else if (!isValid) {
-        helperEl.textContent = `Invalid username — 3–24 chars, letters/numbers/dot/underscore/dash only.`;
-        helperEl.style.color = 'var(--color-error, #e74c3c)';
-    } else {
-        helperEl.textContent = `✓ Valid username. Internal auth ID: ${normalized}@srmpc.local`;
-        helperEl.style.color = 'var(--color-success, #2ecc71)';
-    }
-}
-
-function resolveAuthIdentifier(rawIdentifier) {
-    const identifier = String(rawIdentifier || '').trim();
-
-    if (!identifier) {
-        throw new Error('Enter your username or email.');
-    }
-
-    const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
-
-    return {
-        value: identifier,
-        type: looksLikeEmail ? 'email' : 'username'
-    };
-}
-
 // ===== APPLICATION INITIALIZATION =====
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('Initializing Sim Racing Career Mode...');
     
     initializeEventListeners();
-    updateAuthDiagnostics();
+    updatePasscodeGateUI();
     await initializeAuthSession();
     loadDriverTeamOptions();
     toggleNewDriverTeamFields();
-    refreshAuthRoleUI();
-    refreshUsernameHelper();
 });
 
-function updateAuthDiagnostics() {
-    const diagnosticsEl = document.getElementById('auth-gate-diagnostics');
-    if (!diagnosticsEl) return;
-
-    const host = window.location.hostname || '';
-    const status = window.getFirebaseInitStatus ? window.getFirebaseInitStatus() : null;
-    const hints = [];
-
-    if (!status?.initialized) {
-        hints.push('Firebase is not fully initialized in this session.');
+function updatePasscodeGateUI() {
+    const helperEl = document.getElementById('auth-username-helper');
+    const hasPasscode = window.AuthService?.hasAdminPasscode?.();
+    if (helperEl) {
+        helperEl.textContent = hasPasscode
+            ? 'Enter the admin passcode to unlock Game Master controls.'
+            : 'No admin passcode set yet — enter a new passcode to set it up.';
     }
 
-    if (host.includes('github.dev') || host.includes('app.github.dev')) {
-        hints.push('Preview domains usually require adding this exact host to Firebase Auth Authorized domains.');
+    const confirmField = document.getElementById('auth-passcode-confirm-field');
+    const adminBtn = document.getElementById('auth-email-admin-btn');
+    if (!hasPasscode) {
+        if (confirmField) confirmField.style.display = '';
+        if (adminBtn) adminBtn.textContent = 'Set Passcode & Unlock';
+    } else {
+        if (confirmField) confirmField.style.display = 'none';
+        if (adminBtn) adminBtn.textContent = 'Unlock Game Master';
     }
-
-    if (window.AuthService?.isEmbeddedContext?.()) {
-        hints.push('Embedded mode detected: Google sign-in will open in a separate browser tab.');
-    }
-
-    if (!status?.hasAuth) {
-        hints.push('Firebase Auth is unavailable. Check firebase-config.js credentials.');
-    }
-
-    if (!hints.length) {
-        diagnosticsEl.classList.add('hidden');
-        diagnosticsEl.textContent = '';
-        return;
-    }
-
-    diagnosticsEl.textContent = `Auth diagnostics (${host}): ${hints.join(' ')}`;
-    diagnosticsEl.classList.remove('hidden');
-}
-
-function withTimeout(promise, timeoutMs, timeoutMessage) {
-    return Promise.race([
-        promise,
-        new Promise((_, reject) => {
-            setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
-        })
-    ]);
 }
 
 async function initializeAuthSession() {
@@ -136,69 +53,20 @@ async function initializeAuthSession() {
 
     await window.AuthService.waitUntilReady();
 
-    const params = new URLSearchParams(window.location.search);
-    const authIntentParam = params.get('authIntent');
-
-    if (authIntentParam === 'admin' || authIntentParam === 'driver') {
-        AppSession.loginIntent = authIntentParam;
-    }
-
-    window.AuthService.onAuthStateChanged(async (state) => {
+    window.AuthService.onAuthStateChanged((state) => {
         AppSession.user = state.user;
         AppSession.isAuthenticated = state.isAuthenticated;
         AppSession.isAdmin = state.isAdmin;
 
-        if (AppSession.isAuthenticated && AppSession.user?.uid) {
-            try {
-                const resolvedAdmin = await Database.admins.isAdmin(AppSession.user.uid);
-                AppSession.isAdmin = Boolean(resolvedAdmin);
-
-                if (window.AuthService && window.AuthService._isAdmin !== AppSession.isAdmin) {
-                    window.AuthService._isAdmin = AppSession.isAdmin;
-                }
-            } catch (error) {
-                console.warn('Admin role verification fallback failed:', error);
-            }
-        }
-
-        try {
-            if (!AppSession.isAuthenticated) {
-                AppSession.claimedDriverId = '';
-                AppSession.hasEnteredApp = false;
-            } else {
-                await hydrateSessionProfile();
-            }
-        } catch (error) {
-            console.error('Session profile hydration failed, continuing with auth session:', error);
-
-            if (!AppSession.isAuthenticated) {
-                AppSession.claimedDriverId = '';
-            } else {
-                try {
-                    const saved = localStorage.getItem('srmpcUserProfile');
-                    if (saved) {
-                        const localProfile = JSON.parse(saved);
-                        AppSession.claimedDriverId = localProfile?.primaryDriver || '';
-                    }
-                } catch (parseError) {
-                    console.warn('Could not parse local profile fallback:', parseError);
-                }
-            }
+        if (!AppSession.isAuthenticated) {
+            AppSession.claimedDriverId = '';
+            AppSession.hasEnteredApp = false;
         }
 
         updateAuthUI();
 
         if (AppSession.isAuthenticated && !AppSession.hasEnteredApp) {
             AppSession.hasEnteredApp = true;
-
-            if (window.location.search.includes('authLaunch=1')) {
-                const cleanedUrl = window.location.pathname + window.location.hash;
-                window.history.replaceState({}, document.title, cleanedUrl);
-            }
-
-            if (AppSession.loginIntent === 'admin' && !AppSession.isAdmin) {
-                window.UI?.showNotification('Admin access was not found for this account. Opening Driver portal instead.', 'error');
-            }
 
             if (AppSession.isAdmin) {
                 window.UI?.switchView('admin');
@@ -219,49 +87,17 @@ async function initializeAuthSession() {
 }
 
 async function hydrateSessionProfile() {
-    if (!AppSession.isAuthenticated || !AppSession.user?.uid) return;
-
-    const uid = AppSession.user.uid;
-    let localProfile = null;
+    if (!AppSession.isAuthenticated) return;
 
     try {
         const saved = localStorage.getItem('srmpcUserProfile');
         if (saved) {
-            localProfile = JSON.parse(saved);
+            const localProfile = JSON.parse(saved);
+            AppSession.claimedDriverId = localProfile?.primaryDriver || '';
         }
     } catch (error) {
         console.warn('Could not parse local profile cache:', error);
     }
-
-    let remoteProfile = null;
-
-    try {
-        remoteProfile = await Database.users.getProfile(uid);
-
-        if (!remoteProfile) {
-            await Database.users.upsertProfile(uid, {
-                displayName: AppSession.user.displayName || localProfile?.name || '',
-                email: AppSession.user.email || localProfile?.email || '',
-                primaryTeam: localProfile?.primaryTeam || '',
-                primaryDriver: localProfile?.primaryDriver || ''
-            });
-
-            remoteProfile = await Database.users.getProfile(uid);
-        }
-    } catch (error) {
-        console.warn('Remote profile sync failed; continuing with local/auth profile only:', error);
-    }
-
-    const mergedProfile = {
-        name: remoteProfile?.displayName || localProfile?.name || AppSession.user.displayName || '',
-        email: remoteProfile?.email || AppSession.user.email || localProfile?.email || '',
-        primaryTeam: remoteProfile?.primaryTeam || localProfile?.primaryTeam || '',
-        primaryDriver: remoteProfile?.primaryDriver || localProfile?.primaryDriver || '',
-        savedAt: new Date().toISOString()
-    };
-
-    AppSession.claimedDriverId = mergedProfile.primaryDriver || '';
-    localStorage.setItem('srmpcUserProfile', JSON.stringify(mergedProfile));
 }
 
 function updateShellVisibility() {
@@ -429,7 +265,9 @@ function requireAdmin(message = 'Administrator access required for this action.'
 }
 
 async function handleLogin() {
-    await handleEmailPasswordAuth(AppSession.loginIntent);
+    // Driver entry — no password needed
+    const displayName = document.getElementById('auth-display-name')?.value?.trim() || '';
+    await window.AuthService.enterAsDriver(displayName);
 }
 
 function showAuthError(message) {
@@ -453,228 +291,53 @@ function clearAuthError() {
     }
 }
 
-// Called by the role buttons — always SIGN IN only (never register)
-async function handleEmailPasswordAuth(intent) {
-    clearAuthError();
-
-    // ── Visible debug panel ───────────────────────────────────────────────────
-    const debugPanel = document.getElementById('auth-debug-panel');
-    const debugSteps = document.getElementById('auth-debug-steps');
-    let stepNum = 0;
-    function debugStep(msg, ok = true) {
-        stepNum++;
-        if (!debugSteps) return;
-        const li = document.createElement('li');
-        li.style.color = ok ? '#7ec87e' : '#e05c5c';
-        li.textContent = msg;
-        debugSteps.appendChild(li);
-        if (debugPanel) debugPanel.style.display = 'block';
-    }
-    function debugClear() {
-        if (debugSteps) debugSteps.innerHTML = '';
-        if (debugPanel) debugPanel.style.display = 'none';
-        stepNum = 0;
-    }
-    debugClear();
-
-    const resolvedIntent = intent === '__form_submit__' ? AppSession.loginIntent : intent;
-    const selectedIntent = (resolvedIntent === 'admin' || resolvedIntent === 'driver') ? resolvedIntent : AppSession.loginIntent;
-
-    if (selectedIntent !== 'admin' && selectedIntent !== 'driver') {
-        showAuthError('Select Driver or Game Master before signing in.');
-        return;
-    }
-
-    const authIdentifierRaw = document.getElementById('auth-email')?.value?.trim() || '';
-    const password = document.getElementById('auth-password')?.value || '';
+async function handleDriverEntry() {
     const displayName = document.getElementById('auth-display-name')?.value?.trim() || '';
-    const createAccount = intent === '__form_submit__'
-        ? Boolean(document.getElementById('auth-create-account')?.checked)
-        : false;
-
-    if (!authIdentifierRaw) { showAuthError('Enter your username or email.'); return; }
-    if (!password) { showAuthError('Enter your password.'); return; }
-    if (AppSession.authInFlight) { showAuthError('Sign-in already in progress — please wait.'); return; }
-
-    // Resolve to a Firebase email address
-    const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(authIdentifierRaw);
-    let firebaseEmail;
-    if (looksLikeEmail) {
-        firebaseEmail = authIdentifierRaw;
-        debugStep(`Email format detected: ${firebaseEmail}`);
-    } else {
-        const normalized = authIdentifierRaw.toLowerCase()
-            .replace(/^(.+)@srmpc\.local$/, '$1');
-        if (!/^[a-z0-9._-]{3,24}$/.test(normalized)) {
-            showAuthError('Invalid username — 3–24 chars, letters/numbers/dot/underscore/dash only.');
-            return;
-        }
-        firebaseEmail = `${normalized}@srmpc.local`;
-        debugStep(`Username → ${firebaseEmail}`);
-    }
-
-    debugStep(`Role: ${selectedIntent} | Domain: ${window.location.hostname}`);
-
-    // Lock UI
-    AppSession.loginIntent = selectedIntent;
+    if (AppSession.authInFlight) return;
     AppSession.authInFlight = true;
-
-    const driverBtn = document.getElementById('auth-email-driver-btn');
-    const adminBtn = document.getElementById('auth-email-admin-btn');
-    const emailInput = document.getElementById('auth-email');
-    const passwordInput = document.getElementById('auth-password');
-    const displayNameInput = document.getElementById('auth-display-name');
-    const createAccountInput = document.getElementById('auth-create-account');
-    const controls = [driverBtn, adminBtn, emailInput, passwordInput, displayNameInput, createAccountInput];
-    controls.forEach((c) => { if (c) c.disabled = true; });
-    if (driverBtn) driverBtn.textContent = selectedIntent === 'driver' ? 'Signing in…' : 'Sign In as Driver';
-    if (adminBtn) adminBtn.textContent = selectedIntent === 'admin' ? 'Signing in…' : 'Sign In as Game Master';
-
-    // ── Step 1: Firebase call only — scoped try-catch ──────────────────────────
-    let signedInUser = null;
-
+    const btn = document.getElementById('auth-email-driver-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Entering…'; }
     try {
-        if (typeof firebase === 'undefined' || !firebase.auth) {
-            throw new Error('Firebase is not loaded. Check your internet connection and reload.');
-        }
-        debugStep('Firebase SDK: loaded ✓');
-
-        const fbAuth = firebase.auth();
-        let credential;
-
-        if (createAccount) {
-            debugStep('Attempting account creation…');
-            try {
-                credential = await fbAuth.createUserWithEmailAndPassword(firebaseEmail, password);
-                if (displayName && credential.user) {
-                    await credential.user.updateProfile({ displayName }).catch(() => {});
-                }
-                debugStep('Account created ✓');
-            } catch (createError) {
-                if (createError.code === 'auth/email-already-in-use') {
-                    debugStep('Account exists — signing in instead');
-                    credential = await fbAuth.signInWithEmailAndPassword(firebaseEmail, password);
-                } else {
-                    throw createError;
-                }
-            }
-        } else {
-            debugStep('Calling Firebase signInWithEmailAndPassword…');
-            credential = await fbAuth.signInWithEmailAndPassword(firebaseEmail, password);
-        }
-
-        signedInUser = credential?.user || null;
-        debugStep(signedInUser ? `Firebase auth OK — uid: ${signedInUser.uid.slice(0,8)}…` : 'Firebase returned no user', Boolean(signedInUser));
-
-    } catch (firebaseError) {
-        // Only Firebase/network errors land here — UI errors will NOT be swallowed
-        console.error('[AUTH] Firebase sign-in failed:', firebaseError.code, firebaseError.message);
-        debugStep(`FAILED: [${firebaseError.code || 'error'}] ${firebaseError.message}`, false);
-
-        const code = firebaseError.code || '';
-        let msg = firebaseError.message || 'Sign in failed.';
-
-        if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
-            msg = 'Username or password is incorrect.';
-        } else if (code === 'auth/invalid-email') {
-            msg = 'Invalid username or email format.';
-        } else if (code === 'auth/email-already-in-use') {
-            msg = 'That username already has an account. Uncheck "Create new account" to sign in instead.';
-        } else if (code === 'auth/weak-password') {
-            msg = 'Password must be at least 6 characters.';
-        } else if (code === 'auth/too-many-requests') {
-            msg = 'Too many failed attempts. Wait a few minutes and try again.';
-        } else if (code === 'auth/network-request-failed') {
-            msg = 'Network error. Check your connection and try again.';
-        } else if (code === 'auth/operation-not-allowed') {
-            msg = 'Email/password sign-in is disabled. Enable it in Firebase Console → Authentication → Sign-in methods.';
-        } else if (code === 'auth/unauthorized-domain') {
-            msg = `This domain (${window.location.hostname}) is not authorized. Add it in Firebase Console → Authentication → Settings → Authorized Domains.`;
-        } else if (code === 'auth/configuration-not-found') {
-            msg = 'Firebase Authentication is not configured for this project. Verify your firebase-config.js settings.';
-        }
-
-        showAuthError(msg);
+        await window.AuthService.enterAsDriver(displayName);
+    } finally {
         AppSession.authInFlight = false;
-        controls.forEach((c) => { if (c) c.disabled = false; });
-        if (driverBtn) driverBtn.textContent = 'Sign In as Driver';
-        if (adminBtn) adminBtn.textContent = 'Sign In as Game Master';
-        return;
+        if (btn) { btn.disabled = false; btn.textContent = 'Enter as Driver'; }
     }
-
-    // ── Step 2: UI update — runs outside Firebase try-catch ───────────────────
-    // Any error here will appear in the browser console as a real JS error.
-    if (!signedInUser) {
-        showAuthError('Firebase did not return a user. Try again.');
-        AppSession.authInFlight = false;
-        controls.forEach((c) => { if (c) c.disabled = false; });
-        if (driverBtn) driverBtn.textContent = 'Sign In as Driver';
-        if (adminBtn) adminBtn.textContent = 'Sign In as Game Master';
-        return;
-    }
-
-    AppSession.user = signedInUser;
-    AppSession.isAuthenticated = true;
-    AppSession.isAdmin = false;
-    AppSession.hasEnteredApp = true;
-    debugStep('AppSession updated ✓');
-
-    if (window.AuthService) {
-        window.AuthService._user = signedInUser;
-        window.AuthService._isAdmin = false;
-    }
-
-    AppSession.authInFlight = false;
-    controls.forEach((c) => { if (c) c.disabled = false; });
-    if (driverBtn) driverBtn.textContent = 'Sign In as Driver';
-    if (adminBtn) adminBtn.textContent = 'Sign In as Game Master';
-
-    updateAuthUI();
-    debugStep('updateAuthUI() done ✓');
-
-    // Show the correct view for this role
-    const uiObj = window.UI;
-    if (uiObj) {
-        debugStep('Switching to driver-hub view…');
-        uiObj.switchView('driver-hub');
-        debugStep('View switched ✓ — sign-in complete!');
-    } else {
-        debugStep('ERROR: window.UI is not defined — ui.js may not have loaded.', false);
-        console.error('[AUTH] UI object not available. Check that ui.js loaded correctly.');
-    }
-
-    window.UI?.showNotification?.(
-        createAccount
-            ? (selectedIntent === 'admin'
-                ? 'Account created. Game Master access is pending approval.'
-                : 'Account created — signed in as Driver.')
-            : 'Signed in successfully.',
-        'success'
-    );
-
-    // ── Step 3: Async admin check ───────────────────────────────────────────
-    (async () => {
-        try {
-            const fbDb = firebase.firestore();
-            const adminDoc = await fbDb.collection('admins').doc(signedInUser.uid).get();
-            const isAdmin = adminDoc.exists && adminDoc.data()?.isActive !== false;
-            AppSession.isAdmin = isAdmin;
-            if (window.AuthService) window.AuthService._isAdmin = isAdmin;
-            updateAuthUI();
-            if (isAdmin && window.UI) window.UI.switchView('admin');
-        } catch (_) {
-            // No admin record or Firestore unavailable — stay as driver
-        }
-    })();
 }
 
-async function handleIntentLogin(intent) {
-    AppSession.loginIntent = intent === 'admin' ? 'admin' : 'driver';
-    refreshAuthRoleUI();
+async function handleAdminPasscode() {
+    clearAuthError();
+    const passcode = document.getElementById('auth-password')?.value || '';
+    const confirmEl = document.getElementById('auth-passcode-confirm');
+    const confirm = confirmEl?.value || '';
+    const adminBtn = document.getElementById('auth-email-admin-btn');
 
-    const usernameInput = document.getElementById('auth-email');
-    if (usernameInput) {
-        usernameInput.focus();
+    if (!passcode) { showAuthError('Enter the admin passcode.'); return; }
+    if (AppSession.authInFlight) return;
+    AppSession.authInFlight = true;
+    if (adminBtn) { adminBtn.disabled = true; adminBtn.textContent = 'Checking…'; }
+
+    try {
+        const hasPasscode = window.AuthService.hasAdminPasscode();
+
+        if (!hasPasscode) {
+            // First-time setup
+            if (passcode.length < 4) { showAuthError('Passcode must be at least 4 characters.'); return; }
+            if (passcode !== confirm) { showAuthError('Passcodes do not match.'); return; }
+            await window.AuthService.setAdminPasscode(passcode);
+            updatePasscodeGateUI();
+        }
+
+        await window.AuthService.unlockAdmin(passcode);
+        window.UI?.showNotification('Game Master access unlocked.', 'success');
+    } catch (error) {
+        showAuthError(error.message || 'Incorrect passcode.');
+    } finally {
+        AppSession.authInFlight = false;
+        if (adminBtn) {
+            adminBtn.disabled = false;
+            adminBtn.textContent = window.AuthService.hasAdminPasscode() ? 'Unlock Game Master' : 'Set Passcode & Unlock';
+        }
     }
 }
 
@@ -683,6 +346,7 @@ async function handleLogout() {
 
     try {
         await window.AuthService.signOut();
+        updatePasscodeGateUI();
         window.UI?.showNotification('Signed out successfully.');
     } catch (error) {
         console.error('Logout error:', error);
@@ -692,20 +356,19 @@ async function handleLogout() {
 
 // ===== EVENT LISTENERS SETUP =====
 function initializeEventListeners() {
-    document.getElementById('auth-email-form')?.addEventListener('submit', async (event) => {
+    document.getElementById('auth-driver-form')?.addEventListener('submit', async (event) => {
         event.preventDefault();
-        await handleEmailPasswordAuth('__form_submit__');
+        await handleDriverEntry();
     });
 
-    document.getElementById('auth-email-driver-btn')?.addEventListener('click', async () => {
-        await handleEmailPasswordAuth('driver');
+    document.getElementById('auth-email-form')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        await handleAdminPasscode();
     });
 
     document.getElementById('auth-email-admin-btn')?.addEventListener('click', async () => {
-        await handleEmailPasswordAuth('admin');
+        await handleAdminPasscode();
     });
-
-    document.getElementById('auth-email')?.addEventListener('input', refreshUsernameHelper);
 
     // Navigation buttons use delegation so role-based visibility changes do not break clicks.
     document.querySelector('.nav-main')?.addEventListener('click', (event) => {
