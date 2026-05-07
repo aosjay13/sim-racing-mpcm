@@ -409,8 +409,8 @@ const AuthService = {
         }
     },
 
-    // Pre-computed SHA-256 hash of the default admin passcode.
-    // The plaintext never leaves this hash — only the digest is stored.
+    // Default admin passcode.
+    // Verification hashes user input and compares against this value at runtime.
     _DEFAULT_PASSCODE: 'phoenix13!',
 
     init() {
