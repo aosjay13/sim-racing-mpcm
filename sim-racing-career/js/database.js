@@ -1599,6 +1599,141 @@ Database.payoutAudits = {
         const audits = await DatabaseHelper.getCollection('payoutAudits');
         return audits.sort((a, b) => getDateValue(b.createdAt) - getDateValue(a.createdAt));
     }
+},
+
+    // ===== CREW CHIEFS =====
+    crewChiefs: {
+        async create(data) {
+            return await DatabaseHelper.addDocument('crewChiefs', {
+                name: data.name || '',
+                userId: data.userId || null,
+                assignedTeamId: data.assignedTeamId || null,
+                assignedDriverIds: data.assignedDriverIds || [],
+                specialty: data.specialty || 'General',
+                experience: data.experience || 0,
+                notes: data.notes || '',
+                bio: data.bio || '',
+                status: data.status || 'active'
+            });
+        },
+        async getAll() { return await DatabaseHelper.getCollection('crewChiefs'); },
+        async getById(id) { return await DatabaseHelper.getDocument('crewChiefs', id); },
+        async getByUser(userId) { return await DatabaseHelper.getCollection('crewChiefs', [['userId', '==', userId]]); },
+        async getByTeam(teamId) { return await DatabaseHelper.getCollection('crewChiefs', [['assignedTeamId', '==', teamId]]); },
+        async update(id, updates) { return await DatabaseHelper.updateDocument('crewChiefs', id, updates); },
+        async delete(id) { return await DatabaseHelper.deleteDocument('crewChiefs', id); }
+    },
+
+    // ===== MECHANICS =====
+    mechanics: {
+        async create(data) {
+            return await DatabaseHelper.addDocument('mechanics', {
+                name: data.name || '',
+                userId: data.userId || null,
+                assignedTeamId: data.assignedTeamId || null,
+                assignedCarIds: data.assignedCarIds || [],
+                specialty: data.specialty || 'General',
+                experience: data.experience || 0,
+                bio: data.bio || '',
+                status: data.status || 'active'
+            });
+        },
+        async getAll() { return await DatabaseHelper.getCollection('mechanics'); },
+        async getById(id) { return await DatabaseHelper.getDocument('mechanics', id); },
+        async getByUser(userId) { return await DatabaseHelper.getCollection('mechanics', [['userId', '==', userId]]); },
+        async getByTeam(teamId) { return await DatabaseHelper.getCollection('mechanics', [['assignedTeamId', '==', teamId]]); },
+        async update(id, updates) { return await DatabaseHelper.updateDocument('mechanics', id, updates); },
+        async delete(id) { return await DatabaseHelper.deleteDocument('mechanics', id); }
+    },
+
+    // ===== AGENTS =====
+    agents: {
+        async create(data) {
+            return await DatabaseHelper.addDocument('agents', {
+                name: data.name || '',
+                userId: data.userId || null,
+                clientDriverIds: data.clientDriverIds || [],
+                clientTeamIds: data.clientTeamIds || [],
+                commissionPct: data.commissionPct || 10,
+                salary: data.salary || 0,
+                specialty: data.specialty || 'General',
+                bio: data.bio || '',
+                status: data.status || 'active'
+            });
+        },
+        async getAll() { return await DatabaseHelper.getCollection('agents'); },
+        async getById(id) { return await DatabaseHelper.getDocument('agents', id); },
+        async getByUser(userId) { return await DatabaseHelper.getCollection('agents', [['userId', '==', userId]]); },
+        async update(id, updates) { return await DatabaseHelper.updateDocument('agents', id, updates); },
+        async delete(id) { return await DatabaseHelper.deleteDocument('agents', id); }
+    },
+
+    // ===== SPONSOR COMPANIES (first-class sponsor profiles) =====
+    sponsorCompanies: {
+        async create(data) {
+            return await DatabaseHelper.addDocument('sponsorCompanies', {
+                companyName: data.companyName || '',
+                userId: data.userId || null,
+                industry: data.industry || 'General',
+                website: data.website || '',
+                logoUrl: data.logoUrl || '',
+                totalBudget: data.totalBudget || 0,
+                bio: data.bio || '',
+                status: data.status || 'active'
+            });
+        },
+        async getAll() { return await DatabaseHelper.getCollection('sponsorCompanies'); },
+        async getById(id) { return await DatabaseHelper.getDocument('sponsorCompanies', id); },
+        async getByUser(userId) { return await DatabaseHelper.getCollection('sponsorCompanies', [['userId', '==', userId]]); },
+        async update(id, updates) { return await DatabaseHelper.updateDocument('sponsorCompanies', id, updates); },
+        async delete(id) { return await DatabaseHelper.deleteDocument('sponsorCompanies', id); }
+    },
+
+    // ===== RACING SERIES =====
+    series: {
+        async create(data) {
+            return await DatabaseHelper.addDocument('series', {
+                name: data.name || '',
+                userId: data.userId || null,
+                description: data.description || '',
+                season: data.season || new Date().getFullYear(),
+                pointsSystem: data.pointsSystem || 'f1',
+                maxParticipants: data.maxParticipants || 30,
+                ruleSet: data.ruleSet || '',
+                registeredDriverIds: [],
+                status: data.status || 'active'
+            });
+        },
+        async getAll() { return await DatabaseHelper.getCollection('series'); },
+        async getById(id) { return await DatabaseHelper.getDocument('series', id); },
+        async getByUser(userId) { return await DatabaseHelper.getCollection('series', [['userId', '==', userId]]); },
+        async update(id, updates) { return await DatabaseHelper.updateDocument('series', id, updates); },
+        async delete(id) { return await DatabaseHelper.deleteDocument('series', id); }
+    },
+
+    // ===== TRACKS / VENUES =====
+    tracks: {
+        async create(data) {
+            return await DatabaseHelper.addDocument('tracks', {
+                name: data.name || '',
+                userId: data.userId || null,
+                country: data.country || '',
+                layout: data.layout || 'Circuit',
+                lengthMiles: data.lengthMiles || 0,
+                corners: data.corners || 0,
+                maxParticipants: data.maxParticipants || 40,
+                features: data.features || [],
+                bio: data.bio || '',
+                status: data.status || 'active'
+            });
+        },
+        async getAll() { return await DatabaseHelper.getCollection('tracks'); },
+        async getById(id) { return await DatabaseHelper.getDocument('tracks', id); },
+        async getByUser(userId) { return await DatabaseHelper.getCollection('tracks', [['userId', '==', userId]]); },
+        async update(id, updates) { return await DatabaseHelper.updateDocument('tracks', id, updates); },
+        async delete(id) { return await DatabaseHelper.deleteDocument('tracks', id); }
+    }
+
 };
 
 // ===== UTILITY FUNCTIONS =====

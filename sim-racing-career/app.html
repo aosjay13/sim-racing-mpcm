@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="css/style.css">
     <!-- Firebase (Firestore only — auth handled locally) -->
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-storage-compat.js"></script>
 </head>
@@ -42,6 +43,34 @@
                 <div class="auth-fallback-actions">
                     <button id="auth-email-driver-btn" class="btn btn-secondary" type="submit">Enter as Driver</button>
                 </div>
+            </form>
+
+            <!-- Member login panel -->
+            <div class="auth-fallback-divider" aria-hidden="true">
+                <span>Member Login</span>
+            </div>
+            <form id="auth-member-form" class="auth-fallback-form" autocomplete="on">
+                <div id="auth-member-signup-panel" style="display:none;">
+                    <div class="auth-fallback-field" style="margin-bottom:0.9rem;">
+                        <label for="auth-member-name">Display Name</label>
+                        <input id="auth-member-name" name="memberName" type="text" autocomplete="name" placeholder="Your full name">
+                    </div>
+                </div>
+                <div class="auth-fallback-grid">
+                    <div class="auth-fallback-field">
+                        <label for="auth-member-email">Email</label>
+                        <input id="auth-member-email" name="memberEmail" type="email" autocomplete="email" placeholder="you@email.com">
+                    </div>
+                    <div class="auth-fallback-field">
+                        <label for="auth-member-password">Password</label>
+                        <input id="auth-member-password" name="memberPassword" type="password" autocomplete="current-password" placeholder="Password">
+                    </div>
+                </div>
+                <div class="auth-fallback-actions" style="align-items:center;">
+                    <button type="button" id="auth-member-toggle-btn" class="btn btn-secondary" style="margin-right:auto;font-size:0.82rem;padding:0.5rem 0.9rem;opacity:0.75;">New member? Register</button>
+                    <button id="auth-member-login-btn" class="btn btn-primary" type="submit">Member Login</button>
+                </div>
+                <p id="auth-member-error" class="auth-email-error" style="display:none;"></p>
             </form>
 
             <!-- Game Master entry panel -->
@@ -84,6 +113,7 @@
                     <button class="nav-btn" data-view="standings" type="button">Standings</button>
                     <button class="nav-btn" id="sponsors-nav-btn" data-view="sponsors" type="button">Sponsors</button>
                     <button class="nav-btn hidden" id="driver-hub-nav-btn" data-view="driver-hub" type="button">Driver Hub</button>
+                    <button class="nav-btn hidden" id="member-workspace-nav-btn" data-view="member-workspace" type="button">My Workspace</button>
                     <button class="nav-btn hidden" id="admin-nav-btn" data-view="admin" type="button">Racing Manager</button>
                 </nav>
                 <div class="header-actions">
@@ -430,6 +460,23 @@
                 </div>
             </section>
 
+            <!-- Member Workspace View -->
+            <section id="member-workspace-view" class="view">
+                <div class="view-header">
+                    <div>
+                        <h2 id="member-workspace-title">My Workspace</h2>
+                        <p id="member-workspace-subtitle" style="color:var(--text-secondary);font-size:0.95rem;margin-top:0.25rem;"></p>
+                    </div>
+                    <div style="display:flex;gap:0.75rem;align-items:center;">
+                        <button class="btn btn-secondary" id="switch-role-btn" type="button">&#8635; Switch Role</button>
+                        <button class="btn btn-secondary" id="member-workspace-refresh-btn" type="button">Refresh</button>
+                    </div>
+                </div>
+                <div id="member-workspace-content">
+                    <p class="empty-state">Loading your workspace&hellip;</p>
+                </div>
+            </section>
+
             <!-- Admin View -->
             <section id="admin-view" class="view">
                 <div class="view-header">
@@ -648,6 +695,19 @@
                 </div>
             </section>
         </main>
+    </div>
+
+    <!-- Role Picker Modal -->
+    <div id="role-picker-modal" class="modal" style="z-index:1001;">
+        <div class="modal-content modal-content-wide">
+            <div class="modal-header">
+                <h2>Choose Your Role</h2>
+            </div>
+            <p style="color:var(--text-secondary);padding:0 0 1.25rem;font-size:0.95rem;">Select the career path you want to play. You can switch roles at any time from your workspace.</p>
+            <div class="role-picker-grid" id="role-picker-grid">
+                <!-- Populated by JavaScript -->
+            </div>
+        </div>
     </div>
 
     <!-- Modals -->

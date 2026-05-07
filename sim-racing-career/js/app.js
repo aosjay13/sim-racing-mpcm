@@ -4,6 +4,10 @@ const AppSession = {
     user: null,
     isAuthenticated: false,
     isAdmin: false,
+    isMember: false,
+    memberUid: null,
+    memberEmail: null,
+    activeRole: null,
     claimedDriverId: '',
     loginIntent: 'driver',
     hasEnteredApp: false,
@@ -57,10 +61,14 @@ async function initializeAuthSession() {
         AppSession.user = state.user;
         AppSession.isAuthenticated = state.isAuthenticated;
         AppSession.isAdmin = state.isAdmin;
+        AppSession.isMember = state.isMember || false;
+        AppSession.memberUid = state.user?.uid || null;
+        AppSession.memberEmail = state.user?.email || null;
 
         if (!AppSession.isAuthenticated) {
             AppSession.claimedDriverId = '';
             AppSession.hasEnteredApp = false;
+            AppSession.activeRole = null;
         }
 
         updateAuthUI();
@@ -70,6 +78,14 @@ async function initializeAuthSession() {
 
             if (AppSession.isAdmin) {
                 window.UI?.switchView('admin');
+            } else if (AppSession.isMember) {
+                const savedRole = localStorage.getItem('srmpc_active_role');
+                if (savedRole) {
+                    AppSession.activeRole = savedRole;
+                    window.UI?.switchView('member-workspace');
+                } else {
+                    window.UI?.showRolePicker();
+                }
             } else {
                 window.UI?.switchView('driver-hub');
             }
@@ -123,37 +139,60 @@ function updateAuthUI() {
     const workspaceBannerTitle = document.getElementById('workspace-banner-title');
     const workspaceBannerCopy = document.getElementById('workspace-banner-copy');
 
+    const roleLabels = {
+        'team-owner': 'Team Owner', 'driver': 'Driver', 'crew-chief': 'Crew Chief',
+        'mechanic': 'Mechanic', 'agent': 'Agent', 'sponsor': 'Sponsor',
+        'series-owner': 'Series Owner', 'track-owner': 'Track Owner'
+    };
+    const activeRoleLabel = AppSession.activeRole ? (roleLabels[AppSession.activeRole] || 'Member') : 'Member';
+
     window.UI?.applyRoleExperience({
         isAuthenticated: AppSession.isAuthenticated,
-        isAdmin: AppSession.isAdmin
+        isAdmin: AppSession.isAdmin,
+        isMember: AppSession.isMember,
+        activeRole: AppSession.activeRole
     });
 
     if (profileAccountType) {
         profileAccountType.textContent = !AppSession.isAuthenticated
             ? 'Guest'
-            : (AppSession.isAdmin ? 'Administrator' : 'Driver');
+            : (AppSession.isAdmin ? 'Administrator' : (AppSession.isMember ? `Member • ${activeRoleLabel}` : 'Driver'));
     }
 
     if (workspaceBannerEyebrow) {
         workspaceBannerEyebrow.textContent = !AppSession.isAuthenticated
             ? 'Guest Workspace'
-            : (AppSession.isAdmin ? 'Admin Workspace' : 'Driver Workspace');
+            : (AppSession.isAdmin ? 'Admin Workspace' : (AppSession.isMember ? `${activeRoleLabel} Workspace` : 'Driver Workspace'));
     }
 
     if (workspaceBannerTitle) {
+        const memberTitles = {
+            'team-owner': 'Your teams, cars, drivers, and budget — all in one place.',
+            'driver': 'Your career, sponsors, races, and performance — live.',
+            'crew-chief': 'Your assigned drivers, race strategies, and setup notes.',
+            'mechanic': 'Your cars, maintenance queue, and service logs.',
+            'agent': 'Your clients, contracts, commissions, and opportunities.',
+            'sponsor': 'Your sponsorship portfolio, deal performance, and ROI.',
+            'series-owner': 'Your series, season calendar, rules, and standings.',
+            'track-owner': 'Your venues, hosted events, and track operations.'
+        };
         workspaceBannerTitle.textContent = !AppSession.isAuthenticated
             ? 'Sign in to unlock your racing workspace.'
             : (AppSession.isAdmin
                 ? 'Racing Manager is live. League control tools are unlocked.'
-                : 'Driver tools are live. Follow races, teams, and your season progress.');
+                : (AppSession.isMember
+                    ? (memberTitles[AppSession.activeRole] || 'Welcome back. Select a role to get started.')
+                    : 'Driver tools are live. Follow races, teams, and your season progress.'));
     }
 
     if (workspaceBannerCopy) {
         workspaceBannerCopy.textContent = !AppSession.isAuthenticated
-            ? 'Drivers get a live career hub. Admins get the full Racing Manager control surface.'
+            ? 'Members get a full role-based career workspace. Admins get the full Racing Manager control surface.'
             : (AppSession.isAdmin
                 ? 'Add drivers, add teams, schedule race events, manage sponsorships, and review pending submissions from one screen.'
-                : 'Browse the live roster, follow the race calendar, review standings, and use Driver Hub for your personal profile and garage.');
+                : (AppSession.isMember
+                    ? 'Switch roles anytime to manage every part of your racing career.'
+                    : 'Browse the live roster, follow the race calendar, review standings, and use Driver Hub for your personal profile and garage.'));
     }
 
     if (loginBtn) {
@@ -165,10 +204,13 @@ function updateAuthUI() {
     }
 
     if (roleBadge) {
-        roleBadge.classList.remove('auth-role-admin', 'auth-role-user');
+        roleBadge.classList.remove('auth-role-admin', 'auth-role-user', 'auth-role-member');
         if (AppSession.isAdmin) {
             roleBadge.textContent = 'Admin';
             roleBadge.classList.add('auth-role-admin');
+        } else if (AppSession.isMember) {
+            roleBadge.textContent = activeRoleLabel;
+            roleBadge.classList.add('auth-role-member');
         } else if (AppSession.isAuthenticated) {
             roleBadge.textContent = 'Driver';
             roleBadge.classList.add('auth-role-user');
@@ -231,9 +273,18 @@ function updateAuthUI() {
     }
 
     if (driverHubNavBtn) {
-        const visible = AppSession.isAuthenticated && !AppSession.isAdmin;
+        const visible = AppSession.isAuthenticated && !AppSession.isAdmin && !AppSession.isMember;
         driverHubNavBtn.classList.toggle('hidden', !visible);
         if (!visible && window.UI?.currentView === 'driver-hub') {
+            window.UI.switchView('dashboard');
+        }
+    }
+
+    const memberWorkspaceNavBtn = document.getElementById('member-workspace-nav-btn');
+    if (memberWorkspaceNavBtn) {
+        const visible = AppSession.isMember && !AppSession.isAdmin;
+        memberWorkspaceNavBtn.classList.toggle('hidden', !visible);
+        if (!visible && window.UI?.currentView === 'member-workspace') {
             window.UI.switchView('dashboard');
         }
     }
@@ -346,6 +397,8 @@ async function handleLogout() {
 
     try {
         await window.AuthService.signOut();
+        AppSession.activeRole = null;
+        localStorage.removeItem('srmpc_active_role');
         updatePasscodeGateUI();
         window.UI?.showNotification('Signed out successfully.');
     } catch (error) {
@@ -354,11 +407,138 @@ async function handleLogout() {
     }
 }
 
+// ===== MEMBER LOGIN / SIGNUP =====
+async function handleMemberSignIn() {
+    const email = document.getElementById('auth-member-email')?.value?.trim() || '';
+    const password = document.getElementById('auth-member-password')?.value || '';
+    const errorEl = document.getElementById('auth-member-error');
+    if (errorEl) { errorEl.style.display = 'none'; errorEl.textContent = ''; }
+
+    if (!email || !password) {
+        if (errorEl) { errorEl.textContent = 'Email and password are required.'; errorEl.style.display = 'block'; }
+        return;
+    }
+    if (AppSession.authInFlight) return;
+    AppSession.authInFlight = true;
+    const btn = document.getElementById('auth-member-login-btn');
+    const origText = btn?.textContent;
+    if (btn) { btn.disabled = true; btn.textContent = 'Signing in…'; }
+
+    try {
+        await window.AuthService.signInMember(email, password);
+    } catch (error) {
+        const msg = error.code === 'auth/user-not-found' ? 'No account found with this email.'
+            : error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential' ? 'Incorrect email or password.'
+            : error.code === 'auth/invalid-email' ? 'Invalid email address.'
+            : error.code === 'auth/too-many-requests' ? 'Too many failed attempts. Please try again later.'
+            : error.message || 'Sign-in failed. Please try again.';
+        if (errorEl) { errorEl.textContent = msg; errorEl.style.display = 'block'; }
+    } finally {
+        AppSession.authInFlight = false;
+        if (btn) { btn.disabled = false; btn.textContent = origText || 'Member Login'; }
+    }
+}
+
+async function handleMemberSignUp() {
+    const email = document.getElementById('auth-member-email')?.value?.trim() || '';
+    const password = document.getElementById('auth-member-password')?.value || '';
+    const displayName = document.getElementById('auth-member-name')?.value?.trim() || '';
+    const errorEl = document.getElementById('auth-member-error');
+    if (errorEl) { errorEl.style.display = 'none'; errorEl.textContent = ''; }
+
+    if (!email || !password) {
+        if (errorEl) { errorEl.textContent = 'Email and password are required.'; errorEl.style.display = 'block'; }
+        return;
+    }
+    if (password.length < 6) {
+        if (errorEl) { errorEl.textContent = 'Password must be at least 6 characters.'; errorEl.style.display = 'block'; }
+        return;
+    }
+    if (AppSession.authInFlight) return;
+    AppSession.authInFlight = true;
+    const btn = document.getElementById('auth-member-login-btn');
+    const origText = btn?.textContent;
+    if (btn) { btn.disabled = true; btn.textContent = 'Creating account…'; }
+
+    try {
+        const fbUser = await window.AuthService.signUpMember(email, password, displayName);
+        if (fbUser?.uid) {
+            await Promise.allSettled([
+                Database.accounts.createRequest({
+                    uid: fbUser.uid,
+                    username: email.split('@')[0],
+                    displayName: displayName || email.split('@')[0],
+                    requestedRole: 'member'
+                }),
+                Database.users.upsertProfile(fbUser.uid, {
+                    displayName: displayName || email.split('@')[0],
+                    email,
+                    requestedRole: 'member',
+                    roleStatus: 'approved'
+                })
+            ]);
+        }
+        window.UI?.showNotification('Account created! Choose your role to get started.', 'success');
+        // Switch back to login mode
+        window._memberSignupMode = false;
+        const signupPanel = document.getElementById('auth-member-signup-panel');
+        const toggleBtn = document.getElementById('auth-member-toggle-btn');
+        if (signupPanel) signupPanel.style.display = 'none';
+        if (btn) btn.textContent = 'Member Login';
+        if (toggleBtn) toggleBtn.textContent = 'New member? Register';
+    } catch (error) {
+        const msg = error.code === 'auth/email-already-in-use' ? 'This email is already registered. Try signing in.'
+            : error.code === 'auth/invalid-email' ? 'Invalid email address.'
+            : error.code === 'auth/weak-password' ? 'Password is too weak. Use at least 6 characters.'
+            : error.message || 'Registration failed. Please try again.';
+        if (errorEl) { errorEl.textContent = msg; errorEl.style.display = 'block'; }
+    } finally {
+        AppSession.authInFlight = false;
+        if (btn) { btn.disabled = false; btn.textContent = origText || 'Member Login'; }
+    }
+}
+
+function switchActiveRole(roleId) {
+    AppSession.activeRole = roleId;
+    localStorage.setItem('srmpc_active_role', roleId);
+    updateAuthUI();
+    window.UI?.closeModal('role-picker-modal');
+    window.UI?.switchView('member-workspace');
+}
+
 // ===== EVENT LISTENERS SETUP =====
 function initializeEventListeners() {
     document.getElementById('auth-driver-form')?.addEventListener('submit', async (event) => {
         event.preventDefault();
         await handleDriverEntry();
+    });
+
+    document.getElementById('auth-member-form')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (window._memberSignupMode) {
+            await handleMemberSignUp();
+        } else {
+            await handleMemberSignIn();
+        }
+    });
+
+    document.getElementById('auth-member-toggle-btn')?.addEventListener('click', () => {
+        window._memberSignupMode = !window._memberSignupMode;
+        const signupPanel = document.getElementById('auth-member-signup-panel');
+        const loginBtn = document.getElementById('auth-member-login-btn');
+        const toggleBtn = document.getElementById('auth-member-toggle-btn');
+        if (signupPanel) signupPanel.style.display = window._memberSignupMode ? '' : 'none';
+        if (loginBtn) loginBtn.textContent = window._memberSignupMode ? 'Create Account' : 'Member Login';
+        if (toggleBtn) toggleBtn.textContent = window._memberSignupMode ? 'Already a member? Sign in' : 'New member? Register';
+    });
+
+    document.getElementById('member-workspace-refresh-btn')?.addEventListener('click', async () => {
+        if (!AppSession.isMember) return;
+        await window.UI?.loadMemberWorkspace();
+    });
+
+    document.getElementById('switch-role-btn')?.addEventListener('click', () => {
+        window.UI?.showRolePicker();
     });
 
     document.getElementById('auth-email-form')?.addEventListener('submit', async (event) => {
@@ -1274,5 +1454,6 @@ window.loadDriverTeamOptions = loadDriverTeamOptions;
 window.AppSession = AppSession;
 window.handleEmailPasswordAuth = handleEmailPasswordAuth;
 window.handleIntentLogin = handleIntentLogin;
+window.switchActiveRole = switchActiveRole;
 
 console.log('Application initialized. Press Ctrl+Shift+D to load sample data.');

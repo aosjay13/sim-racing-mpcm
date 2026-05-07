@@ -99,6 +99,7 @@ window.SRMPCFirebase = {
 
 // Initialize Firebase (Firestore only — auth is handled locally via passcode)
 let db;
+let auth;
 let storage;
 let firebaseInitError;
 
@@ -111,6 +112,12 @@ try {
 
     const app = firebase.initializeApp(runtimeFirebaseConfig);
     db = firebase.firestore(app);
+
+    try {
+        auth = firebase.auth(app);
+    } catch (error) {
+        console.warn('Firebase Auth init failed, continuing without member auth:', error);
+    }
 
     try {
         storage = firebase.storage(app);
@@ -350,6 +357,10 @@ const AuthService = {
     _SESSION_TTL_MS: 8 * 60 * 60 * 1000, // 8 hours
     _listeners: [],
     _isAdmin: false,
+    _isMember: false,
+    _memberUid: null,
+    _memberEmail: null,
+    _auth: null,
     _displayName: '',
     _isAuthenticated: false,
 
@@ -384,9 +395,12 @@ const AuthService = {
         return inputHash === correctHash;
     },
 
-    _saveSession(isAdmin, displayName) {
+    _saveSession(isAdmin, displayName, isMember = false, memberUid = null, memberEmail = null) {
         const session = {
             isAdmin: Boolean(isAdmin),
+            isMember: Boolean(isMember),
+            memberUid: memberUid || null,
+            memberEmail: memberEmail || null,
             displayName: displayName || '',
             isAuthenticated: true,
             expiresAt: Date.now() + this._SESSION_TTL_MS
@@ -415,12 +429,10 @@ const AuthService = {
 
     init() {
         this._readyPromise = (async () => {
-            // If there's a stored admin session from a previous passcode, clear it
-            // so the user is required to re-authenticate with the current passcode.
+            // Restore session from localStorage
             const session = this._loadSession();
             if (session && session.isAdmin) {
-                // Validate the stored admin session against the current passcode key.
-                // We use a version stamp to invalidate sessions from old passcodes.
+                // Admin passcode session — validate version stamp
                 const storedVersion = localStorage.getItem('srmpc_passcode_version');
                 const currentVersion = 'v3';
                 if (storedVersion !== currentVersion) {
@@ -429,14 +441,71 @@ const AuthService = {
                     localStorage.setItem('srmpc_passcode_version', currentVersion);
                 } else {
                     this._isAuthenticated = true;
-                    this._isAdmin = session.isAdmin;
+                    this._isAdmin = true;
                     this._displayName = session.displayName || '';
                 }
+            } else if (session && session.isMember) {
+                // Member session placeholder — Firebase Auth listener below validates it
+                this._displayName = session.displayName || '';
             } else if (session) {
                 this._isAuthenticated = true;
                 this._isAdmin = false;
                 this._displayName = session.displayName || '';
             }
+
+            // Subscribe to Firebase Auth for member accounts
+            const fbAuth = auth || (window.firebase && typeof window.firebase.auth === 'function' ? window.firebase.auth() : null);
+            if (fbAuth) {
+                this._auth = fbAuth;
+                // Wait for the initial auth state before resolving init
+                await new Promise((resolve) => {
+                    const unsub = fbAuth.onAuthStateChanged((user) => {
+                        unsub();
+                        if (user && !this._isAdmin) {
+                            this._isAuthenticated = true;
+                            this._isMember = true;
+                            this._memberUid = user.uid;
+                            this._memberEmail = user.email;
+                            this._displayName = user.displayName || user.email?.split('@')[0] || 'Member';
+                            this._saveSession(false, this._displayName, true, user.uid, user.email);
+                        } else if (!user && session?.isMember) {
+                            // Firebase says no user — clear stale member session
+                            this._isAuthenticated = false;
+                            this._isMember = false;
+                            this._memberUid = null;
+                            this._memberEmail = null;
+                            this._displayName = '';
+                            localStorage.removeItem(this._SESSION_KEY);
+                        }
+                        resolve();
+                    });
+                });
+
+                // Ongoing watcher for sign-in / sign-out events
+                fbAuth.onAuthStateChanged((user) => {
+                    if (this._isAdmin) return; // Admin passcode takes priority
+                    if (user) {
+                        const changed = !this._isMember || this._memberUid !== user.uid;
+                        this._isAuthenticated = true;
+                        this._isMember = true;
+                        this._memberUid = user.uid;
+                        this._memberEmail = user.email;
+                        this._displayName = user.displayName || user.email?.split('@')[0] || 'Member';
+                        this._saveSession(false, this._displayName, true, user.uid, user.email);
+                        if (changed) this._notifyListeners();
+                    } else if (this._isMember) {
+                        const wasAuth = this._isAuthenticated;
+                        this._isAuthenticated = false;
+                        this._isMember = false;
+                        this._memberUid = null;
+                        this._memberEmail = null;
+                        this._displayName = '';
+                        localStorage.removeItem(this._SESSION_KEY);
+                        if (wasAuth) this._notifyListeners();
+                    }
+                });
+            }
+
             // Defer listener notification so callers can register first
             Promise.resolve().then(() => this._notifyListeners());
         })();
@@ -449,12 +518,17 @@ const AuthService = {
 
     onAuthStateChanged(listener) {
         this._listeners.push(listener);
-        // Notify immediately with current state
         Promise.resolve().then(() => {
             try {
+                const uid = this._isMember ? this._memberUid : 'local';
                 listener({
-                    user: this._isAuthenticated ? { displayName: this._displayName, uid: 'local' } : null,
+                    user: this._isAuthenticated ? {
+                        displayName: this._displayName,
+                        uid,
+                        email: this._memberEmail || null
+                    } : null,
                     isAdmin: this._isAdmin,
+                    isMember: this._isMember,
                     isAuthenticated: this._isAuthenticated
                 });
             } catch (e) {
@@ -467,17 +541,19 @@ const AuthService = {
     },
 
     _notifyListeners() {
+        const uid = this._isMember ? this._memberUid : 'local';
         const payload = {
-            user: this._isAuthenticated ? { displayName: this._displayName, uid: 'local' } : null,
+            user: this._isAuthenticated ? {
+                displayName: this._displayName,
+                uid,
+                email: this._memberEmail || null
+            } : null,
             isAdmin: this._isAdmin,
+            isMember: this._isMember,
             isAuthenticated: this._isAuthenticated
         };
         this._listeners.forEach(listener => {
-            try {
-                listener(payload);
-            } catch (e) {
-                console.error('Auth listener execution error:', e);
-            }
+            try { listener(payload); } catch (e) { console.error('Auth listener execution error:', e); }
         });
     },
 
@@ -492,7 +568,6 @@ const AuthService = {
 
     async unlockAdmin(passcode) {
         if (!this.hasAdminPasscode()) {
-            // Signal that a passcode needs to be set up first
             throw new Error('NO_PASSCODE_SET');
         }
         const valid = await this.verifyAdminPasscode(passcode);
@@ -507,17 +582,45 @@ const AuthService = {
         return { isAdmin: true };
     },
 
+    async signInMember(email, password) {
+        if (!this._auth) throw new Error('Member login is not available. Firebase Auth is not initialized.');
+        const cred = await this._auth.signInWithEmailAndPassword(email.trim(), password);
+        return cred.user;
+    },
+
+    async signUpMember(email, password, displayName) {
+        if (!this._auth) throw new Error('Member registration is not available. Firebase Auth is not initialized.');
+        const cred = await this._auth.createUserWithEmailAndPassword(email.trim(), password);
+        if (displayName && displayName.trim()) {
+            await cred.user.updateProfile({ displayName: displayName.trim() });
+        }
+        return cred.user;
+    },
+
+    async sendPasswordReset(email) {
+        if (!this._auth) throw new Error('Firebase Auth is not initialized.');
+        await this._auth.sendPasswordResetEmail(email.trim());
+    },
+
     async signOut() {
+        const wasMember = this._isMember;
         this._isAuthenticated = false;
         this._isAdmin = false;
+        this._isMember = false;
+        this._memberUid = null;
+        this._memberEmail = null;
         this._displayName = '';
         localStorage.removeItem(this._SESSION_KEY);
+        if (wasMember && this._auth) {
+            try { await this._auth.signOut(); } catch (e) { console.warn('Firebase Auth sign-out error:', e); }
+        }
         this._notifyListeners();
     },
 
     getCurrentUser() {
         if (!this._isAuthenticated) return null;
-        return { displayName: this._displayName, uid: 'local' };
+        const uid = this._isMember ? this._memberUid : 'local';
+        return { displayName: this._displayName, uid, email: this._memberEmail || null };
     },
 
     isAuthenticated() {
@@ -526,6 +629,14 @@ const AuthService = {
 
     isAdmin() {
         return this._isAdmin;
+    },
+
+    isMember() {
+        return this._isMember;
+    },
+
+    getMemberEmail() {
+        return this._memberEmail;
     }
 };
 

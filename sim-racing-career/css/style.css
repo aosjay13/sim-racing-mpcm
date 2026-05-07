@@ -1626,3 +1626,143 @@ body[data-role='driver'] .workspace-banner {
         font-size: 0.85rem;
     }
 }
+
+/* ===== MEMBER AUTH PANEL ===== */
+.auth-fallback-divider span {
+    position: relative;
+    z-index: 1;
+    background: var(--card-bg);
+    padding: 0 0.75rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.auth-role-member {
+    border-color: var(--primary-accent);
+    color: var(--primary-accent);
+}
+
+/* ===== ROLE PICKER MODAL ===== */
+.modal-content-wide {
+    max-width: 960px;
+}
+
+.role-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 1rem;
+    padding: 0.25rem 0 1rem;
+}
+
+.role-picker-card {
+    background: var(--card-bg);
+    border: 2px solid var(--border-color);
+    border-radius: 10px;
+    padding: 1.5rem 1.25rem;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+    color: var(--text-primary);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.role-picker-card:hover {
+    border-color: var(--role-color, var(--primary-accent));
+    background: rgba(255, 255, 255, 0.04);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+.role-picker-card-active {
+    border-color: var(--role-color, var(--primary-accent));
+    background: rgba(255, 255, 255, 0.05);
+    box-shadow: 0 0 0 1px var(--role-color, var(--primary-accent));
+}
+
+.role-picker-icon {
+    font-size: 2rem;
+    line-height: 1;
+}
+
+.role-picker-label {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--role-color, var(--text-primary));
+}
+
+.role-picker-desc {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    line-height: 1.45;
+    margin: 0;
+    flex: 1;
+}
+
+.role-picker-current {
+    display: inline-block;
+    margin-top: 0.5rem;
+    padding: 0.2rem 0.6rem;
+    background: var(--role-color, var(--primary-accent));
+    color: #fff;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    align-self: flex-start;
+}
+
+/* ===== MEMBER WORKSPACE ===== */
+.member-workspace-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.member-workspace-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.member-workspace-onboard {
+    max-width: 600px;
+}
+
+/* Member theme accents */
+body[data-role^='member'] .header {
+    border-bottom-color: var(--primary-accent);
+    box-shadow: 0 12px 26px rgba(255, 68, 68, 0.08);
+}
+
+/* ===== RESPONSIVE — ROLE PICKER ===== */
+@media (max-width: 768px) {
+    .role-picker-grid {
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    }
+
+    .member-workspace-kpis {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .member-workspace-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .role-picker-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .modal-content-wide {
+        margin: 0.5rem;
+    }
+}

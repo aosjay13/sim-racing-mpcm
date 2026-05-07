@@ -59,7 +59,7 @@ var UI = {
         document.body.style.overflow = 'auto';
     },
 
-    applyRoleExperience({ isAuthenticated = false, isAdmin = false } = {}) {
+    applyRoleExperience({ isAuthenticated = false, isAdmin = false, isMember = false, activeRole = null } = {}) {
         const dashboardHeading = document.querySelector('#dashboard-view .card-featured h2');
         const dashboardCopy = document.querySelector('#dashboard-view .card-featured p');
         const quickAddDriverButton = document.getElementById('quick-add-driver');
@@ -110,7 +110,7 @@ var UI = {
             adminNavButton.textContent = 'Racing Manager';
         }
 
-        document.body.dataset.role = !isAuthenticated ? 'guest' : (isAdmin ? 'admin' : 'driver');
+        document.body.dataset.role = !isAuthenticated ? 'guest' : (isAdmin ? 'admin' : (isMember ? `member member-${activeRole || 'none'}` : 'driver'));
     },
 
     async getVisibleDrivers() {
@@ -127,6 +127,10 @@ var UI = {
 
     // ===== VIEW MANAGEMENT =====
     switchView(viewName) {
+        if (viewName === 'member-workspace' && !window.AppSession?.isMember) {
+            viewName = window.AuthService?.isAuthenticated?.() ? 'dashboard' : 'dashboard';
+        }
+
         if (viewName === 'admin' && !this.isAdmin()) {
             this.showNotification('Administrator access required for this workspace.', 'error');
             viewName = this.isAuthenticatedUser() ? 'driver-hub' : 'dashboard';
@@ -186,6 +190,9 @@ var UI = {
                 break;
             case 'sponsors':
                 this.loadSponsors();
+                break;
+            case 'member-workspace':
+                this.loadMemberWorkspace();
                 break;
             case 'driver-hub':
                 this.loadDriverHub();
@@ -2693,6 +2700,329 @@ var UI = {
             hour: '2-digit',
             minute: '2-digit'
         });
+    },
+
+    // ===== ROLE PICKER =====
+    showRolePicker() {
+        const grid = document.getElementById('role-picker-grid');
+        if (grid) {
+            const roles = [
+                { id: 'team-owner', label: 'Team Owner', icon: '\uD83C\uDFE2', color: '#FF4444', description: 'Build and manage a racing team. Hire drivers, buy cars, attract sponsors, and dominate the championship.' },
+                { id: 'driver', label: 'Driver', icon: '\uD83C\uDFCE\uFE0F', color: '#00D9FF', description: 'Live your racing career. Track performance, manage contracts, grow sponsors, and climb the standings.' },
+                { id: 'crew-chief', label: 'Crew Chief', icon: '\uD83D\uDEE0\uFE0F', color: '#FFD700', description: 'Lead the technical race weekend. Set strategy, manage car setups, and keep your drivers on the podium.' },
+                { id: 'mechanic', label: 'Mechanic', icon: '\uD83D\uDD27', color: '#00C853', description: 'Keep cars race-ready. Service vehicles, log maintenance, and ensure peak mechanical performance.' },
+                { id: 'agent', label: 'Agent', icon: '\uD83E\uDD1D', color: '#FF9800', description: 'Represent drivers and teams. Negotiate contracts, manage commissions, and grow your client roster.' },
+                { id: 'sponsor', label: 'Sponsor', icon: '\uD83D\uDCB0', color: '#9C27B0', description: 'Invest in racing. Manage your sponsorship portfolio, track performance data, and maximize ROI.' },
+                { id: 'series-owner', label: 'Series Owner', icon: '\uD83C\uDFC6', color: '#E91E63', description: 'Run the championship. Build the race calendar, write rules, manage participants, and crown the champion.' },
+                { id: 'track-owner', label: 'Track Owner', icon: '\uD83C\uDFC1', color: '#607D8B', description: 'Own and operate race venues. Schedule events and host championship rounds at your tracks.' }
+            ];
+            const activeRole = window.AppSession?.activeRole || null;
+            grid.innerHTML = roles.map((role) => `
+                <button class="role-picker-card${activeRole === role.id ? ' role-picker-card-active' : ''}"
+                        style="--role-color:${role.color};"
+                        onclick="switchActiveRole('${role.id}')"
+                        type="button">
+                    <div class="role-picker-icon">${role.icon}</div>
+                    <div class="role-picker-label">${role.label}</div>
+                    <p class="role-picker-desc">${role.description}</p>
+                    ${activeRole === role.id ? '<span class="role-picker-current">Current Role</span>' : ''}
+                </button>
+            `).join('');
+        }
+        this.showModal('role-picker-modal');
+    },
+
+    // ===== MEMBER WORKSPACE =====
+    async loadMemberWorkspace() {
+        const content = document.getElementById('member-workspace-content');
+        const titleEl = document.getElementById('member-workspace-title');
+        const subtitleEl = document.getElementById('member-workspace-subtitle');
+        if (!content) return;
+
+        const role = window.AppSession?.activeRole;
+        const uid = window.AppSession?.memberUid;
+
+        if (!role) {
+            if (titleEl) titleEl.textContent = 'My Workspace';
+            content.innerHTML = '<div class="empty-state" style="padding:4rem 2rem;"><p style="font-size:1.4rem;margin-bottom:1rem;">No role selected</p><p style="margin-bottom:1.5rem;color:var(--text-secondary);">Choose a career path to unlock your personalized workspace.</p><button class="btn btn-primary" onclick="UI.showRolePicker()">Choose a Role</button></div>';
+            return;
+        }
+
+        const roleLabels = {
+            'team-owner': 'Team Owner', 'driver': 'Driver', 'crew-chief': 'Crew Chief',
+            'mechanic': 'Mechanic', 'agent': 'Agent', 'sponsor': 'Sponsor',
+            'series-owner': 'Series Owner', 'track-owner': 'Track Owner'
+        };
+        if (titleEl) titleEl.textContent = (roleLabels[role] || 'Workspace') + ' Workspace';
+        content.innerHTML = '<div class="empty-state">Loading&hellip;</div>';
+
+        try {
+            switch (role) {
+                case 'team-owner': await this._loadTeamOwnerWorkspace(uid, content, subtitleEl); break;
+                case 'driver': await this._loadDriverRoleWorkspace(uid, content, subtitleEl); break;
+                case 'crew-chief': await this._loadCrewChiefWorkspace(uid, content, subtitleEl); break;
+                case 'mechanic': await this._loadMechanicWorkspace(uid, content, subtitleEl); break;
+                case 'agent': await this._loadAgentWorkspace(uid, content, subtitleEl); break;
+                case 'sponsor': await this._loadSponsorWorkspace(uid, content, subtitleEl); break;
+                case 'series-owner': await this._loadSeriesOwnerWorkspace(uid, content, subtitleEl); break;
+                case 'track-owner': await this._loadTrackOwnerWorkspace(uid, content, subtitleEl); break;
+                default: content.innerHTML = '<p class="empty-state">Unknown role.</p>';
+            }
+        } catch (err) {
+            console.error('Error loading member workspace:', err);
+            content.innerHTML = `<p class="empty-state">Could not load workspace: ${err.message}</p>`;
+        }
+    },
+
+    _workspaceKpiBar(kpis) {
+        return `<div class="member-workspace-kpis">${kpis.map(k => `<div class="stat-card"><div class="stat-value">${k.value}</div><div class="stat-label">${k.label}</div></div>`).join('')}</div>`;
+    },
+
+    _workspaceOnboard(icon, title, body, btnLabel, btnOnclick) {
+        return `<div class="member-workspace-onboard card"><div class="card-header"><h3>${icon} ${title}</h3></div><div class="form" style="padding:1.5rem;"><p style="color:var(--text-secondary);margin-bottom:1.25rem;">${body}</p><button class="btn btn-primary" onclick="${btnOnclick}">${btnLabel}</button></div></div>`;
+    },
+
+    async _loadTeamOwnerWorkspace(uid, content, subtitleEl) {
+        if (subtitleEl) subtitleEl.textContent = 'Your teams, cars, drivers, and budget';
+        const [allTeams, allDrivers, allSponsors] = await Promise.all([
+            Database.teams.getAll(),
+            Database.drivers.getAll(),
+            Database.sponsorships.getAll()
+        ]);
+        const myTeams = allTeams.filter(t => t.ownerUid === uid || t.createdByUid === uid);
+        const myTeamIds = new Set(myTeams.map(t => t.id));
+        const myDrivers = allDrivers.filter(d => myTeamIds.has(d.teamId));
+        const mySponsors = allSponsors.filter(s => myTeamIds.has(s.teamId));
+        const totalWins = myTeams.reduce((s, t) => s + (t.stats?.totalWins || 0), 0);
+        const totalPts = myTeams.reduce((s, t) => s + (t.stats?.totalPoints || 0), 0);
+
+        content.innerHTML = this._workspaceKpiBar([
+            { value: myTeams.length, label: 'Teams Owned' },
+            { value: myDrivers.length, label: 'Drivers Under Contract' },
+            { value: mySponsors.length, label: 'Active Sponsor Deals' },
+            { value: totalWins, label: 'Total Team Wins' },
+            { value: totalPts, label: 'Championship Points' }
+        ]) + (myTeams.length === 0
+            ? this._workspaceOnboard('\uD83C\uDFE2', 'Welcome, Team Owner', 'You don\'t own any teams yet. Create your first team to start building your racing empire.', '+ Create Your First Team', 'document.getElementById(\'add-team-btn\').click()')
+            : `<div class="member-workspace-grid">
+                <div class="card"><div class="card-header"><h3>My Teams (${myTeams.length})</h3></div><div class="form" style="padding:1rem;">${myTeams.map(t => `<div class="moderation-item"><div class="moderation-item-header"><div><p class="moderation-title" style="color:${t.color}">${t.name}</p><p class="moderation-meta">${t.stats?.drivers || 0} drivers &bull; ${t.stats?.totalWins || 0} wins &bull; ${t.stats?.totalPoints || 0} pts</p></div><span class="status-pill status-${t.status || 'approved'}">${t.status || 'active'}</span></div><div class="card-actions" style="padding:0;border:none;"><button type="button" onclick="UI.viewTeam('${t.id}')">View</button><button type="button" onclick="UI.editTeam('${t.id}')">Manage</button></div></div>`).join('')}</div></div>
+                <div class="card"><div class="card-header"><h3>My Drivers (${myDrivers.length})</h3></div><div class="form" style="padding:1rem;">${myDrivers.length === 0 ? '<p class="empty-state">No drivers on your teams yet.</p>' : myDrivers.map(d => `<div class="moderation-item"><div class="moderation-item-header"><div><p class="moderation-title">${d.name}${d.number ? ' #' + d.number : ''}</p><p class="moderation-meta">${d.stats?.totalPoints || 0} pts &bull; ${d.stats?.wins || 0} wins &bull; ${d.country || ''}</p></div><span class="status-pill status-${d.status || 'approved'}">${d.status || 'active'}</span></div></div>`).join('')}</div></div>
+                <div class="card"><div class="card-header"><h3>Sponsor Deals (${mySponsors.length})</h3></div><div class="form" style="padding:1rem;">${mySponsors.length === 0 ? '<p class="empty-state">No sponsor deals on your teams.</p>' : mySponsors.map(s => `<div class="moderation-item"><div class="moderation-item-header"><div><p class="moderation-title">${s.companyName}</p><p class="moderation-meta">Base/Race: ${this.formatCurrency(s.payoutModel?.basePerRace || 0)}</p></div><span class="status-pill status-${s.status === 'active' ? 'approved' : s.status === 'pending' ? 'pending' : 'rejected'}">${s.status}</span></div></div>`).join('')}</div></div>
+            </div>`);
+    },
+
+    async _loadDriverRoleWorkspace(uid, content, subtitleEl) {
+        if (subtitleEl) subtitleEl.textContent = 'Your career, sponsors, race entries, and performance';
+        const [allDrivers, allTeams, allSponsors, allRaces] = await Promise.all([
+            Database.drivers.getAll(),
+            Database.teams.getAll(),
+            Database.sponsorships.getAll(),
+            Database.races.getAll()
+        ]);
+        const claimedId = window.AppSession?.claimedDriverId || '';
+        const myDriver = allDrivers.find(d => d.id === claimedId || d.ownerUid === uid);
+        const myTeam = myDriver?.teamId ? allTeams.find(t => t.id === myDriver.teamId) : null;
+        const mySponsors = allSponsors.filter(s => s.driverId === myDriver?.id);
+        const upcomingRaces = allRaces.filter(r => r.status === 'scheduled').slice(0, 3);
+
+        if (!myDriver) {
+            content.innerHTML = this._workspaceOnboard('\uD83C\uDFCE\uFE0F', 'Welcome, Driver', 'You haven\'t claimed a driver profile yet. Set your driver in your user profile, or create one from the Drivers page.', 'Go to Driver List', 'UI.switchView(\'drivers\')');
+            return;
+        }
+
+        content.innerHTML = this._workspaceKpiBar([
+            { value: myDriver.stats?.totalPoints || 0, label: 'Season Points' },
+            { value: myDriver.stats?.wins || myDriver.stats?.totalWins || 0, label: 'Career Wins' },
+            { value: myDriver.stats?.podiums || myDriver.stats?.totalPodiums || 0, label: 'Podiums' },
+            { value: mySponsors.length, label: 'Active Sponsors' },
+            { value: myTeam?.name || 'Free Agent', label: 'Current Team' }
+        ]) + `<div class="member-workspace-grid">
+            <div class="card"><div class="card-header"><h3>\uD83C\uDFCE\uFE0F Driver Profile</h3></div><div class="form" style="padding:1rem;">
+                <div class="stat-row"><span class="stat-label">Name</span><span class="stat-value">${myDriver.name}${myDriver.number ? ' #' + myDriver.number : ''}</span></div>
+                <div class="stat-row"><span class="stat-label">Team</span><span class="stat-value">${myTeam?.name || 'Free Agent'}</span></div>
+                <div class="stat-row"><span class="stat-label">Country</span><span class="stat-value">${myDriver.country || '—'}</span></div>
+                <div class="stat-row"><span class="stat-label">Races</span><span class="stat-value">${myDriver.stats?.racesEntered || 0}</span></div>
+                <div class="stat-row"><span class="stat-label">Best Finish</span><span class="stat-value">${myDriver.stats?.bestFinish || '—'}</span></div>
+                <div class="card-actions" style="padding:0;border:none;margin-top:0.5rem;"><button type="button" onclick="UI.editDriverModal('${myDriver.id}')">Edit Profile</button></div>
+            </div></div>
+            <div class="card"><div class="card-header"><h3>\uD83D\uDCB0 Active Sponsors (${mySponsors.length})</h3></div><div class="form" style="padding:1rem;">${mySponsors.length === 0 ? '<p class="empty-state">No active sponsor deals.</p>' : mySponsors.map(s => `<div class="moderation-item"><div class="moderation-item-header"><div><p class="moderation-title">${s.companyName}</p><p class="moderation-meta">Base: ${this.formatCurrency(s.payoutModel?.basePerRace || 0)}/race | Win: +${this.formatCurrency(s.payoutModel?.winBonus || 0)}</p></div><span class="status-pill status-${s.status === 'active' ? 'approved' : 'pending'}">${s.status}</span></div></div>`).join('')}</div></div>
+            <div class="card"><div class="card-header"><h3>\uD83C\uDFC1 Upcoming Races (${upcomingRaces.length})</h3></div><div class="form" style="padding:1rem;">${upcomingRaces.length === 0 ? '<p class="empty-state">No upcoming races scheduled.</p>' : upcomingRaces.map(r => `<div class="moderation-item"><div class="moderation-item-header"><div><p class="moderation-title">${r.name}</p><p class="moderation-meta">${this.normalizeDate(r.date).toLocaleDateString()} &bull; ${r.track || 'TBA'} &bull; ${r.game}</p></div></div><div class="card-actions" style="padding:0;border:none;"><button type="button" onclick="UI.openRaceDetails('${r.id}')">View & Sign Up</button></div></div>`).join('')}</div></div>
+        </div>`;
+    },
+
+    async _loadCrewChiefWorkspace(uid, content, subtitleEl) {
+        if (subtitleEl) subtitleEl.textContent = 'Your assigned drivers, setups, and race strategies';
+        const myProfiles = await Database.crewChiefs.getByUser(uid);
+        if (myProfiles.length === 0) {
+            content.innerHTML = this._workspaceOnboard('\uD83D\uDEE0\uFE0F', 'Welcome, Crew Chief', 'You haven\'t created a crew chief profile yet. Ask the Game Master to assign you, or create your profile below.', '+ Create Crew Chief Profile', 'UI._createRoleEntityModal("crew-chief")');
+            return;
+        }
+        const profile = myProfiles[0];
+        const [allDrivers, allTeams] = await Promise.all([Database.drivers.getAll(), Database.teams.getAll()]);
+        const assignedDrivers = allDrivers.filter(d => (profile.assignedDriverIds || []).includes(d.id));
+        const myTeam = profile.assignedTeamId ? allTeams.find(t => t.id === profile.assignedTeamId) : null;
+        content.innerHTML = this._workspaceKpiBar([
+            { value: assignedDrivers.length, label: 'Assigned Drivers' },
+            { value: myTeam?.name || 'Unassigned', label: 'Team' },
+            { value: profile.specialty || 'General', label: 'Specialty' },
+            { value: profile.experience || 0, label: 'Seasons Experience' }
+        ]) + `<div class="member-workspace-grid">
+            <div class="card"><div class="card-header"><h3>\uD83D\uDEE0\uFE0F My Profile</h3></div><div class="form" style="padding:1rem;">
+                <div class="stat-row"><span class="stat-label">Name</span><span class="stat-value">${profile.name}</span></div>
+                <div class="stat-row"><span class="stat-label">Specialty</span><span class="stat-value">${profile.specialty || 'General'}</span></div>
+                <div class="stat-row"><span class="stat-label">Team</span><span class="stat-value">${myTeam?.name || 'Unassigned'}</span></div>
+                ${profile.bio ? `<p style="color:var(--text-secondary);margin-top:0.5rem;">${profile.bio}</p>` : ''}
+            </div></div>
+            <div class="card"><div class="card-header"><h3>\uD83C\uDFCE\uFE0F Assigned Drivers (${assignedDrivers.length})</h3></div><div class="form" style="padding:1rem;">${assignedDrivers.length === 0 ? '<p class="empty-state">No drivers assigned yet.</p>' : assignedDrivers.map(d => `<div class="moderation-item"><div class="moderation-item-header"><div><p class="moderation-title">${d.name}${d.number ? ' #' + d.number : ''}</p><p class="moderation-meta">${d.stats?.totalPoints || 0} pts &bull; ${d.stats?.wins || 0} wins</p></div></div></div>`).join('')}</div></div>
+            <div class="card"><div class="card-header"><h3>\uD83D\uDCDD Strategy Notes</h3></div><div class="form" style="padding:1rem;"><p style="color:var(--text-secondary);">${profile.notes || 'No strategy notes yet. Add notes for upcoming race weekends.'}</p></div></div>
+        </div>`;
+    },
+
+    async _loadMechanicWorkspace(uid, content, subtitleEl) {
+        if (subtitleEl) subtitleEl.textContent = 'Your assigned cars, maintenance queue, and service logs';
+        const myProfiles = await Database.mechanics.getByUser(uid);
+        if (myProfiles.length === 0) {
+            content.innerHTML = this._workspaceOnboard('\uD83D\uDD27', 'Welcome, Mechanic', 'You haven\'t set up a mechanic profile yet. Create your profile to start tracking car assignments and service work.', '+ Create Mechanic Profile', 'UI._createRoleEntityModal("mechanic")');
+            return;
+        }
+        const profile = myProfiles[0];
+        const [allCars, allTeams] = await Promise.all([Database.cars.getAll(), Database.teams.getAll()]);
+        const assignedCars = allCars.filter(c => (profile.assignedCarIds || []).includes(c.id));
+        const myTeam = profile.assignedTeamId ? allTeams.find(t => t.id === profile.assignedTeamId) : null;
+        content.innerHTML = this._workspaceKpiBar([
+            { value: assignedCars.length, label: 'Cars Assigned' },
+            { value: myTeam?.name || 'Unassigned', label: 'Team' },
+            { value: profile.specialty || 'General', label: 'Specialty' },
+            { value: profile.experience || 0, label: 'Seasons Experience' }
+        ]) + `<div class="member-workspace-grid">
+            <div class="card"><div class="card-header"><h3>\uD83D\uDD27 My Profile</h3></div><div class="form" style="padding:1rem;">
+                <div class="stat-row"><span class="stat-label">Name</span><span class="stat-value">${profile.name}</span></div>
+                <div class="stat-row"><span class="stat-label">Specialty</span><span class="stat-value">${profile.specialty || 'General'}</span></div>
+                <div class="stat-row"><span class="stat-label">Team</span><span class="stat-value">${myTeam?.name || 'Unassigned'}</span></div>
+            </div></div>
+            <div class="card"><div class="card-header"><h3>\uD83D\uDE97 Assigned Cars (${assignedCars.length})</h3></div><div class="form" style="padding:1rem;">${assignedCars.length === 0 ? '<p class="empty-state">No cars assigned yet.</p>' : assignedCars.map(c => `<div class="moderation-item"><div class="moderation-item-header"><div><p class="moderation-title">${c.name}</p><p class="moderation-meta">${c.gameKey} &bull; ${this.formatCurrency(c.price || 0)}</p></div></div></div>`).join('')}</div></div>
+            <div class="card"><div class="card-header"><h3>\uD83D\uDCCB Service Queue</h3></div><div class="form" style="padding:1rem;"><p class="empty-state">No open service items. All cars are race-ready!</p></div></div>
+        </div>`;
+    },
+
+    async _loadAgentWorkspace(uid, content, subtitleEl) {
+        if (subtitleEl) subtitleEl.textContent = 'Your clients, contracts, and commissions';
+        const myProfiles = await Database.agents.getByUser(uid);
+        if (myProfiles.length === 0) {
+            content.innerHTML = this._workspaceOnboard('\uD83E\uDD1D', 'Welcome, Agent', 'You haven\'t set up an agent profile yet. Create your profile to start representing drivers and teams.', '+ Create Agent Profile', 'UI._createRoleEntityModal("agent")');
+            return;
+        }
+        const profile = myProfiles[0];
+        const [allDrivers, allTeams, allSponsors] = await Promise.all([
+            Database.drivers.getAll(), Database.teams.getAll(), Database.sponsorships.getAll()
+        ]);
+        const clientDrivers = allDrivers.filter(d => (profile.clientDriverIds || []).includes(d.id));
+        const clientTeams = allTeams.filter(t => (profile.clientTeamIds || []).includes(t.id));
+        const relevantContracts = allSponsors.filter(s => (profile.clientDriverIds || []).includes(s.driverId));
+        const totalContractValue = relevantContracts.reduce((s, c) => s + ((c.payoutModel?.basePerRace || 0) * 12), 0);
+        content.innerHTML = this._workspaceKpiBar([
+            { value: clientDrivers.length, label: 'Driver Clients' },
+            { value: clientTeams.length, label: 'Team Clients' },
+            { value: relevantContracts.length, label: 'Managed Contracts' },
+            { value: profile.commissionPct + '%', label: 'Commission Rate' },
+            { value: this.formatCurrency(Math.round(totalContractValue * (profile.commissionPct / 100))), label: 'Est. Annual Commission' }
+        ]) + `<div class="member-workspace-grid">
+            <div class="card"><div class="card-header"><h3>\uD83C\uDFCE\uFE0F Driver Clients (${clientDrivers.length})</h3></div><div class="form" style="padding:1rem;">${clientDrivers.length === 0 ? '<p class="empty-state">No driver clients yet.</p>' : clientDrivers.map(d => `<div class="moderation-item"><div class="moderation-item-header"><div><p class="moderation-title">${d.name}</p><p class="moderation-meta">${d.stats?.totalPoints || 0} pts &bull; ${d.country || ''}</p></div></div></div>`).join('')}</div></div>
+            <div class="card"><div class="card-header"><h3>\uD83C\uDFE2 Team Clients (${clientTeams.length})</h3></div><div class="form" style="padding:1rem;">${clientTeams.length === 0 ? '<p class="empty-state">No team clients yet.</p>' : clientTeams.map(t => `<div class="moderation-item"><div class="moderation-item-header"><div><p class="moderation-title" style="color:${t.color}">${t.name}</p><p class="moderation-meta">${t.stats?.totalWins || 0} wins</p></div></div></div>`).join('')}</div></div>
+            <div class="card"><div class="card-header"><h3>\uD83D\uDCC4 Active Sponsorship Deals (${relevantContracts.length})</h3></div><div class="form" style="padding:1rem;">${relevantContracts.length === 0 ? '<p class="empty-state">No sponsorship deals for your clients.</p>' : relevantContracts.map(s => `<div class="moderation-item"><div class="moderation-item-header"><div><p class="moderation-title">${s.companyName}</p><p class="moderation-meta">Base/Race: ${this.formatCurrency(s.payoutModel?.basePerRace || 0)}</p></div><span class="status-pill status-${s.status === 'active' ? 'approved' : 'pending'}">${s.status}</span></div></div>`).join('')}</div></div>
+        </div>`;
+    },
+
+    async _loadSponsorWorkspace(uid, content, subtitleEl) {
+        if (subtitleEl) subtitleEl.textContent = 'Your sponsorship portfolio, deal performance, and ROI';
+        const myCompanies = await Database.sponsorCompanies.getByUser(uid);
+        const allSponsors = await Database.sponsorships.getAll();
+        const myCompanyNames = new Set(myCompanies.map(c => c.companyName?.toLowerCase()));
+        const myDeals = allSponsors.filter(s => myCompanies.some(c => c.companyName === s.companyName) || s.sponsorUserId === uid);
+        const totalValue = myDeals.reduce((s, d) => s + ((d.payoutModel?.basePerRace || 0) * 12), 0);
+
+        if (myCompanies.length === 0) {
+            content.innerHTML = this._workspaceOnboard('\uD83D\uDCB0', 'Welcome, Sponsor', 'You haven\'t created a sponsor company profile yet. Register your company to start managing sponsorship investments.', '+ Register Sponsor Company', 'UI._createRoleEntityModal("sponsor")');
+            return;
+        }
+        content.innerHTML = this._workspaceKpiBar([
+            { value: myCompanies.length, label: 'Companies' },
+            { value: myDeals.length, label: 'Active Deals' },
+            { value: this.formatCurrency(totalValue), label: 'Est. Annual Exposure' },
+            { value: myCompanies.reduce((s, c) => s + (c.totalBudget || 0), 0) > 0 ? this.formatCurrency(myCompanies.reduce((s, c) => s + (c.totalBudget || 0), 0)) : '—', label: 'Total Budget' }
+        ]) + `<div class="member-workspace-grid">
+            <div class="card"><div class="card-header"><h3>\uD83C\uDFE2 My Companies (${myCompanies.length})</h3></div><div class="form" style="padding:1rem;">${myCompanies.map(c => `<div class="moderation-item"><div class="moderation-item-header"><div><p class="moderation-title">${c.companyName}</p><p class="moderation-meta">${c.industry || ''} &bull; Budget: ${this.formatCurrency(c.totalBudget || 0)}</p></div><span class="status-pill status-approved">${c.status || 'active'}</span></div></div>`).join('')}</div></div>
+            <div class="card"><div class="card-header"><h3>\uD83D\uDCC4 My Deals (${myDeals.length})</h3></div><div class="form" style="padding:1rem;">${myDeals.length === 0 ? '<p class="empty-state">No active sponsorship deals.</p>' : myDeals.map(s => `<div class="moderation-item"><div class="moderation-item-header"><div><p class="moderation-title">${s.companyName}</p><p class="moderation-meta">Base/Race: ${this.formatCurrency(s.payoutModel?.basePerRace || 0)} &bull; Win Bonus: ${this.formatCurrency(s.payoutModel?.winBonus || 0)}</p></div><span class="status-pill status-${s.status === 'active' ? 'approved' : 'pending'}">${s.status}</span></div></div>`).join('')}</div></div>
+        </div>`;
+    },
+
+    async _loadSeriesOwnerWorkspace(uid, content, subtitleEl) {
+        if (subtitleEl) subtitleEl.textContent = 'Your racing series, season calendar, and standings';
+        const mySeries = await Database.series.getByUser(uid);
+        if (mySeries.length === 0) {
+            content.innerHTML = this._workspaceOnboard('\uD83C\uDFC6', 'Welcome, Series Owner', 'You don\'t own any racing series yet. Create your first series to set up a championship, define the rule book, and invite drivers.', '+ Create Racing Series', 'UI._createRoleEntityModal("series")');
+            return;
+        }
+        const allRaces = await Database.races.getAll();
+        const totalParticipants = mySeries.reduce((s, sr) => s + (sr.registeredDriverIds?.length || 0), 0);
+        content.innerHTML = this._workspaceKpiBar([
+            { value: mySeries.length, label: 'Series Owned' },
+            { value: totalParticipants, label: 'Total Participants' },
+            { value: allRaces.filter(r => r.status === 'scheduled').length, label: 'Scheduled Races' },
+            { value: allRaces.filter(r => r.status === 'completed').length, label: 'Completed Races' }
+        ]) + `<div class="member-workspace-grid">
+            ${mySeries.map(sr => `
+            <div class="card"><div class="card-header"><h3>\uD83C\uDFC6 ${sr.name}</h3><span class="badge-new">${sr.season}</span></div><div class="form" style="padding:1rem;">
+                <div class="stat-row"><span class="stat-label">Season</span><span class="stat-value">${sr.season}</span></div>
+                <div class="stat-row"><span class="stat-label">Points System</span><span class="stat-value">${sr.pointsSystem?.toUpperCase() || 'F1'}</span></div>
+                <div class="stat-row"><span class="stat-label">Max Participants</span><span class="stat-value">${sr.maxParticipants || 30}</span></div>
+                <div class="stat-row"><span class="stat-label">Registered</span><span class="stat-value">${sr.registeredDriverIds?.length || 0}</span></div>
+                ${sr.description ? `<p style="color:var(--text-secondary);margin-top:0.75rem;">${sr.description}</p>` : ''}
+                ${sr.ruleSet ? `<div style="margin-top:0.75rem;"><p style="color:var(--text-secondary);font-size:0.85rem;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Rule Book</p><p style="color:var(--text-secondary);margin-top:0.25rem;white-space:pre-line;">${sr.ruleSet}</p></div>` : ''}
+            </div></div>
+            `).join('')}
+            <div class="card"><div class="card-header"><h3>\uD83D\uDCC5 Race Calendar</h3></div><div class="form" style="padding:1rem;">${allRaces.filter(r => r.status === 'scheduled').slice(0, 5).map(r => `<div class="moderation-item"><div class="moderation-item-header"><div><p class="moderation-title">${r.name}</p><p class="moderation-meta">${this.normalizeDate(r.date).toLocaleDateString()} &bull; ${r.track || 'TBA'}</p></div></div></div>`).join('') || '<p class="empty-state">No scheduled races.</p>'}</div></div>
+        </div>`;
+    },
+
+    async _loadTrackOwnerWorkspace(uid, content, subtitleEl) {
+        if (subtitleEl) subtitleEl.textContent = 'Your venues, hosted events, and track operations';
+        const myTracks = await Database.tracks.getByUser(uid);
+        if (myTracks.length === 0) {
+            content.innerHTML = this._workspaceOnboard('\uD83C\uDFC1', 'Welcome, Track Owner', 'You don\'t own any tracks yet. Register your first venue to start hosting race events and managing your circuit portfolio.', '+ Register a Track', 'UI._createRoleEntityModal("track")');
+            return;
+        }
+        const allRaces = await Database.races.getAll();
+        const trackNames = new Set(myTracks.map(t => t.name?.toLowerCase()));
+        const hostedRaces = allRaces.filter(r => trackNames.has((r.track || '').toLowerCase()));
+        content.innerHTML = this._workspaceKpiBar([
+            { value: myTracks.length, label: 'Venues Owned' },
+            { value: hostedRaces.length, label: 'Total Events Hosted' },
+            { value: hostedRaces.filter(r => r.status === 'scheduled').length, label: 'Upcoming Races' },
+            { value: myTracks.reduce((s, t) => s + (t.maxParticipants || 0), 0), label: 'Total Capacity' }
+        ]) + `<div class="member-workspace-grid">
+            ${myTracks.map(t => `
+            <div class="card"><div class="card-header"><h3>\uD83C\uDFC1 ${t.name}</h3></div><div class="form" style="padding:1rem;">
+                <div class="stat-row"><span class="stat-label">Country</span><span class="stat-value">${t.country || '—'}</span></div>
+                <div class="stat-row"><span class="stat-label">Layout</span><span class="stat-value">${t.layout || 'Circuit'}</span></div>
+                <div class="stat-row"><span class="stat-label">Length</span><span class="stat-value">${t.lengthMiles ? t.lengthMiles + ' mi' : '—'}</span></div>
+                <div class="stat-row"><span class="stat-label">Corners</span><span class="stat-value">${t.corners || '—'}</span></div>
+                <div class="stat-row"><span class="stat-label">Capacity</span><span class="stat-value">${t.maxParticipants || '—'}</span></div>
+                ${t.features?.length ? `<p style="color:var(--text-secondary);font-size:0.82rem;margin-top:0.5rem;">${t.features.join(' &bull; ')}</p>` : ''}
+            </div></div>
+            `).join('')}
+            <div class="card"><div class="card-header"><h3>\uD83D\uDCC5 Hosted Races (${hostedRaces.length})</h3></div><div class="form" style="padding:1rem;">${hostedRaces.slice(0, 6).map(r => `<div class="moderation-item"><div class="moderation-item-header"><div><p class="moderation-title">${r.name}</p><p class="moderation-meta">${this.normalizeDate(r.date).toLocaleDateString()} &bull; ${r.track}</p></div><span class="status-pill status-${r.status === 'completed' ? 'approved' : 'pending'}">${r.status}</span></div></div>`).join('') || '<p class="empty-state">No races at your venues yet.</p>'}</div></div>
+        </div>`;
+    },
+
+    // ===== ROLE ENTITY CREATION MODAL (PLACEHOLDER) =====
+    _createRoleEntityModal(entityType) {
+        const labels = {
+            'crew-chief': 'Crew Chief', 'mechanic': 'Mechanic', 'agent': 'Agent',
+            'sponsor': 'Sponsor Company', 'series': 'Racing Series', 'track': 'Track / Venue'
+        };
+        const label = labels[entityType] || entityType;
+        this.showNotification(`To create a ${label} profile, ask your Game Master to set this up for you, or contact support.`, 'info');
     }
 };
 
