@@ -362,7 +362,8 @@ const AuthService = {
     },
 
     hasAdminPasscode() {
-        return Boolean(localStorage.getItem(this._PASSCODE_HASH_KEY));
+        // A passcode is always defined via _DEFAULT_PASSCODE.
+        return Boolean(this._DEFAULT_PASSCODE);
     },
 
     async setAdminPasscode(passcode) {
@@ -376,10 +377,11 @@ const AuthService = {
     },
 
     async verifyAdminPasscode(passcode) {
-        const storedHash = localStorage.getItem(this._PASSCODE_HASH_KEY);
-        if (!storedHash) return false;
-        const hash = await this._sha256(String(passcode || '').trim());
-        return hash === storedHash;
+        // Always verify against the hardcoded passcode — ignores any
+        // previously stored localStorage hash to avoid stale-hash issues.
+        const inputHash = await this._sha256(String(passcode || '').trim());
+        const correctHash = await this._sha256(this._DEFAULT_PASSCODE);
+        return inputHash === correctHash;
     },
 
     _saveSession(isAdmin, displayName) {
@@ -412,10 +414,7 @@ const AuthService = {
     _DEFAULT_PASSCODE: 'phoenix13!',
 
     init() {
-        // Always enforce the passcode defined in _DEFAULT_PASSCODE,
-        // overwriting any previously stored hash.
         this._readyPromise = (async () => {
-            await this.setAdminPasscode(this._DEFAULT_PASSCODE);
             const session = this._loadSession();
             if (session) {
                 this._isAuthenticated = true;
