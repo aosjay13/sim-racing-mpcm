@@ -73,25 +73,27 @@ var UI = {
         if (dashboardHeading) {
             dashboardHeading.textContent = isAdmin
                 ? 'Racing Manager Command Center'
-                : 'Driver Career Dashboard';
+                : (isMember ? 'Motorsport Manager HQ' : 'Career Dashboard');
         }
 
         if (dashboardCopy) {
             dashboardCopy.textContent = isAdmin
                 ? 'Run the league from one screen. Build the roster, launch race weekends, manage sponsors, and keep every public view updated in real time.'
-                : 'Track your roster, schedule, standings, and race opportunities from the driver side of the championship.';
+                : (isMember
+                    ? 'Manage your role operations, review season data, and jump into your workspace from HQ.'
+                    : 'Track your roster, schedule, and standings from your user dashboard.');
         }
 
         if (quickAddDriverButton) {
-            quickAddDriverButton.textContent = isAdmin ? '+ Add Driver' : 'Open Driver Hub';
+            quickAddDriverButton.textContent = isAdmin ? '+ Add Driver' : (isMember ? 'Open My Workspace' : 'Open Dashboard');
         }
 
         if (addDriverButton) {
-            addDriverButton.textContent = isAdmin ? '+ New Driver' : '+ Request Driver Profile';
+            addDriverButton.textContent = isAdmin ? '+ New Driver' : (isMember ? '+ Add Role Driver' : '+ Request Driver Profile');
         }
 
         if (addTeamButton) {
-            addTeamButton.textContent = isAdmin ? '+ Create Team' : '+ Request Team';
+            addTeamButton.textContent = isAdmin ? '+ Create Team' : (isMember ? '+ Build Team' : '+ Request Team');
         }
 
         if (addRaceButton) {
@@ -99,11 +101,11 @@ var UI = {
         }
 
         if (sponsorsNavButton) {
-            sponsorsNavButton.textContent = isAdmin ? 'Sponsors' : 'Contracts';
+            sponsorsNavButton.textContent = isAdmin ? 'Sponsors' : (isMember ? 'Workspace' : 'Overview');
         }
 
         if (driverHubNavButton) {
-            driverHubNavButton.textContent = 'Driver Hub';
+            driverHubNavButton.textContent = isMember ? 'Workspace' : 'Driver Hub';
         }
 
         if (adminNavButton) {
@@ -133,7 +135,7 @@ var UI = {
 
         if (viewName === 'admin' && !this.isAdmin()) {
             this.showNotification('Administrator access required for this workspace.', 'error');
-            viewName = this.isAuthenticatedUser() ? 'driver-hub' : 'dashboard';
+            viewName = window.AppSession?.isMember ? 'member-workspace' : 'dashboard';
         }
 
         if (viewName === 'driver-hub' && (!this.isAuthenticatedUser() || this.isAdmin())) {
@@ -143,7 +145,7 @@ var UI = {
 
         if (viewName === 'sponsors' && !this.isAdmin()) {
             this.showNotification('Sponsors are managed from the admin workspace.', 'error');
-            viewName = this.isAuthenticatedUser() ? 'driver-hub' : 'dashboard';
+            viewName = window.AppSession?.isMember ? 'member-workspace' : 'dashboard';
         }
 
         // Hide all views

@@ -120,7 +120,7 @@ async function initializeAuthSession() {
                     window.UI?.showRolePicker();
                 }
             } else {
-                window.UI?.switchView('driver-hub');
+                window.UI?.switchView('dashboard');
             }
         }
 
@@ -189,13 +189,13 @@ function updateAuthUI() {
     if (profileAccountType) {
         profileAccountType.textContent = !AppSession.isAuthenticated
             ? 'Guest'
-            : (AppSession.isAdmin ? 'Administrator' : (AppSession.isMember ? `Member • ${activeRoleLabel}` : 'Driver'));
+            : (AppSession.isAdmin ? 'Administrator' : (AppSession.isMember ? `Member • ${activeRoleLabel}` : 'User'));
     }
 
     if (workspaceBannerEyebrow) {
         workspaceBannerEyebrow.textContent = !AppSession.isAuthenticated
             ? 'Guest Workspace'
-            : (AppSession.isAdmin ? 'Admin Workspace' : (AppSession.isMember ? `${activeRoleLabel} Workspace` : 'Driver Workspace'));
+            : (AppSession.isAdmin ? 'Admin Workspace' : (AppSession.isMember ? `${activeRoleLabel} Workspace` : 'User Workspace'));
     }
 
     if (workspaceBannerTitle) {
@@ -215,7 +215,7 @@ function updateAuthUI() {
                 ? 'Racing Manager is live. League control tools are unlocked.'
                 : (AppSession.isMember
                     ? (memberTitles[AppSession.activeRole] || 'Welcome back. Select a role to get started.')
-                    : 'Driver tools are live. Follow races, teams, and your season progress.'));
+                    : 'User tools are live. Follow races, teams, and your season progress.'));
     }
 
     if (workspaceBannerCopy) {
@@ -225,7 +225,7 @@ function updateAuthUI() {
                 ? 'Add drivers, add teams, schedule race events, manage sponsorships, and review pending submissions from one screen.'
                 : (AppSession.isMember
                     ? 'Switch roles anytime to manage every part of your racing career.'
-                    : 'Browse the live roster, follow the race calendar, review standings, and use Driver Hub for your personal profile and garage.'));
+                    : 'Browse the live roster, follow the race calendar, and review standings.'));
     }
 
     if (loginBtn) {
@@ -245,7 +245,7 @@ function updateAuthUI() {
             roleBadge.textContent = activeRoleLabel;
             roleBadge.classList.add('auth-role-member');
         } else if (AppSession.isAuthenticated) {
-            roleBadge.textContent = 'Driver';
+            roleBadge.textContent = 'User';
             roleBadge.classList.add('auth-role-user');
         } else {
             roleBadge.textContent = 'Guest';
@@ -306,10 +306,10 @@ function updateAuthUI() {
     }
 
     if (driverHubNavBtn) {
-        const visible = AppSession.isAuthenticated && !AppSession.isAdmin && !AppSession.isMember;
+        const visible = false;
         driverHubNavBtn.classList.toggle('hidden', !visible);
         if (!visible && window.UI?.currentView === 'driver-hub') {
-            window.UI.switchView('dashboard');
+            window.UI.switchView(AppSession.isMember ? 'member-workspace' : 'dashboard');
         }
     }
 
@@ -325,7 +325,7 @@ function updateAuthUI() {
     if (sponsorsNavBtn) {
         sponsorsNavBtn.classList.toggle('hidden', !AppSession.isAdmin);
         if (!AppSession.isAdmin && window.UI?.currentView === 'sponsors') {
-            window.UI.switchView(AppSession.isAuthenticated ? 'driver-hub' : 'dashboard');
+            window.UI.switchView(AppSession.isMember ? 'member-workspace' : 'dashboard');
         }
     }
 }
@@ -348,12 +348,6 @@ function requireAdmin(message = 'Administrator access required for this action.'
     return true;
 }
 
-async function handleLogin() {
-    // Driver entry — no password needed
-    const displayName = document.getElementById('auth-display-name')?.value?.trim() || '';
-    await window.AuthService.enterAsDriver(displayName);
-}
-
 function showAuthError(message) {
     const errorEl = document.getElementById('auth-email-error');
     if (errorEl) {
@@ -372,20 +366,6 @@ function clearAuthError() {
     if (errorEl) {
         errorEl.style.display = 'none';
         errorEl.textContent = '';
-    }
-}
-
-async function handleDriverEntry() {
-    const displayName = document.getElementById('auth-display-name')?.value?.trim() || '';
-    if (AppSession.authInFlight) return;
-    AppSession.authInFlight = true;
-    const btn = document.getElementById('auth-email-driver-btn');
-    if (btn) { btn.disabled = true; btn.textContent = 'Entering…'; }
-    try {
-        await window.AuthService.enterAsDriver(displayName);
-    } finally {
-        AppSession.authInFlight = false;
-        if (btn) { btn.disabled = false; btn.textContent = 'Enter as Driver'; }
     }
 }
 
@@ -541,11 +521,6 @@ function switchActiveRole(roleId) {
 
 // ===== EVENT LISTENERS SETUP =====
 function initializeEventListeners() {
-    document.getElementById('auth-driver-form')?.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        await handleDriverEntry();
-    });
-
     document.getElementById('auth-member-form')?.addEventListener('submit', async (event) => {
         event.preventDefault();
         if (window._memberSignupMode) {
@@ -607,8 +582,10 @@ function initializeEventListeners() {
             document.getElementById('driver-form')?.reset();
             toggleNewDriverTeamFields();
             UI.showModal('add-driver-modal');
+        } else if (AppSession.isMember) {
+            UI.switchView('member-workspace');
         } else {
-            UI.switchView('driver-hub');
+            UI.switchView('dashboard');
         }
     });
 
