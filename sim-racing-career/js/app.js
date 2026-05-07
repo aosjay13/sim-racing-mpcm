@@ -200,21 +200,21 @@ function updateAuthUI() {
     }
 
     if (addTeamBtn) {
-        addTeamBtn.classList.toggle('hidden', !AppSession.isAdmin);
-        addTeamBtn.disabled = !AppSession.isAdmin;
-        addTeamBtn.title = AppSession.isAdmin ? '' : 'Admin login required';
+        addTeamBtn.classList.toggle('hidden', !AppSession.isAuthenticated);
+        addTeamBtn.disabled = false;
+        addTeamBtn.title = '';
     }
 
     if (addDriverBtn) {
-        addDriverBtn.classList.toggle('hidden', !AppSession.isAdmin);
-        addDriverBtn.disabled = !AppSession.isAdmin;
-        addDriverBtn.title = AppSession.isAdmin ? '' : 'Admin login required';
+        addDriverBtn.classList.toggle('hidden', !AppSession.isAuthenticated);
+        addDriverBtn.disabled = false;
+        addDriverBtn.title = '';
     }
 
     if (quickAddDriverBtn) {
-        quickAddDriverBtn.classList.toggle('hidden', !AppSession.isAdmin);
-        quickAddDriverBtn.disabled = !AppSession.isAdmin;
-        quickAddDriverBtn.title = AppSession.isAdmin ? '' : 'Admin login required';
+        quickAddDriverBtn.classList.toggle('hidden', !AppSession.isAuthenticated);
+        quickAddDriverBtn.disabled = false;
+        quickAddDriverBtn.title = '';
     }
 
     if (addSponsorBtn) {
@@ -388,21 +388,28 @@ function initializeEventListeners() {
 
     // Dashboard actions
     document.getElementById('quick-add-driver')?.addEventListener('click', async () => {
-        if (!requireAdmin('Administrator access required to add drivers.')) return;
-        await loadDriverTeamOptions();
-        const driverForm = document.getElementById('driver-form');
-        driverForm?.reset();
-        toggleNewDriverTeamFields();
-        UI.showModal('add-driver-modal');
+        if (!requireAuthenticated('Sign in to continue.')) return;
+        if (AppSession.isAdmin) {
+            await loadDriverTeamOptions();
+            document.getElementById('driver-form')?.reset();
+            toggleNewDriverTeamFields();
+            UI.showModal('add-driver-modal');
+        } else {
+            UI.switchView('driver-hub');
+        }
     });
 
     // Driver management
     document.getElementById('add-driver-btn')?.addEventListener('click', async () => {
-        if (!requireAdmin('Administrator access required to add drivers.')) return;
+        if (!requireAuthenticated('Sign in to submit a driver profile.')) return;
         await loadDriverTeamOptions();
-        const driverForm = document.getElementById('driver-form');
-        driverForm?.reset();
+        document.getElementById('driver-form')?.reset();
         toggleNewDriverTeamFields();
+        // Update modal text based on role
+        const addDriverModalTitle = document.querySelector('#add-driver-modal .modal-header h2');
+        const addDriverSubmitBtn = document.querySelector('#driver-form button[type="submit"]');
+        if (addDriverModalTitle) addDriverModalTitle.textContent = AppSession.isAdmin ? 'Add New Driver' : 'Request Driver Profile';
+        if (addDriverSubmitBtn) addDriverSubmitBtn.textContent = AppSession.isAdmin ? 'Add Driver' : 'Submit Request';
         UI.showModal('add-driver-modal');
     });
 
@@ -414,7 +421,12 @@ function initializeEventListeners() {
 
     // Team management
     document.getElementById('add-team-btn')?.addEventListener('click', () => {
-        if (!requireAdmin('Administrator access required to add teams.')) return;
+        if (!requireAuthenticated('Sign in to create a team.')) return;
+        document.getElementById('team-form')?.reset();
+        const addTeamModalTitle = document.querySelector('#add-team-modal .modal-header h2');
+        const addTeamSubmitBtn = document.querySelector('#team-form button[type="submit"]');
+        if (addTeamModalTitle) addTeamModalTitle.textContent = AppSession.isAdmin ? 'Create Team' : 'Request Team';
+        if (addTeamSubmitBtn) addTeamSubmitBtn.textContent = AppSession.isAdmin ? 'Create Team' : 'Submit Request';
         UI.showModal('add-team-modal');
     });
 
@@ -753,7 +765,7 @@ function setupModalHandlers() {
 async function handleAddDriver(e) {
     e.preventDefault();
 
-    if (!requireAdmin('Administrator access required to add drivers.')) {
+    if (!requireAuthenticated('Sign in to submit a driver profile.')) {
         return;
     }
 
@@ -782,7 +794,7 @@ async function handleAddDriver(e) {
 
         let teamId = null;
         let createdTeamId = null;
-        const recordStatus = 'approved';
+        const recordStatus = AppSession.isAdmin ? 'approved' : 'pending';
 
         if (driverTeamSelection === '__create_new__') {
             if (!newDriverTeamName.trim()) {
@@ -790,14 +802,14 @@ async function handleAddDriver(e) {
                 return;
             }
 
-            teamId = await withTimeout(Database.teams.create({
+            teamId = await Database.teams.create({
                 name: newDriverTeamName.trim(),
                 color: newDriverTeamColor || '#FF4444',
                 ownerUid: AppSession.user?.uid || null,
                 status: recordStatus,
                 createdByUid: AppSession.user?.uid || null,
                 createdByEmail: AppSession.user?.email || null
-            }), 12000, 'Creating team timed out. Check your Firebase connection and try again.');
+            });
             createdTeamId = teamId;
         } else if (driverTeamSelection) {
             teamId = driverTeamSelection;
@@ -805,7 +817,7 @@ async function handleAddDriver(e) {
 
         // Create driver
         try {
-            const driverId = await withTimeout(Database.drivers.create({
+            const driverId = await Database.drivers.create({
                 name: driverName,
                 number: driverNumber ? parseInt(driverNumber, 10) : null,
                 teamId: teamId,
@@ -815,9 +827,11 @@ async function handleAddDriver(e) {
                 status: recordStatus,
                 createdByUid: AppSession.user?.uid || null,
                 createdByEmail: AppSession.user?.email || null
-            }), 12000, 'Creating driver timed out. Check your Firebase connection and try again.');
+            });
 
-            UI.showNotification(`Driver "${driverName}" added successfully!`);
+            UI.showNotification(AppSession.isAdmin
+                ? `Driver "${driverName}" added successfully!`
+                : `Driver profile "${driverName}" submitted for Game Master approval.`);
             document.getElementById('driver-form').reset();
             toggleNewDriverTeamFields();
             UI.closeModal('add-driver-modal');
@@ -836,7 +850,7 @@ async function handleAddDriver(e) {
             // Prevent orphan teams when driver creation fails right after creating a team.
             if (createdTeamId) {
                 try {
-                    await withTimeout(Database.teams.delete(createdTeamId), 12000, 'Timed out while rolling back temporary team creation.');
+                    await Database.teams.delete(createdTeamId);
                 } catch (cleanupError) {
                     console.error('Rollback failed for newly created team:', cleanupError);
                 }
@@ -858,7 +872,7 @@ async function handleAddDriver(e) {
 async function handleAddTeam(e) {
     e.preventDefault();
 
-    if (!requireAdmin('Administrator access required to add teams.')) {
+    if (!requireAuthenticated('Sign in to create a team.')) {
         return;
     }
 
@@ -872,7 +886,7 @@ async function handleAddTeam(e) {
             return;
         }
 
-        const recordStatus = 'approved';
+        const recordStatus = AppSession.isAdmin ? 'approved' : 'pending';
 
         const teamId = await Database.teams.create({
             name: teamName,
@@ -884,7 +898,7 @@ async function handleAddTeam(e) {
             createdByEmail: AppSession.user?.email || null
         });
 
-        UI.showNotification('Team created successfully!');
+        UI.showNotification(AppSession.isAdmin ? `Team "${teamName}" created successfully!` : `Team "${teamName}" submitted for Game Master approval.`);
         document.getElementById('team-form').reset();
         UI.closeModal('add-team-modal');
         await Promise.allSettled([
@@ -977,8 +991,10 @@ async function filterDrivers() {
             return;
         }
 
+        const teams = await Database.teams.getAll();
+        const teamsById = new Map(teams.map(t => [t.id, t]));
         drivers.forEach(driver => {
-            const driverCard = UI.createDriverCard(driver);
+            const driverCard = UI.createDriverCard(driver, teamsById);
             driversGrid.appendChild(driverCard);
         });
     } catch (error) {
@@ -1012,14 +1028,9 @@ async function handleSaveEditDriver(e) {
             return;
         }
 
-        const isDriverOwner = Boolean(
-            AppSession.isAuthenticated &&
-            AppSession.claimedDriverId === driverId &&
-            driver.ownerUid &&
-            driver.ownerUid === AppSession.user?.uid
-        );
+        const isClaimedDriver = AppSession.isAuthenticated && AppSession.claimedDriverId === driverId;
 
-        if (!AppSession.isAdmin && !isDriverOwner) {
+        if (!AppSession.isAdmin && !isClaimedDriver) {
             UI.showNotification('You can only edit your own claimed driver profile.', 'error');
             return;
         }
@@ -1068,11 +1079,11 @@ async function handleSaveEditTeam(e) {
             return;
         }
 
-        const isTeamOwner = Boolean(
-            AppSession.isAuthenticated &&
-            team.ownerUid &&
-            team.ownerUid === AppSession.user?.uid
-        );
+        let isTeamOwner = false;
+        try {
+            const savedProfile = JSON.parse(localStorage.getItem('srmpcUserProfile') || '{}');
+            isTeamOwner = AppSession.isAuthenticated && savedProfile.primaryTeam === teamId;
+        } catch { /* ignore */ }
 
         if (!AppSession.isAdmin && !isTeamOwner) {
             UI.showNotification('You can only edit your own team.', 'error');

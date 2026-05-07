@@ -15,7 +15,17 @@ var UI = {
     },
 
     canEditTeam(team) {
-        return this.isAdmin();
+        if (this.isAdmin()) return true;
+        try {
+            const profile = JSON.parse(localStorage.getItem('srmpcUserProfile') || '{}');
+            return Boolean(profile.primaryTeam && profile.primaryTeam === team?.id);
+        } catch {
+            return false;
+        }
+    },
+
+    canEditDriver(driver) {
+        return this.isAdmin() || (window.AppSession?.claimedDriverId === driver?.id);
     },
 
     normalizeDate(value) {
@@ -497,6 +507,129 @@ var UI = {
             </div>
         `;
         return card;
+    },
+
+    async loadDrivers() {
+        try {
+            const [drivers, teams] = await Promise.all([
+                this.getVisibleDrivers(),
+                Database.teams.getAll()
+            ]);
+            const teamsById = new Map(teams.map(t => [t.id, t]));
+            const driversGrid = document.getElementById('drivers-grid');
+            if (!driversGrid) return;
+            if (!drivers.length) {
+                driversGrid.innerHTML = '<div class="empty-state">No drivers yet. Add a driver to get started.</div>';
+                return;
+            }
+            driversGrid.innerHTML = '';
+            [...drivers]
+                .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+                .forEach(driver => driversGrid.appendChild(this.createDriverCard(driver, teamsById)));
+        } catch (error) {
+            console.error('Error loading drivers:', error);
+        }
+    },
+
+    createDriverCard(driver, teamsById = null) {
+        const card = document.createElement('div');
+        card.className = 'driver-card';
+        const teamName = teamsById && driver.teamId ? (teamsById.get(driver.teamId)?.name || '') : '';
+        const isOwnDriver = window.AppSession?.claimedDriverId === driver.id;
+        card.innerHTML = `
+            <div class="driver-header">
+                <div class="driver-number">#${driver.number || '??'}</div>
+                <div class="driver-name">${driver.name}</div>
+                ${teamName ? `<div class="driver-team">${teamName}</div>` : ''}
+                ${(driver.status && driver.status !== 'approved') ? `<span class="status-pill status-${driver.status}">${driver.status}</span>` : (isOwnDriver ? '<span class="status-pill status-approved">You</span>' : '')}
+            </div>
+            <div class="driver-stats">
+                ${driver.country ? `<div class="stat-row"><span class="stat-label">Country</span><span class="stat-value">${driver.country}</span></div>` : ''}
+                <div class="stat-row"><span class="stat-label">Points</span><span class="stat-value">${driver.stats?.totalPoints || 0}</span></div>
+                <div class="stat-row"><span class="stat-label">Wins</span><span class="stat-value">${driver.stats?.totalWins || 0}</span></div>
+                <div class="stat-row"><span class="stat-label">Podiums</span><span class="stat-value">${driver.stats?.totalPodiums || 0}</span></div>
+            </div>
+            <div class="card-actions">
+                ${this.canEditDriver(driver) ? `<button type="button" onclick="UI.editDriverModal('${driver.id}')">Edit</button>` : ''}
+                ${this.isAdmin() ? `<button type="button" onclick="UI.deleteDriver('${driver.id}')">Delete</button>` : ''}
+                ${this.isAdmin() && driver.status === 'pending' ? `<button type="button" onclick="UI.approveDriver('${driver.id}')">Approve</button>` : ''}
+                ${this.isAdmin() && driver.status === 'pending' ? `<button type="button" onclick="UI.rejectDriver('${driver.id}')">Reject</button>` : ''}
+            </div>
+        `;
+        return card;
+    },
+
+    async editDriverModal(driverId) {
+        try {
+            const driver = await Database.drivers.getById(driverId);
+            if (!driver) { this.showNotification('Driver not found', 'error'); return; }
+            if (!this.canEditDriver(driver)) {
+                this.showNotification('You can only edit your own driver profile.', 'error');
+                return;
+            }
+            window.currentEditingDriverId = driverId;
+            document.getElementById('edit-driver-name').value = driver.name || '';
+            document.getElementById('edit-driver-number').value = driver.number || '';
+            document.getElementById('edit-driver-country').value = driver.country || '';
+            document.getElementById('edit-driver-description').value = driver.bio || '';
+
+            const teamSelect = document.getElementById('edit-driver-team');
+            const numberInput = document.getElementById('edit-driver-number');
+            if (this.isAdmin()) {
+                if (teamSelect) {
+                    const teams = await Database.teams.getAll();
+                    teamSelect.innerHTML = '<option value="">No Team</option>';
+                    teams.forEach(team => {
+                        const opt = document.createElement('option');
+                        opt.value = team.id;
+                        opt.textContent = team.name;
+                        teamSelect.appendChild(opt);
+                    });
+                    teamSelect.value = driver.teamId || '';
+                    teamSelect.disabled = false;
+                }
+                if (numberInput) numberInput.disabled = false;
+            } else {
+                // Drivers can only edit name, country, bio — not team or number
+                if (teamSelect) {
+                    teamSelect.innerHTML = '';
+                    const opt = document.createElement('option');
+                    if (driver.teamId) {
+                        const allTeams = await Database.teams.getAll();
+                        const team = allTeams.find(t => t.id === driver.teamId);
+                        opt.value = driver.teamId;
+                        opt.textContent = team?.name || 'Your Team';
+                    } else {
+                        opt.value = '';
+                        opt.textContent = 'No Team';
+                    }
+                    teamSelect.appendChild(opt);
+                    teamSelect.disabled = true;
+                }
+                if (numberInput) numberInput.disabled = true;
+            }
+
+            this.showModal('edit-driver-modal');
+        } catch (error) {
+            console.error('Error opening edit driver modal:', error);
+            this.showNotification('Error loading driver for edit.', 'error');
+        }
+    },
+
+    async deleteDriver(driverId) {
+        if (!this.isAdmin()) {
+            this.showNotification('Only the Game Master can delete drivers.', 'error');
+            return;
+        }
+        if (!confirm('Delete this driver? This cannot be undone.')) return;
+        try {
+            await Database.drivers.delete(driverId);
+            this.showNotification('Driver deleted.');
+            await Promise.allSettled([this.loadDrivers(), this.loadDashboard()]);
+        } catch (error) {
+            console.error('Error deleting driver:', error);
+            this.showNotification('Could not delete driver: ' + error.message, 'error');
+        }
     },
 
     async editTeam(teamId) {
