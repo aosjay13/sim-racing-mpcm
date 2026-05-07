@@ -1,5 +1,20 @@
 // Main Application File - Sim Racing Career Mode
 
+// AGGRESSIVE CACHE BUSTING - Force fresh loads
+(function() {
+    const timestamp = new Date().getTime();
+    const scripts = document.querySelectorAll('script[src]');
+    scripts.forEach(script => {
+        const src = script.getAttribute('src');
+        if (src && !src.includes('firebase')) {  // Don't modify Firebase URLs
+            const separator = src.includes('?') ? '&' : '?';
+            const newSrc = src.replace(/[?&]t=\d+/, '');  // Remove old timestamp
+            script.setAttribute('src', newSrc + separator + 't=' + timestamp);
+        }
+    });
+    console.log('🔄 Cache busting enabled - timestamp:', timestamp);
+})();
+
 const AppSession = {
     user: null,
     isAuthenticated: false,
@@ -14,10 +29,28 @@ const AppSession = {
     authInFlight: false,
     authAutoLaunchAttempted: false
 };
+// Initialize member signup mode
+window._memberSignupMode = false;
 
 // ===== APPLICATION INITIALIZATION =====
+console.log('✅ NEW MEMBER SYSTEM LOADED - Member login panel and 8-role workspace system is active');
+
 document.addEventListener('DOMContentLoaded', async function() {
+    // Add visible timestamp to prove page is loading fresh
+    const loadTime = new Date().toLocaleTimeString();
+    console.log(`Page loaded at ${loadTime}`);
+    
     console.log('Initializing Sim Racing Career Mode...');
+    
+    // Verify member form is in DOM
+    const memberForm = document.getElementById('auth-member-form');
+    const memberEmail = document.getElementById('auth-member-email');
+    const memberPassword = document.getElementById('auth-member-password');
+    const memberBtn = document.getElementById('auth-member-login-btn');
+    console.log('✓ auth-member-form exists:', !!memberForm);
+    console.log('✓ auth-member-email exists:', !!memberEmail);
+    console.log('✓ auth-member-password exists:', !!memberPassword);
+    console.log('✓ auth-member-login-btn exists:', !!memberBtn);
     
     initializeEventListeners();
     await initializeAuthSession();

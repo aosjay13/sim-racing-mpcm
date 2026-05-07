@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Loading Member System...</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            text-align: center;
+            padding: 40px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 10px;
+            max-width: 500px;
+        }
+        h1 { color: #ff4444; }
+        p { line-height: 1.6; }
+        .status { color: #00ff88; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔄 Loading Member System...</h1>
+        <p class="status">Forcing fresh load with cache bypass...</p>
+        <p>You will be redirected to app.html with the member account system loaded.</p>
+        <p>This will take 2-3 seconds.</p>
+    </div>
+
+    <script>
+        // Force absolutely fresh load
+        const freshUrl = 'app.html?nocache=' + new Date().getTime();
+        console.log('Redirecting to:', freshUrl);
+        
+        // Wait 1 second then redirect
+        setTimeout(() => {
+            window.location.href = freshUrl;
+        }, 1000);
+    </script>
+</body>
+</html>

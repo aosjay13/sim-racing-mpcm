@@ -4,6 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Phoenix's Sim Racing Multiplayer Career Mode (SRMPC)</title>
+        <!-- Last Updated: 2026-05-07 - Member Account System Added -->
+        <!-- Cache busting -->
+        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+        <meta http-equiv="Pragma" content="no-cache">
+        <meta http-equiv="Expires" content="0">
+        <script>
+            // Force fresh loads with timestamp
+            window.CACHE_BUST = new Date().getTime();
+            console.log('⚡ Cache buster loaded:', window.CACHE_BUST);
+        </script>
     <link rel="stylesheet" href="css/style.css">
     <!-- Firebase (Firestore only — auth handled locally) -->
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
@@ -22,7 +32,7 @@
                 <span class="badge-new">Secure Access</span>
             </div>
             <h1>League Entry Portal</h1>
-            <p>Enter as Driver to access your racing workspace, or unlock Game Master controls with the admin passcode.</p>
+            <p>Create a member account to play as one of 8 career roles (Team Owner, Driver, Crew Chief, Mechanic, Agent, Sponsor, Series Owner, Track Owner). Or enter as a guest Driver, or unlock Game Master controls.</p>
             <div class="auth-gate-highlights">
                 <span class="status-pill status-approved">Live data</span>
                 <span class="status-pill status-pending">Role-based access</span>
@@ -47,9 +57,9 @@
 
             <!-- Member login panel -->
             <div class="auth-fallback-divider" aria-hidden="true">
-                <span>Member Login</span>
+                    <span>⭐ Member Account (New!)</span>
             </div>
-            <form id="auth-member-form" class="auth-fallback-form" autocomplete="on">
+                <form id="auth-member-form" class="auth-fallback-form" autocomplete="on" style="display:block !important;visibility:visible !important;background:rgba(255,68,68,0.08);padding:1.25rem;border-radius:8px;border:1px solid rgba(255,68,68,0.15);">
                 <div id="auth-member-signup-panel" style="display:none;">
                     <div class="auth-fallback-field" style="margin-bottom:0.9rem;">
                         <label for="auth-member-name">Display Name</label>
@@ -1027,9 +1037,20 @@
         </div>
 
         <!-- Scripts -->
-    <script src="js/firebase-config.js?v=3"></script>
-    <script src="js/database.js?v=3"></script>
-    <script src="js/ui.js?v=3"></script>
-    <script src="js/app.js?v=3"></script>
+    <script src="js/firebase-config.js?v=10"></script>
+    <script src="js/database.js?v=10"></script>
+    <script src="js/ui.js?v=10"></script>
+    <script src="js/app.js?v=10"></script>
+    
+    <!-- Service Worker for cache management -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('service-worker.js').then((registration) => {
+                console.log('✅ Service Worker registered for cache management');
+            }).catch((error) => {
+                console.log('Service Worker registration failed:', error);
+            });
+        }
+    </script>
 </body>
 </html>

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Member System Diagnostic Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #1a1a1a;
+            color: #00ff00;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #00ff00;
+            border-radius: 5px;
+        }
+        .test-item {
+            margin: 10px 0;
+            padding: 10px;
+            background: #0a0a0a;
+            border-left: 3px solid #00ff00;
+        }
+        .pass { color: #00ff00; font-weight: bold; }
+        .fail { color: #ff0000; font-weight: bold; }
+        h1 { color: #00ffff; }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            background: #00ff00;
+            color: #000;
+            border: none;
+            cursor: pointer;
+            border-radius: 3px;
+            font-weight: bold;
+        }
+        button:hover { background: #00dd00; }
+    </style>
+</head>
+<body>
+    <h1>⚙️ Member System Diagnostic Test</h1>
+    
+    <div class="test-section">
+        <h2>File Existence Check</h2>
+        <div id="file-checks"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Member Form Load Time</h2>
+        <button onclick="testAppLoad()">Test app.html Load</button>
+        <div id="load-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Quick Diagnostics</h2>
+        <button onclick="runQuickTest()">Run Tests</button>
+        <div id="test-results"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Instructions</h2>
+        <ol>
+            <li>Click "Run Tests" button above</li>
+            <li>Review results below</li>
+            <li>If "Member form exists" shows FAIL, your browser is still showing old cached files</li>
+            <li>Clear cache: Ctrl+Shift+Delete (Windows) or Cmd+Shift+Delete (Mac)</li>
+            <li>Hard refresh: Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac)</li>
+            <li>Then reload this page and run tests again</li>
+        </ol>
+    </div>
+
+    <script>
+        async function checkFileExists(path) {
+            try {
+                const response = await fetch(path, { method: 'HEAD' });
+                return response.ok ? 'FOUND (200)' : 'NOT FOUND (' + response.status + ')';
+            } catch (error) {
+                return 'ERROR: ' + error.message;
+            }
+        }
+
+        async function testFileExistence() {
+            const files = [
+                'app.html',
+                'js/app.js?v=5',
+                'js/ui.js?v=5',
+                'js/firebase-config.js?v=5',
+                'js/database.js?v=5',
+                'css/style.css'
+            ];
+
+            const container = document.getElementById('file-checks');
+            container.innerHTML = '<p>Checking files...</p>';
+            
+            let html = '';
+            for (const file of files) {
+                const result = await checkFileExists(file);
+                const isOk = result.includes('200') || result.includes('FOUND');
+                html += `<div class="test-item"><span class="${isOk ? 'pass' : 'fail'}">${isOk ? '✓' : '✗'}</span> ${file}: ${result}</div>`;
+            }
+            
+            container.innerHTML = html;
+        }
+
+        async function testAppLoad() {
+            const loadResult = document.getElementById('load-result');
+            loadResult.innerHTML = '<p>Loading app.html...</p>';
+            
+            try {
+                const startTime = performance.now();
+                const response = await fetch('app.html');
+                const endTime = performance.now();
+                const text = await response.text();
+                
+                const hasMemberForm = text.includes('id="auth-member-form"');
+                const hasMemberEmail = text.includes('id="auth-member-email"');
+                const hasMemberPassword = text.includes('id="auth-member-password"');
+                const hasRolePicker = text.includes('id="role-picker-modal"');
+                
+                const loadTime = (endTime - startTime).toFixed(2);
+                
+                let results = `
+                    <div class="test-item">Load time: ${loadTime}ms</div>
+                    <div class="test-item"><span class="${hasMemberForm ? 'pass' : 'fail'}">${hasMemberForm ? '✓' : '✗'}</span> Member form HTML exists</div>
+                    <div class="test-item"><span class="${hasMemberEmail ? 'pass' : 'fail'}">${hasMemberEmail ? '✓' : '✗'}</span> Email field exists</div>
+                    <div class="test-item"><span class="${hasMemberPassword ? 'pass' : 'fail'}">${hasMemberPassword ? '✓' : '✗'}</span> Password field exists</div>
+                    <div class="test-item"><span class="${hasRolePicker ? 'pass' : 'fail'}">${hasRolePicker ? '✓' : '✗'}</span> Role picker modal exists</div>
+                `;
+                
+                if (!hasMemberForm) {
+                    results += '<div class="test-item fail">⚠️ Member form NOT found in app.html! Your browser may be serving old cached version.</div>';
+                }
+                
+                loadResult.innerHTML = results;
+                
+            } catch (error) {
+                loadResult.innerHTML = `<div class="test-item fail">Error: ${error.message}</div>`;
+            }
+        }
+
+        function runQuickTest() {
+            const results = document.getElementById('test-results');
+            let html = '';
+            
+            // Test 1: Check if member form exists in loaded page
+            const memberForm = document.getElementById('auth-member-form');
+            html += `<div class="test-item"><span class="${memberForm ? 'pass' : 'fail'}">${memberForm ? '✓' : '✗'}</span> Member form in current page: ${memberForm ? 'FOUND' : 'NOT FOUND'}</div>`;
+            
+            // Test 2: Check app.js loaded
+            const appJsLoaded = typeof handleMemberSignIn !== 'undefined';
+            html += `<div class="test-item"><span class="${appJsLoaded ? 'pass' : 'fail'}">${appJsLoaded ? '✓' : '✗'}</span> app.js loaded: ${appJsLoaded ? 'YES' : 'NO'}</div>`;
+            
+            // Test 3: Check AuthService
+            const authService = typeof window.AuthService !== 'undefined';
+            html += `<div class="test-item"><span class="${authService ? 'pass' : 'fail'}">${authService ? '✓' : '✗'}</span> AuthService available: ${authService ? 'YES' : 'NO'}</div>`;
+            
+            // Test 4: Check UI object
+            const uiObject = typeof window.UI !== 'undefined';
+            html += `<div class="test-item"><span class="${uiObject ? 'pass' : 'fail'}">${uiObject ? '✓' : '✗'}</span> UI object available: ${uiObject ? 'YES' : 'NO'}</div>`;
+            
+            // Test 5: Check if form is visible (not hidden)
+            if (memberForm) {
+                const style = window.getComputedStyle(memberForm);
+                const isVisible = style.display !== 'none' && style.visibility !== 'hidden';
+                html += `<div class="test-item"><span class="${isVisible ? 'pass' : 'fail'}">${isVisible ? '✓' : '✗'}</span> Member form is visible: ${style.display} / ${style.visibility}</div>`;
+            }
+            
+            html += '<div class="test-item fail">⚠️ Note: This page is not app.html, so some tests may not apply. Use "Test app.html Load" to verify the member form content.</div>';
+            
+            results.innerHTML = html;
+        }
+
+        // Auto-run file checks when page loads
+        window.addEventListener('load', testFileExistence);
+    </script>
+</body>
+</html>
