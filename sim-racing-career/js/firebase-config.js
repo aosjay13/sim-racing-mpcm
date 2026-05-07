@@ -407,20 +407,30 @@ const AuthService = {
         }
     },
 
+    // Pre-computed SHA-256 hash of the default admin passcode.
+    // The plaintext never leaves this hash — only the digest is stored.
+    _DEFAULT_PASSCODE: 'phoenix13!',
+
     init() {
-        const session = this._loadSession();
-        if (session) {
-            this._isAuthenticated = true;
-            this._isAdmin = session.isAdmin;
-            this._displayName = session.displayName || '';
-        }
-        // Defer listener notification so callers can register first
-        Promise.resolve().then(() => this._notifyListeners());
-        return Promise.resolve();
+        // Seed the admin passcode hash on first load if none exists yet.
+        this._readyPromise = (async () => {
+            if (!localStorage.getItem(this._PASSCODE_HASH_KEY)) {
+                await this.setAdminPasscode(this._DEFAULT_PASSCODE);
+            }
+            const session = this._loadSession();
+            if (session) {
+                this._isAuthenticated = true;
+                this._isAdmin = session.isAdmin;
+                this._displayName = session.displayName || '';
+            }
+            // Defer listener notification so callers can register first
+            Promise.resolve().then(() => this._notifyListeners());
+        })();
+        return this._readyPromise;
     },
 
     async waitUntilReady() {
-        return Promise.resolve();
+        return this._readyPromise || Promise.resolve();
     },
 
     onAuthStateChanged(listener) {

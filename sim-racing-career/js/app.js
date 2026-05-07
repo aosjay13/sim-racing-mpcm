@@ -16,8 +16,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     console.log('Initializing Sim Racing Career Mode...');
     
     initializeEventListeners();
-    updatePasscodeGateUI();
     await initializeAuthSession();
+    updatePasscodeGateUI();
     loadDriverTeamOptions();
     toggleNewDriverTeamFields();
 });
