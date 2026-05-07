@@ -412,11 +412,10 @@ const AuthService = {
     _DEFAULT_PASSCODE: 'phoenix13!',
 
     init() {
-        // Seed the admin passcode hash on first load if none exists yet.
+        // Always enforce the passcode defined in _DEFAULT_PASSCODE,
+        // overwriting any previously stored hash.
         this._readyPromise = (async () => {
-            if (!localStorage.getItem(this._PASSCODE_HASH_KEY)) {
-                await this.setAdminPasscode(this._DEFAULT_PASSCODE);
-            }
+            await this.setAdminPasscode(this._DEFAULT_PASSCODE);
             const session = this._loadSession();
             if (session) {
                 this._isAuthenticated = true;
