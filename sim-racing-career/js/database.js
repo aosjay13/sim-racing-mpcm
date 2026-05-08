@@ -1,33 +1,6 @@
 // Database Operations for Sim Racing Career Mode
 
-// Minimal Database object - defined immediately to prevent "undefined" errors
-var Database = {
-    drivers: { getAll: () => Promise.resolve([]), getById: () => Promise.resolve(null), getPending: () => Promise.resolve([]), create: () => Promise.resolve(null), update: () => Promise.resolve(), delete: () => Promise.resolve(), approve: () => Promise.resolve(), reject: () => Promise.resolve() },
-    teams: { getAll: () => Promise.resolve([]), getById: () => Promise.resolve(null), getPending: () => Promise.resolve([]), create: () => Promise.resolve(null), update: () => Promise.resolve(), delete: () => Promise.resolve(), approve: () => Promise.resolve(), reject: () => Promise.resolve() },
-    races: { getAll: () => Promise.resolve([]), getById: () => Promise.resolve(null), create: () => Promise.resolve(null), update: () => Promise.resolve(), delete: () => Promise.resolve() },
-    standings: { getCurrentSeasonStandings: () => Promise.resolve({ entries: [], teamEntries: [] }) },
-    sponsorships: { getAll: () => Promise.resolve([]), createContract: () => Promise.resolve(null), updateContract: () => Promise.resolve(), getDriverContracts: () => Promise.resolve([]), getTeamContracts: () => Promise.resolve([]) },
-    accounts: { getAll: () => Promise.resolve([]) },
-    payoutAudits: { getAll: () => Promise.resolve([]) },
-    integrity: { rebuildAllAggregates: () => Promise.resolve() },
-    admins: { getAll: () => Promise.resolve([]), upsert: () => Promise.resolve(), setActive: () => Promise.resolve(), remove: () => Promise.resolve() },
-    games: { getAll: () => Promise.resolve([]), upsert: () => Promise.resolve(), remove: () => Promise.resolve() },
-    cars: { getAll: () => Promise.resolve([]), create: () => Promise.resolve(), remove: () => Promise.resolve() },
-    garage: { getByUser: () => Promise.resolve([]), purchaseCar: () => Promise.resolve() },
-    economy: { getBalance: () => Promise.resolve(0), getTransactions: () => Promise.resolve([]), addManualAdjustment: () => Promise.resolve() },
-    crewChiefs: { getByUser: () => Promise.resolve([]) },
-    mechanics: { getByUser: () => Promise.resolve([]) },
-    agents: { getByUser: () => Promise.resolve([]) },
-    sponsorCompanies: { getByUser: () => Promise.resolve([]) },
-    series: { getByUser: () => Promise.resolve([]) },
-    tracks: { getByUser: () => Promise.resolve([]) },
-    users: { upsertProfile: () => Promise.resolve() },
-    raceSignups: { getByRace: () => Promise.resolve([]), isSignedUp: () => Promise.resolve(false), create: () => Promise.resolve(), remove: () => Promise.resolve() }
-};
-
-// Export immediately
-window.Database = Database;
-console.log('✓ Minimal Database object created and exported');
+// Database will be defined below with full Firestore implementations
 
 // Firebase Firestore helper functions
 var DatabaseHelper = {
@@ -107,8 +80,6 @@ var DatabaseHelper = {
     }
 };
 
-// COMPLEX DATABASE OBJECT - COMMENTED OUT TO USE MINIMAL VERSION ABOVE
-/*
 var Database = {
     // ===== DRIVERS =====
     drivers: {
@@ -1708,8 +1679,9 @@ Database.payoutAudits = {
         const audits = await DatabaseHelper.getCollection('payoutAudits');
         return audits.sort((a, b) => getDateValue(b.createdAt) - getDateValue(a.createdAt));
     }
-},
+};
 
+Object.assign(Database, {
     // ===== CREW CHIEFS =====
     crewChiefs: {
         async create(data) {
@@ -1907,8 +1879,12 @@ Database.payoutAudits = {
         }
     }
 
-};
-*/
+});
+
+// Export to window immediately
+window.Database = Database;
+console.log('✓ Full Firestore Database defined and exported to window');
+
 // ===== UTILITY FUNCTIONS =====
 
 function getDefaultPointsSystem() {
@@ -1945,14 +1921,8 @@ function getDateValue(value) {
     return new Date(value);
 }
 
-// Export for use in other files
-console.log('Database.js loaded, Database object:', typeof Database, Database ? 'defined' : 'undefined');
-try {
-    window.Database = Database;
-    console.log('✓ Database exported to window successfully');
-} catch (e) {
-    console.error('Failed to export Database:', e);
-}
+// Export for use in other files — window.Database already set above
+console.log('Database.js fully loaded, Database object:', typeof Database);
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = Database;

@@ -1,5 +1,5 @@
 // Service Worker - Clear cache on update
-const CACHE_VERSION = 'v14-minimal-db-fix';
+const CACHE_VERSION = 'v15-db-syntax-final';
 const CACHE_URLS = [
     'app.html',
     'index.html',
