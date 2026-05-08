@@ -476,12 +476,26 @@ var UI = {
                     `;
                 }).join('');
             },
-                teamsGrid.appendChild(teamCard);
-            });
-        } catch (error) {
-            console.error('Error loading teams:', error);
-        }
-    },
+
+            async loadTeams() {
+                const grid = document.getElementById('teams-grid');
+                if (!grid) return;
+                try {
+                    const teams = await Database.teams.getAll();
+                    if (!teams.length) {
+                        grid.innerHTML = '<div class="empty-state">No teams yet. Create your first team!</div>';
+                        return;
+                    }
+                    grid.innerHTML = '';
+                    teams.forEach(team => {
+                        const card = this.createTeamCard(team);
+                        grid.appendChild(card);
+                    });
+                } catch (error) {
+                    console.error('Error loading teams:', error);
+                    grid.innerHTML = '<div class="empty-state">Failed to load teams.</div>';
+                }
+            },
 
     createTeamCard(team) {
         const card = document.createElement('div');
