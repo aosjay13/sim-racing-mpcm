@@ -1054,8 +1054,8 @@
         </div>
 
         <!-- Scripts -->
-    <script src="js/firebase-config.js?v=13"></script>
-    <script src="js/database.js?v=13"></script>
+    <script src="js/firebase-config.js?v=14"></script>
+    <script src="js/database.js?v=14"></script>
     <script>
         // Ensure Database global is accessible — database.js declares it as var (global)
         // This bridge handles cases where the var assignment completed but window needs it too
@@ -1066,14 +1066,6 @@
             }
             if (typeof window.Database === 'undefined') {
                 console.error('CRITICAL: Database failed to load from database.js');
-                // Try to create a minimal Database object as fallback
-                window.Database = {
-                    drivers: { getAll: () => Promise.resolve([]) },
-                    teams: { getAll: () => Promise.resolve([]) },
-                    races: { getAll: () => Promise.resolve([]) },
-                    standings: { getCurrentSeasonStandings: () => Promise.resolve({ entries: [], teamEntries: [] }) }
-                };
-                console.warn('⚠️ Created minimal Database fallback');
             } else {
                 console.log('✓ Database verified as global before ui.js loads');
             }
@@ -1101,8 +1093,8 @@
             }
         };
     </script>
-    <script src="js/ui.js?v=13"></script>
-    <script src="js/app.js?v=13"></script>
+    <script src="js/ui.js?v=14"></script>
+    <script src="js/app.js?v=14"></script>
     
     <!-- Service Worker for cache management -->
     <script>
