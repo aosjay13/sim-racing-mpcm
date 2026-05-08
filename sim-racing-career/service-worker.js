@@ -1,5 +1,5 @@
 // Service Worker - Clear cache on update
-const CACHE_VERSION = 'v10-member-system';
+const CACHE_VERSION = 'v11-db-global-fix';
 const CACHE_URLS = [
     'app.html',
     'index.html',

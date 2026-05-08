@@ -1,11 +1,20 @@
 // UI Management and Interactions
 // Database is a global var declared in database.js (loaded before this file)
+// Alias: window.Database is set by database.js; bare 'Database' works because var is global-scoped
+if (typeof Database === 'undefined' && typeof window.Database !== 'undefined') {
+    var Database = window.Database;
+}
 
 var UI = {
     // Track current view
     currentView: 'dashboard',
     currentMonth: new Date(),
     currentRaceDetailsId: null,
+
+    // Safe Database accessor — always pulls from global scope
+    get db() {
+        return typeof Database !== 'undefined' ? Database : window.Database;
+    },
 
     isAdmin() {
         return Boolean(window.AuthService?.isAdmin?.());

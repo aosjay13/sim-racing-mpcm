@@ -1054,10 +1054,22 @@
         </div>
 
         <!-- Scripts -->
-    <script src="js/firebase-config.js?v=10"></script>
-    <script src="js/database.js?v=10"></script>
-    <script src="js/ui.js?v=10"></script>
-    <script src="js/app.js?v=10"></script>
+    <script src="js/firebase-config.js?v=11"></script>
+    <script src="js/database.js?v=11"></script>
+    <script>
+        // Ensure Database global is accessible — database.js declares it as var (global)
+        // This bridge handles cases where the var assignment completed but window needs it too
+        if (typeof Database !== 'undefined' && !window.Database) {
+            window.Database = Database;
+        }
+        if (typeof window.Database === 'undefined') {
+            console.error('CRITICAL: Database failed to load from database.js');
+        } else {
+            console.log('✓ Database verified as global before ui.js loads');
+        }
+    </script>
+    <script src="js/ui.js?v=11"></script>
+    <script src="js/app.js?v=11"></script>
     
     <!-- Service Worker for cache management -->
     <script>
