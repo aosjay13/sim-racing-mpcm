@@ -328,6 +328,65 @@ function updateAuthUI() {
             window.UI.switchView(AppSession.isMember ? 'member-workspace' : 'dashboard');
         }
     }
+
+    // Header and banner quick-access buttons
+    const headerSwitchRoleBtn = document.getElementById('header-switch-role-btn');
+    if (headerSwitchRoleBtn) {
+        headerSwitchRoleBtn.classList.toggle('hidden', !AppSession.isMember || AppSession.isAdmin);
+    }
+
+    const headerAdminBtn = document.getElementById('header-admin-btn');
+    if (headerAdminBtn) {
+        headerAdminBtn.classList.toggle('hidden', !AppSession.isAdmin);
+    }
+
+    const bannerSelectRoleBtn = document.getElementById('banner-select-role-btn');
+    if (bannerSelectRoleBtn) {
+        bannerSelectRoleBtn.classList.toggle('hidden', !AppSession.isMember || AppSession.isAdmin);
+    }
+
+    const bannerOpenWorkspaceBtn = document.getElementById('banner-open-workspace-btn');
+    if (bannerOpenWorkspaceBtn) {
+        bannerOpenWorkspaceBtn.classList.toggle('hidden', !AppSession.isMember || AppSession.isAdmin);
+    }
+
+    const bannerOpenAdminBtn = document.getElementById('banner-open-admin-btn');
+    if (bannerOpenAdminBtn) {
+        bannerOpenAdminBtn.classList.toggle('hidden', !AppSession.isAdmin);
+    }
+
+    // Dashboard member role panel
+    const memberRolePanel = document.getElementById('member-role-panel');
+    if (memberRolePanel) {
+        memberRolePanel.classList.toggle('hidden', !AppSession.isMember || AppSession.isAdmin);
+        const badge = document.getElementById('member-role-panel-badge');
+        const desc = document.getElementById('member-role-panel-desc');
+        const roleLabels = {
+            'team-owner': 'Team Owner', 'driver': 'Driver', 'crew-chief': 'Crew Chief',
+            'mechanic': 'Mechanic', 'agent': 'Agent', 'sponsor': 'Sponsor',
+            'series-owner': 'Series Owner', 'track-owner': 'Track Owner'
+        };
+        const roleLabelMap = {
+            'team-owner': 'Build and manage a racing team from top to bottom.',
+            'driver': 'Track your career stats, sponsors, and performance.',
+            'crew-chief': 'Manage driver assignments and race strategies.',
+            'mechanic': 'Track car assignments and service work.',
+            'agent': 'Represent drivers and teams, manage contracts.',
+            'sponsor': 'Manage your sponsorship portfolio and ROI.',
+            'series-owner': 'Run the championship — calendar, rules, standings.',
+            'track-owner': 'Own and operate race venues and events.'
+        };
+        if (badge) badge.textContent = AppSession.activeRole ? (roleLabels[AppSession.activeRole] || 'Member') : 'No Role Selected';
+        if (desc) desc.textContent = AppSession.activeRole
+            ? (roleLabelMap[AppSession.activeRole] || 'Your personalized workspace is ready.')
+            : 'Choose a career path to unlock your personalized workspace and career tools.';
+    }
+
+    // Dashboard admin quick panel
+    const adminQuickPanel = document.getElementById('admin-quick-panel');
+    if (adminQuickPanel) {
+        adminQuickPanel.classList.toggle('hidden', !AppSession.isAdmin);
+    }
 }
 
 function requireAuthenticated(message = 'Please sign in to continue.') {
@@ -571,8 +630,48 @@ function initializeEventListeners() {
         }
     });
 
+    // Header quick-access buttons
+    document.getElementById('header-switch-role-btn')?.addEventListener('click', () => {
+        window.UI?.showRolePicker();
+    });
+
+    document.getElementById('header-admin-btn')?.addEventListener('click', () => {
+        window.UI?.switchView('admin');
+    });
+
+    // Banner CTA buttons
+    document.getElementById('banner-select-role-btn')?.addEventListener('click', () => {
+        window.UI?.showRolePicker();
+    });
+
+    document.getElementById('banner-open-workspace-btn')?.addEventListener('click', () => {
+        window.UI?.switchView('member-workspace');
+    });
+
+    document.getElementById('banner-open-admin-btn')?.addEventListener('click', () => {
+        window.UI?.switchView('admin');
+    });
+
     // Modal management
     setupModalHandlers();
+
+    // Dashboard role panel buttons
+    document.getElementById('dashboard-select-role-btn')?.addEventListener('click', () => {
+        window.UI?.showRolePicker();
+    });
+
+    document.getElementById('dashboard-open-workspace-btn')?.addEventListener('click', () => {
+        window.UI?.switchView('member-workspace');
+    });
+
+    document.getElementById('dashboard-open-admin-btn')?.addEventListener('click', () => {
+        window.UI?.switchView('admin');
+    });
+
+    document.getElementById('dashboard-quick-add-race-btn')?.addEventListener('click', () => {
+        if (!requireAdmin()) return;
+        UI.showModal('add-race-modal');
+    });
 
     // Dashboard actions
     document.getElementById('quick-add-driver')?.addEventListener('click', async () => {

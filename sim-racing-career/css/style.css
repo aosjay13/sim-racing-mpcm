@@ -593,6 +593,19 @@ body[data-role='driver'] .workspace-banner {
     background: linear-gradient(135deg, rgba(0, 217, 255, 0.12), rgba(255, 255, 255, 0.03));
 }
 
+body[data-role^='member'] .workspace-banner {
+    border-color: rgba(255, 68, 68, 0.28);
+    background: linear-gradient(135deg, rgba(255, 68, 68, 0.10), rgba(0, 217, 255, 0.05));
+}
+
+.workspace-banner-actions {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
 /* ===== MAIN CONTAINER ===== */
 .main-container {
     max-width: 1400px;

@@ -111,6 +111,8 @@
                     <button class="nav-btn hidden" id="admin-nav-btn" data-view="admin" type="button">Racing Manager</button>
                 </nav>
                 <div class="header-actions">
+                    <button class="btn btn-primary hidden" id="header-switch-role-btn" type="button" title="Change your career role">&#127919; Switch Role</button>
+                    <button class="btn btn-primary hidden" id="header-admin-btn" type="button" title="Open Racing Manager">&#127942; Racing Manager</button>
                     <span id="auth-role-badge" class="auth-role-badge">Guest</span>
                     <button class="btn btn-secondary" id="login-btn" type="button">Sign In</button>
                     <button class="btn btn-secondary hidden" id="logout-btn" type="button">Sign Out</button>
@@ -125,7 +127,12 @@
                 <p id="workspace-banner-eyebrow" class="workspace-banner-eyebrow">Guest Workspace</p>
                 <h2 id="workspace-banner-title">Sign in to unlock your racing workspace.</h2>
             </div>
-            <p id="workspace-banner-copy" class="workspace-banner-copy">Drivers get a live career hub. Admins get the full Racing Manager control surface.</p>
+            <div id="workspace-banner-actions" style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
+                <p id="workspace-banner-copy" class="workspace-banner-copy" style="margin:0;"></p>
+                <button class="btn btn-primary hidden" id="banner-select-role-btn" type="button">&#127919; Select Your Role</button>
+                <button class="btn btn-secondary hidden" id="banner-open-workspace-btn" type="button">Open My Workspace</button>
+                <button class="btn btn-primary hidden" id="banner-open-admin-btn" type="button">&#127942; Open Racing Manager</button>
+            </div>
         </section>
 
         <!-- Main Content -->
@@ -160,6 +167,32 @@
                         <div class="stat-card">
                             <div class="stat-value" id="next-race-days">TBD</div>
                             <div class="stat-label">Next Race</div>
+                        </div>
+                    </div>
+
+                    <!-- Member Role Panel (shown when logged in as member) -->
+                    <div id="member-role-panel" class="card hidden" style="border:2px solid var(--primary);background:linear-gradient(135deg,rgba(255,68,68,0.08),rgba(0,217,255,0.05));">
+                        <div class="card-header">
+                            <h3>&#127919; Your Career Role</h3>
+                            <span id="member-role-panel-badge" class="badge-new">No Role Selected</span>
+                        </div>
+                        <p id="member-role-panel-desc" style="color:var(--text-secondary);margin-bottom:1.25rem;">Choose a career path to unlock your personalized workspace and career tools.</p>
+                        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+                            <button class="btn btn-primary" id="dashboard-select-role-btn" type="button">&#127919; Choose / Change Role</button>
+                            <button class="btn btn-secondary" id="dashboard-open-workspace-btn" type="button">Open My Workspace &#8594;</button>
+                        </div>
+                    </div>
+
+                    <!-- Admin Quick Panel (shown when logged in as admin) -->
+                    <div id="admin-quick-panel" class="card hidden" style="border:2px solid #FFD700;background:linear-gradient(135deg,rgba(255,215,0,0.08),rgba(255,68,68,0.05));">
+                        <div class="card-header">
+                            <h3>&#127942; Game Master Controls</h3>
+                            <span class="badge-new">Admin</span>
+                        </div>
+                        <p style="color:var(--text-secondary);margin-bottom:1.25rem;">You have full Racing Manager access. Manage drivers, teams, races, and league operations.</p>
+                        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+                            <button class="btn btn-primary" id="dashboard-open-admin-btn" type="button">&#127942; Open Racing Manager</button>
+                            <button class="btn btn-secondary" id="dashboard-quick-add-race-btn" type="button">+ Schedule Race</button>
                         </div>
                     </div>
 
