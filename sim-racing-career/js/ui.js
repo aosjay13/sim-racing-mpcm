@@ -1,23 +1,5 @@
 // UI Management and Interactions
-
-// Reference to Database module (loaded from database.js)
-// Created here so it's accessible throughout this file
-let Database;
-(function() {
-    // Wait for Database to be available (it's loaded in HTML before ui.js)
-    const checkDb = setInterval(() => {
-        if (window.Database) {
-            Database = window.Database;
-            clearInterval(checkDb);
-            console.log('✓ Database reference initialized in UI');
-        }
-    }, 10);
-    // Also set it immediately if already available
-    if (window.Database) {
-        Database = window.Database;
-        console.log('✓ Database reference initialized in UI (immediate)');
-    }
-})();
+// Database is a global var declared in database.js (loaded before this file)
 
 var UI = {
     // Track current view
@@ -1315,11 +1297,6 @@ var UI = {
         }
 
         try {
-            // Ensure Database is available
-            if (!Database || typeof Database !== 'object') {
-                throw new Error('Database module not loaded yet. Please refresh the page.');
-            }
-
             const [drivers, teams, races, pendingDrivers, pendingTeams, accountRequests] = await Promise.all([
                 Database.drivers.getAll(),
                 Database.teams.getAll(),

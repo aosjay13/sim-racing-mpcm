@@ -1,7 +1,7 @@
 // Database Operations for Sim Racing Career Mode
 
 // Firebase Firestore helper functions
-const DatabaseHelper = {
+var DatabaseHelper = {
     async addDocument(collection, data) {
         try {
             const db = firebase.firestore();
@@ -78,7 +78,7 @@ const DatabaseHelper = {
     }
 };
 
-const Database = {
+var Database = {
     // ===== DRIVERS =====
     drivers: {
         async create(driverData) {
