@@ -1,5 +1,83 @@
 // Database Operations for Sim Racing Career Mode
 
+// Firebase Firestore helper functions
+const DatabaseHelper = {
+    async addDocument(collection, data) {
+        try {
+            const db = firebase.firestore();
+            if (!data.id) {
+                const docRef = await db.collection(collection).add(data);
+                return { ...data, id: docRef.id };
+            } else {
+                await db.collection(collection).doc(data.id).set(data, { merge: true });
+                return data;
+            }
+        } catch (error) {
+            console.error(`Error adding document to ${collection}:`, error);
+            throw error;
+        }
+    },
+
+    async getDocument(collection, docId) {
+        try {
+            const db = firebase.firestore();
+            const doc = await db.collection(collection).doc(docId).get();
+            if (doc.exists) {
+                return { ...doc.data(), id: doc.id };
+            }
+            return null;
+        } catch (error) {
+            console.error(`Error getting document from ${collection}:`, error);
+            throw error;
+        }
+    },
+
+    async getCollection(collection, filters = []) {
+        try {
+            const db = firebase.firestore();
+            let query = db.collection(collection);
+
+            if (filters && filters.length > 0) {
+                filters.forEach(([field, operator, value]) => {
+                    query = query.where(field, operator, value);
+                });
+            }
+
+            const snapshot = await query.get();
+            const documents = [];
+            snapshot.forEach(doc => {
+                documents.push({ ...doc.data(), id: doc.id });
+            });
+            return documents;
+        } catch (error) {
+            console.error(`Error getting collection ${collection}:`, error);
+            return [];
+        }
+    },
+
+    async updateDocument(collection, docId, updates) {
+        try {
+            const db = firebase.firestore();
+            await db.collection(collection).doc(docId).update(updates);
+            return { id: docId, ...updates };
+        } catch (error) {
+            console.error(`Error updating document in ${collection}:`, error);
+            throw error;
+        }
+    },
+
+    async deleteDocument(collection, docId) {
+        try {
+            const db = firebase.firestore();
+            await db.collection(collection).doc(docId).delete();
+            return { id: docId, deleted: true };
+        } catch (error) {
+            console.error(`Error deleting document from ${collection}:`, error);
+            throw error;
+        }
+    }
+};
+
 const Database = {
     // ===== DRIVERS =====
     drivers: {
