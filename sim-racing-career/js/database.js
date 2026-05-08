@@ -1851,7 +1851,12 @@ function getDateValue(value) {
 }
 
 // Export for use in other files
-window.Database = Database;
+try {
+    window.Database = Database;
+    console.log('✓ Database exported to window successfully');
+} catch (e) {
+    console.error('Failed to export Database:', e);
+}
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = Database;
