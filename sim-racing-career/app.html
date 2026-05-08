@@ -1054,22 +1054,55 @@
         </div>
 
         <!-- Scripts -->
-    <script src="js/firebase-config.js?v=11"></script>
-    <script src="js/database.js?v=11"></script>
+    <script src="js/firebase-config.js?v=13"></script>
+    <script src="js/database.js?v=13"></script>
     <script>
         // Ensure Database global is accessible — database.js declares it as var (global)
         // This bridge handles cases where the var assignment completed but window needs it too
-        if (typeof Database !== 'undefined' && !window.Database) {
-            window.Database = Database;
+        function ensureDatabase() {
+            if (typeof Database !== 'undefined' && !window.Database) {
+                window.Database = Database;
+                console.log('✓ Database bridged to window');
+            }
+            if (typeof window.Database === 'undefined') {
+                console.error('CRITICAL: Database failed to load from database.js');
+                // Try to create a minimal Database object as fallback
+                window.Database = {
+                    drivers: { getAll: () => Promise.resolve([]) },
+                    teams: { getAll: () => Promise.resolve([]) },
+                    races: { getAll: () => Promise.resolve([]) },
+                    standings: { getCurrentSeasonStandings: () => Promise.resolve({ entries: [], teamEntries: [] }) }
+                };
+                console.warn('⚠️ Created minimal Database fallback');
+            } else {
+                console.log('✓ Database verified as global before ui.js loads');
+            }
         }
-        if (typeof window.Database === 'undefined') {
-            console.error('CRITICAL: Database failed to load from database.js');
-        } else {
-            console.log('✓ Database verified as global before ui.js loads');
-        }
+        
+        // Check immediately
+        ensureDatabase();
+        
+        // Also check after a short delay in case database.js is still loading
+        setTimeout(ensureDatabase, 100);
+        
+        // Add a global test function for debugging
+        window.testDatabase = async function() {
+            try {
+                console.log('Testing Database access...');
+                console.log('Database type:', typeof Database);
+                console.log('window.Database type:', typeof window.Database);
+                if (Database && Database.drivers) {
+                    const drivers = await Database.drivers.getAll();
+                    console.log('Database.drivers.getAll() works:', drivers.length, 'drivers');
+                }
+                console.log('✓ Database test passed');
+            } catch (e) {
+                console.error('✗ Database test failed:', e);
+            }
+        };
     </script>
-    <script src="js/ui.js?v=11"></script>
-    <script src="js/app.js?v=11"></script>
+    <script src="js/ui.js?v=13"></script>
+    <script src="js/app.js?v=13"></script>
     
     <!-- Service Worker for cache management -->
     <script>

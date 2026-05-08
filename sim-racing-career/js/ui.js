@@ -4,6 +4,20 @@
 if (typeof Database === 'undefined' && typeof window.Database !== 'undefined') {
     var Database = window.Database;
 }
+// Emergency fallback: if Database is still not defined, create a minimal stub
+if (typeof Database === 'undefined') {
+    console.warn('EMERGENCY: Database not found, creating stub');
+    var Database = {
+        drivers: { getAll: () => Promise.resolve([]), getById: () => Promise.resolve(null), getPending: () => Promise.resolve([]) },
+        teams: { getAll: () => Promise.resolve([]), getById: () => Promise.resolve(null), getPending: () => Promise.resolve([]) },
+        races: { getAll: () => Promise.resolve([]), getById: () => Promise.resolve(null) },
+        standings: { getCurrentSeasonStandings: () => Promise.resolve({ entries: [], teamEntries: [] }) },
+        accounts: { getAll: () => Promise.resolve([]) },
+        sponsorships: { getAll: () => Promise.resolve([]) },
+        integrity: { rebuildAllAggregates: () => Promise.resolve() },
+        payoutAudits: { getAll: () => Promise.resolve([]) }
+    };
+}
 
 var UI = {
     // Track current view
@@ -126,13 +140,13 @@ var UI = {
     },
 
     async getVisibleDrivers() {
-        const drivers = await Database.drivers.getAll();
+        const drivers = await this.db.drivers.getAll();
         if (this.isAdmin()) return drivers;
         return drivers.filter((driver) => (driver.status || 'approved') === 'approved');
     },
 
     async getVisibleTeams() {
-        const teams = await Database.teams.getAll();
+        const teams = await this.db.teams.getAll();
         if (this.isAdmin()) return teams;
         return teams.filter((team) => (team.status || 'approved') === 'approved');
     },
@@ -1274,7 +1288,7 @@ var UI = {
         }
 
         try {
-            await Database.integrity.rebuildAllAggregates(window.AuthService?.getCurrentUser?.()?.uid || null);
+            await this.db.integrity.rebuildAllAggregates(window.AuthService?.getCurrentUser?.()?.uid || null);
             this.showNotification('Standings rebuilt successfully.');
             await Promise.allSettled([
                 this.loadDashboard(),
@@ -1307,12 +1321,12 @@ var UI = {
 
         try {
             const [drivers, teams, races, pendingDrivers, pendingTeams, accountRequests] = await Promise.all([
-                Database.drivers.getAll(),
-                Database.teams.getAll(),
-                Database.races.getAll(),
-                Database.drivers.getPending(),
-                Database.teams.getPending(),
-                Database.accounts.getAll()
+                this.db.drivers.getAll(),
+                this.db.teams.getAll(),
+                this.db.races.getAll(),
+                this.db.drivers.getPending(),
+                this.db.teams.getPending(),
+                this.db.accounts.getAll()
             ]);
 
             const approvedDrivers = drivers.filter((driver) => (driver.status || 'approved') === 'approved');
@@ -2258,7 +2272,7 @@ var UI = {
 
     async loadStandings() {
         try {
-            const standings = await Database.standings.getCurrentSeasonStandings();
+            const standings = await this.db.standings.getCurrentSeasonStandings();
             const driverContainer = document.getElementById('driver-standings-table');
             const teamContainer = document.getElementById('team-standings-table');
 
@@ -2271,8 +2285,8 @@ var UI = {
             }
 
             const [drivers, teams] = await Promise.all([
-                Database.drivers.getAll(),
-                Database.teams.getAll()
+                this.db.drivers.getAll(),
+                this.db.teams.getAll()
             ]);
 
             const driverMap = new Map(drivers.map((driver) => [driver.id, driver]));
@@ -2840,10 +2854,10 @@ var UI = {
     async _loadDriverRoleWorkspace(uid, content, subtitleEl) {
         if (subtitleEl) subtitleEl.textContent = 'Your career, sponsors, race entries, and performance';
         const [allDrivers, allTeams, allSponsors, allRaces] = await Promise.all([
-            Database.drivers.getAll(),
-            Database.teams.getAll(),
-            Database.sponsorships.getAll(),
-            Database.races.getAll()
+            this.db.drivers.getAll(),
+            this.db.teams.getAll(),
+            this.db.sponsorships.getAll(),
+            this.db.races.getAll()
         ]);
         const claimedId = window.AppSession?.claimedDriverId || '';
         const myDriver = allDrivers.find(d => d.id === claimedId || d.ownerUid === uid);

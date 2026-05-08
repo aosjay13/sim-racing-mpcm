@@ -1915,6 +1915,7 @@ function getDateValue(value) {
 }
 
 // Export for use in other files
+console.log('Database.js loaded, Database object:', typeof Database, Database ? 'defined' : 'undefined');
 try {
     window.Database = Database;
     console.log('✓ Database exported to window successfully');
