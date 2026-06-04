@@ -4,8 +4,8 @@ Repository root for GitHub Pages.
 
 ## Live URLs
 
-- Site: https://aosjay13.github.io/sim-racing-mpcm/
-- App: https://aosjay13.github.io/sim-racing-mpcm/app.html
+- Site: <https://aosjay13.github.io/sim-racing-mpcm/>
+- App: <https://aosjay13.github.io/sim-racing-mpcm/app.html>
 
 ## Project Files
 
