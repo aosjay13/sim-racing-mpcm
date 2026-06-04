@@ -873,6 +873,26 @@ function initializeEventListeners() {
         UI.showModal('add-race-modal');
     });
 
+    document.getElementById('edit-race-form')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!requireAdmin()) return;
+        await UI.saveEditRaceFromForm();
+    });
+
+    document.getElementById('cancel-edit-race')?.addEventListener('click', () => {
+        UI.closeModal('edit-race-modal');
+    });
+
+    document.getElementById('race-schedule-filter')?.addEventListener('change', async () => {
+        if (!requireAdmin()) return;
+        await UI.loadRaceSchedule();
+    });
+
+    document.getElementById('admin-race-schedule-refresh')?.addEventListener('click', async () => {
+        if (!requireAdmin()) return;
+        await UI.loadRaceSchedule();
+    });
+
     document.getElementById('moderation-type-filter')?.addEventListener('change', async () => {
         if (!requireAdmin()) return;
         await UI.loadModerationQueue();

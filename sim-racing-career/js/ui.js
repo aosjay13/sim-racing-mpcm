@@ -1377,9 +1377,15 @@ var UI = {
                                 <div>
                                     <p class="moderation-title">${race.name}</p>
                                     <p class="moderation-meta">${this.normalizeDate(race.date).toLocaleString()}</p>
-                                    <p class="moderation-meta">${race.game || 'Unassigned game'}${race.track ? ` • ${race.track}` : ''}</p>
+                                    <p class="moderation-meta">${race.game || 'Unassigned game'}${race.track ? ` &bull; ${race.track}` : ''}</p>
                                 </div>
                                 <span class="status-pill status-approved">scheduled</span>
+                            </div>
+                            <div class="card-actions" style="padding: 0; border: none; gap: 0.4rem; flex-wrap: wrap;">
+                                <button type="button" onclick="UI.openRaceDetails('${race.id}')">Manage</button>
+                                <button type="button" onclick="UI.editRace('${race.id}')">Edit</button>
+                                <button type="button" onclick="UI.setRaceLive('${race.id}')">Go Live</button>
+                                <button type="button" class="btn-danger" onclick="UI.deleteRace('${race.id}')">Delete</button>
                             </div>
                         </div>
                     `).join('');
@@ -1443,7 +1449,8 @@ var UI = {
             this.loadAdminList(),
             this.loadGamesCatalog(),
             this.loadCarsCatalog(),
-            this.loadAdminPayoutActivity()
+            this.loadAdminPayoutActivity(),
+            this.loadRaceSchedule()
         ]);
     },
 
@@ -1965,6 +1972,169 @@ var UI = {
         } catch (error) {
             console.error('Error removing car:', error);
             this.showNotification('Could not remove car: ' + error.message, 'error');
+        }
+    },
+
+    async editRace(raceId) {
+        if (!this.isAdmin()) return;
+        try {
+            const race = await Database.races.getById(raceId);
+            if (!race) { this.showNotification('Race not found.', 'error'); return; }
+
+            document.getElementById('edit-race-id').value = raceId;
+            document.getElementById('edit-race-name').value = race.name || '';
+
+            const raceDate = this.normalizeDate(race.date);
+            const localIso = new Date(raceDate.getTime() - raceDate.getTimezoneOffset() * 60000)
+                .toISOString().slice(0, 16);
+            document.getElementById('edit-race-date').value = localIso;
+            document.getElementById('edit-race-game').value = race.game || '';
+            document.getElementById('edit-race-track').value = race.track || '';
+            document.getElementById('edit-race-description').value = race.description || '';
+            document.getElementById('edit-race-stream').value = race.streamLink || '';
+
+            this.showModal('edit-race-modal');
+        } catch (error) {
+            console.error('Error loading race for edit:', error);
+            this.showNotification('Could not load race: ' + error.message, 'error');
+        }
+    },
+
+    async saveEditRaceFromForm() {
+        if (!this.isAdmin()) { this.showNotification('Admin access required.', 'error'); return; }
+
+        const raceId = document.getElementById('edit-race-id')?.value?.trim();
+        if (!raceId) { this.showNotification('No race selected.', 'error'); return; }
+
+        const name = document.getElementById('edit-race-name')?.value?.trim();
+        const dateStr = document.getElementById('edit-race-date')?.value;
+        const game = document.getElementById('edit-race-game')?.value;
+        const track = document.getElementById('edit-race-track')?.value?.trim() || '';
+        const description = document.getElementById('edit-race-description')?.value?.trim() || '';
+        const streamLink = document.getElementById('edit-race-stream')?.value?.trim() || '';
+
+        if (!name || !dateStr || !game) {
+            this.showNotification('Race name, date, and game are required.', 'error');
+            return;
+        }
+
+        try {
+            await Database.races.update(raceId, {
+                name,
+                date: new Date(dateStr),
+                game,
+                track,
+                description,
+                streamLink
+            });
+            this.showNotification('Race updated.');
+            this.closeModal('edit-race-modal');
+            await Promise.allSettled([
+                this.loadAdminCommandCenter(),
+                this.loadRaceSchedule(),
+                this.loadCalendar()
+            ]);
+        } catch (error) {
+            console.error('Error saving race edits:', error);
+            this.showNotification('Could not save race: ' + error.message, 'error');
+        }
+    },
+
+    async deleteRace(raceId) {
+        if (!this.isAdmin()) return;
+        const race = await Database.races.getById(raceId);
+        if (!race) { this.showNotification('Race not found.', 'error'); return; }
+        if (!window.confirm(`Delete "${race.name}"? This cannot be undone.`)) return;
+
+        try {
+            await Database.races.delete(raceId);
+            this.showNotification('Race deleted.');
+            await Promise.allSettled([
+                this.loadAdminCommandCenter(),
+                this.loadRaceSchedule(),
+                this.loadCalendar()
+            ]);
+        } catch (error) {
+            console.error('Error deleting race:', error);
+            this.showNotification('Could not delete race: ' + error.message, 'error');
+        }
+    },
+
+    async setRaceLive(raceId) {
+        if (!this.isAdmin()) return;
+        const race = await Database.races.getById(raceId);
+        if (!race) { this.showNotification('Race not found.', 'error'); return; }
+        if (!window.confirm(`Set "${race.name}" to ACTIVE (go live)? Signups will close.`)) return;
+
+        try {
+            await Database.races.update(raceId, { status: 'active' });
+            this.showNotification(`${race.name} is now live!`);
+            await Promise.allSettled([
+                this.loadAdminCommandCenter(),
+                this.loadRaceSchedule(),
+                this.loadCalendar()
+            ]);
+        } catch (error) {
+            console.error('Error setting race live:', error);
+            this.showNotification('Could not go live: ' + error.message, 'error');
+        }
+    },
+
+    async loadRaceSchedule() {
+        if (!this.isAdmin()) return;
+
+        const list = document.getElementById('admin-race-schedule-list');
+        if (!list) return;
+
+        const filter = document.getElementById('race-schedule-filter')?.value || 'all';
+
+        try {
+            let races = await Database.races.getAll();
+
+            if (filter !== 'all') {
+                races = races.filter((r) => (r.status || 'scheduled') === filter);
+            }
+
+            races.sort((a, b) => this.normalizeDate(b.date) - this.normalizeDate(a.date));
+
+            if (!races.length) {
+                list.innerHTML = '<p class="empty-state">No races match this filter.</p>';
+                return;
+            }
+
+            list.innerHTML = races.map((race) => {
+                const status = race.status || 'scheduled';
+                const statusClass = status === 'completed' ? 'status-completed'
+                    : status === 'active' ? 'status-active'
+                    : 'status-approved';
+                const canEdit = status === 'scheduled';
+                const canDelete = status !== 'completed';
+                const canGoLive = status === 'scheduled';
+                const canResults = status === 'scheduled' || status === 'completed';
+
+                return `
+                    <div class="moderation-item">
+                        <div class="moderation-item-header">
+                            <div>
+                                <p class="moderation-title">${race.name}</p>
+                                <p class="moderation-meta">${this.normalizeDate(race.date).toLocaleString()}</p>
+                                <p class="moderation-meta">${race.game || 'Unassigned'}${race.track ? ` &bull; ${race.track}` : ''}</p>
+                            </div>
+                            <span class="status-pill ${statusClass}">${status}</span>
+                        </div>
+                        <div class="card-actions" style="padding: 0; border: none; flex-wrap: wrap; gap: 0.4rem;">
+                            <button type="button" onclick="UI.openRaceDetails('${race.id}')">Details</button>
+                            ${canEdit ? `<button type="button" onclick="UI.editRace('${race.id}')">Edit</button>` : ''}
+                            ${canGoLive ? `<button type="button" onclick="UI.setRaceLive('${race.id}')">Go Live</button>` : ''}
+                            ${canResults ? `<button type="button" onclick="UI.openRaceDetails('${race.id}')">Results</button>` : ''}
+                            ${canDelete ? `<button type="button" class="btn-danger" onclick="UI.deleteRace('${race.id}')">Delete</button>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } catch (error) {
+            console.error('Error loading race schedule:', error);
+            list.innerHTML = '<p class="empty-state">Failed to load race schedule.</p>';
         }
     },
 

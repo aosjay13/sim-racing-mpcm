@@ -567,6 +567,27 @@
                     </div>
                 </div>
 
+                <!-- Race Schedule Control -->
+                <div class="card" style="margin-bottom: 1.5rem;">
+                    <div class="card-header">
+                        <h3>Race Schedule</h3>
+                        <button class="btn btn-secondary" type="button" id="admin-race-schedule-refresh" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Refresh</button>
+                    </div>
+                    <div class="form" style="padding-top: 1rem;">
+                        <div class="filters-bar" style="margin-bottom: 1rem;">
+                            <select id="race-schedule-filter" class="filter-select">
+                                <option value="all">All Races</option>
+                                <option value="scheduled">Scheduled</option>
+                                <option value="active">Active</option>
+                                <option value="completed">Completed</option>
+                            </select>
+                        </div>
+                        <div id="admin-race-schedule-list">
+                            <p class="empty-state">No races found.</p>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="admin-grid">
                     <div class="card">
                         <div class="card-header">
@@ -853,6 +874,55 @@
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">Schedule Race</button>
                     <button type="button" class="btn btn-secondary" id="cancel-race">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="edit-race-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Race</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="edit-race-form" class="form">
+                <input type="hidden" id="edit-race-id">
+                <div class="form-group">
+                    <label for="edit-race-name">Race Name *</label>
+                    <input type="text" id="edit-race-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-race-date">Date *</label>
+                    <input type="datetime-local" id="edit-race-date" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-race-game">Simulation *</label>
+                    <select id="edit-race-game" required>
+                        <option value="">Select a game</option>
+                        <option value="iracing">iRacing</option>
+                        <option value="nascar2003">NASCAR Racing 2003</option>
+                        <option value="wreckfest">Wreckfest</option>
+                        <option value="wreckfest2">Wreckfest 2</option>
+                        <option value="automobilista1">Automobilista 1</option>
+                        <option value="automobilista2">Automobilista 2</option>
+                        <option value="beamng">BeamNG.Drive</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="edit-race-track">Track/Circuit</label>
+                    <input type="text" id="edit-race-track">
+                </div>
+                <div class="form-group">
+                    <label for="edit-race-description">Notes</label>
+                    <textarea id="edit-race-description" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="edit-race-stream">Stream Link</label>
+                    <input type="url" id="edit-race-stream" placeholder="https://...">
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                    <button type="button" class="btn btn-secondary" id="cancel-edit-race">Cancel</button>
                 </div>
             </form>
         </div>

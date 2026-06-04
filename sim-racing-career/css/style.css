@@ -527,6 +527,27 @@ body[data-role='driver'] .card-featured {
     background: var(--danger);
 }
 
+.status-active {
+    color: #0a1a1a;
+    background: #4ecdc4;
+}
+
+.status-completed {
+    color: #fff;
+    background: #6c757d;
+}
+
+.btn-danger {
+    background: rgba(255, 68, 68, 0.12);
+    color: #ff4444;
+    border: 1px solid rgba(255, 68, 68, 0.3);
+}
+
+.btn-danger:hover {
+    background: rgba(255, 68, 68, 0.25);
+    border-color: #ff4444;
+}
+
 .hidden {
     display: none !important;
 }
