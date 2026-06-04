@@ -1,10 +1,47 @@
 // UI Management and Interactions
-// Database is a global var declared in database.js (loaded before this file)
-// Alias: window.Database is set by database.js; bare 'Database' works because var is global-scoped
-console.log('UI.js loading - Database available:', typeof Database, Database ? '✓' : '✗');
-if (typeof Database === 'undefined' && typeof window.Database !== 'undefined') {
-    var Database = window.Database;
-}
+// Normalize Database global so every view can safely call required modules.
+(function initializeDatabaseGlobal() {
+    const base = (typeof window.Database === 'object' && window.Database) ||
+        (typeof Database === 'object' && Database) ||
+        {};
+
+    const defaults = {
+        drivers: { getAll: async () => [], getById: async () => null, getPending: async () => [] },
+        teams: { getAll: async () => [], getById: async () => null, getPending: async () => [] },
+        races: { getAll: async () => [], getById: async () => null },
+        standings: { getCurrentSeasonStandings: async () => ({ entries: [], teamEntries: [] }) },
+        sponsorships: { getAll: async () => [], getDriverContracts: async () => [], getTeamContracts: async () => [] },
+        accounts: { getAll: async () => [] },
+        admins: { getAll: async () => [] },
+        payoutAudits: { getAll: async () => [] },
+        integrity: { rebuildAllAggregates: async () => {} },
+        economy: { getTransactions: async () => [], getBalance: async () => 0 },
+        garage: { getByUser: async () => [] },
+        games: { getAll: async () => [] },
+        cars: { getAll: async () => [] },
+        raceSignups: { getByRace: async () => [], isSignedUp: async () => false }
+    };
+
+    const merged = { ...defaults };
+    Object.keys(defaults).forEach((key) => {
+        merged[key] = {
+            ...defaults[key],
+            ...((base && typeof base[key] === 'object' && base[key]) || {})
+        };
+    });
+
+    // keep any additional non-default modules too
+    Object.keys(base || {}).forEach((key) => {
+        if (!merged[key]) {
+            merged[key] = base[key];
+        }
+    });
+
+    window.Database = merged;
+    console.log('UI.js database init:', typeof window.Database, Object.keys(window.Database || {}));
+})();
+
+var Database = window.Database;
 
 var UI = {
     // Track current view

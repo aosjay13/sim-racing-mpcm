@@ -15,6 +15,43 @@
     console.log('🔄 Cache busting enabled - timestamp:', timestamp);
 })();
 
+// Normalize Database global for app.js too (covers direct Database.* usage in this file)
+(function initializeAppDatabaseGlobal() {
+    const base = (typeof window.Database === 'object' && window.Database) || {};
+    const defaults = {
+        drivers: { getAll: async () => [], getById: async () => null, getPending: async () => [] },
+        teams: { getAll: async () => [], getById: async () => null, getPending: async () => [] },
+        races: { getAll: async () => [], getById: async () => null },
+        standings: { getCurrentSeasonStandings: async () => ({ entries: [], teamEntries: [] }) },
+        sponsorships: { getAll: async () => [], getDriverContracts: async () => [], getTeamContracts: async () => [] },
+        accounts: { getAll: async () => [] },
+        users: { getProfile: async () => null, upsertProfile: async () => {} },
+        admins: { getAll: async () => [] },
+        payoutAudits: { getAll: async () => [] },
+        integrity: { rebuildAllAggregates: async () => {} },
+        economy: { getTransactions: async () => [], getBalance: async () => 0 },
+        garage: { getByUser: async () => [] },
+        games: { getAll: async () => [] },
+        cars: { getAll: async () => [] },
+        raceSignups: { getByRace: async () => [], isSignedUp: async () => false }
+    };
+
+    const merged = { ...defaults };
+    Object.keys(defaults).forEach((key) => {
+        merged[key] = {
+            ...defaults[key],
+            ...((base && typeof base[key] === 'object' && base[key]) || {})
+        };
+    });
+    Object.keys(base || {}).forEach((key) => {
+        if (!merged[key]) merged[key] = base[key];
+    });
+
+    window.Database = merged;
+})();
+
+var Database = window.Database;
+
 const AppSession = {
     user: null,
     isAuthenticated: false,
