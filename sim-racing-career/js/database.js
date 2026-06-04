@@ -1755,19 +1755,49 @@ Object.assign(Database, {
             return await DatabaseHelper.addDocument('sponsorCompanies', {
                 companyName: data.companyName || '',
                 userId: data.userId || null,
+                isDefault: data.isDefault || false,
+                tier: data.tier || 'mid',
                 industry: data.industry || 'General',
                 website: data.website || '',
                 logoUrl: data.logoUrl || '',
                 totalBudget: data.totalBudget || 0,
                 bio: data.bio || '',
+                offerTerms: data.offerTerms || { basePerRace: 5000, winBonus: 2000, podiumBonus: 1000, dnfPenalty: 500 },
                 status: data.status || 'active'
             });
         },
         async getAll() { return await DatabaseHelper.getCollection('sponsorCompanies'); },
         async getById(id) { return await DatabaseHelper.getDocument('sponsorCompanies', id); },
         async getByUser(userId) { return await DatabaseHelper.getCollection('sponsorCompanies', [['userId', '==', userId]]); },
+        async getDefaults() { return await DatabaseHelper.getCollection('sponsorCompanies', [['isDefault', '==', true]]); },
         async update(id, updates) { return await DatabaseHelper.updateDocument('sponsorCompanies', id, updates); },
-        async delete(id) { return await DatabaseHelper.deleteDocument('sponsorCompanies', id); }
+        async delete(id) { return await DatabaseHelper.deleteDocument('sponsorCompanies', id); },
+
+        async getAvailableForDriver(driverId) {
+            const [defaults, contracts] = await Promise.all([
+                this.getDefaults(),
+                DatabaseHelper.getCollection('sponsorships', [['driverId', '==', driverId]])
+            ]);
+            const activeCompanyNames = new Set(
+                contracts
+                    .filter(c => c.status === 'active' || c.status === 'pending')
+                    .map(c => (c.companyName || '').toLowerCase())
+            );
+            return defaults.filter(s => s.status === 'active' && !activeCompanyNames.has((s.companyName || '').toLowerCase()));
+        },
+
+        async seedDefaults() {
+            const existing = await this.getDefaults();
+            if (existing.length > 0) return { seeded: 0, message: 'Default sponsors already exist.' };
+
+            const sponsors = DEFAULT_SPONSORS;
+            let seeded = 0;
+            for (const s of sponsors) {
+                await DatabaseHelper.addDocument('sponsorCompanies', { ...s, isDefault: true, status: 'active' });
+                seeded++;
+            }
+            return { seeded, message: `Seeded ${seeded} default sponsors.` };
+        }
     },
 
     // ===== RACING SERIES =====
@@ -1920,6 +1950,133 @@ function getDateValue(value) {
     }
     return new Date(value);
 }
+
+// ===== DEFAULT SPONSOR COMPANIES =====
+const DEFAULT_SPONSORS = [
+    // --- Tier 1: Premium ---
+    {
+        companyName: 'Apex Energy Co.',
+        industry: 'Energy & Beverages',
+        tier: 'premium',
+        totalBudget: 5000000,
+        bio: 'The official energy drink of sim racing. Apex Energy fuels champions and backs drivers with the drive to win.',
+        offerTerms: { basePerRace: 22000, winBonus: 10000, podiumBonus: 5000, dnfPenalty: 3000 }
+    },
+    {
+        companyName: 'VeloTech Motorsports',
+        industry: 'Automotive Performance Parts',
+        tier: 'premium',
+        totalBudget: 4500000,
+        bio: 'Premium motorsport engineering parts trusted by professional racing teams worldwide. VeloTech builds champions.',
+        offerTerms: { basePerRace: 20000, winBonus: 9000, podiumBonus: 4500, dnfPenalty: 2500 }
+    },
+    {
+        companyName: 'GridFirst Finance',
+        industry: 'Financial Services',
+        tier: 'premium',
+        totalBudget: 6000000,
+        bio: 'Banking and investment solutions for motorsport professionals and enthusiasts. Your career, funded.',
+        offerTerms: { basePerRace: 18000, winBonus: 8000, podiumBonus: 4000, dnfPenalty: 2000 }
+    },
+    // --- Tier 2: Mid ---
+    {
+        companyName: 'SimPilot Peripherals',
+        industry: 'Sim Racing Hardware',
+        tier: 'mid',
+        totalBudget: 1800000,
+        bio: 'High-fidelity wheels, pedals, and cockpits trusted by top sim racers. SimPilot is where precision meets performance.',
+        offerTerms: { basePerRace: 11000, winBonus: 5000, podiumBonus: 2500, dnfPenalty: 1500 }
+    },
+    {
+        companyName: 'RacerWear Co.',
+        industry: 'Racing Apparel',
+        tier: 'mid',
+        totalBudget: 1200000,
+        bio: 'Technical racing apparel and lifestyle clothing for drivers at every level. Look the part, race the part.',
+        offerTerms: { basePerRace: 9500, winBonus: 4000, podiumBonus: 2000, dnfPenalty: 1200 }
+    },
+    {
+        companyName: 'Velocity Nutrition',
+        industry: 'Sports Nutrition',
+        tier: 'mid',
+        totalBudget: 1500000,
+        bio: 'Performance nutrition engineered for sim and real-world racers. Stay sharp, stay fast.',
+        offerTerms: { basePerRace: 10000, winBonus: 4500, podiumBonus: 2200, dnfPenalty: 1300 }
+    },
+    {
+        companyName: 'TorqueWorks Engineering',
+        industry: 'Motorsport Engineering',
+        tier: 'mid',
+        totalBudget: 2000000,
+        bio: 'Data acquisition systems and telemetry tools for the modern sim racer. Race smarter, not just faster.',
+        offerTerms: { basePerRace: 12000, winBonus: 5500, podiumBonus: 2800, dnfPenalty: 1600 }
+    },
+    {
+        companyName: 'Motorsport Shield Insurance',
+        industry: 'Insurance',
+        tier: 'mid',
+        totalBudget: 1600000,
+        bio: 'Specialized coverage for motorsport professionals and league competitors. Protection for every lap.',
+        offerTerms: { basePerRace: 8500, winBonus: 3500, podiumBonus: 1800, dnfPenalty: 1000 }
+    },
+    {
+        companyName: 'ApexAuto Accessories',
+        industry: 'Automotive Accessories',
+        tier: 'mid',
+        totalBudget: 1100000,
+        bio: 'Premium car accessories, detailing products, and lifestyle gear for motorsport enthusiasts.',
+        offerTerms: { basePerRace: 9000, winBonus: 3800, podiumBonus: 1900, dnfPenalty: 1100 }
+    },
+    // --- Tier 3: Entry ---
+    {
+        companyName: 'Grid Rush Beverages',
+        industry: 'Energy & Beverages',
+        tier: 'entry',
+        totalBudget: 450000,
+        bio: 'The budget-friendly energy drink for rising stars. Grid Rush backs the next generation of racers.',
+        offerTerms: { basePerRace: 4500, winBonus: 2000, podiumBonus: 1000, dnfPenalty: 600 }
+    },
+    {
+        companyName: 'StartLine Apparel',
+        industry: 'Racing Apparel',
+        tier: 'entry',
+        totalBudget: 350000,
+        bio: 'Affordable race-day gear and casual motorsport clothing for up-and-coming drivers.',
+        offerTerms: { basePerRace: 3500, winBonus: 1500, podiumBonus: 750, dnfPenalty: 400 }
+    },
+    {
+        companyName: 'ProSim Analytics',
+        industry: 'Data & Analytics',
+        tier: 'entry',
+        totalBudget: 500000,
+        bio: 'Lap time analysis, sector breakdowns, and performance dashboards built for sim racers.',
+        offerTerms: { basePerRace: 5000, winBonus: 2200, podiumBonus: 1100, dnfPenalty: 700 }
+    },
+    {
+        companyName: 'SpeedTrak Logistics',
+        industry: 'Logistics & Transport',
+        tier: 'entry',
+        totalBudget: 400000,
+        bio: 'Fast, reliable shipping for motorsport equipment and merchandise across the country.',
+        offerTerms: { basePerRace: 3000, winBonus: 1200, podiumBonus: 600, dnfPenalty: 350 }
+    },
+    {
+        companyName: 'GridStation Hardware',
+        industry: 'Gaming & PC Hardware',
+        tier: 'entry',
+        totalBudget: 600000,
+        bio: 'High-performance PC builds, monitors, and sim rigs designed for competitive sim racers.',
+        offerTerms: { basePerRace: 5500, winBonus: 2500, podiumBonus: 1200, dnfPenalty: 750 }
+    },
+    {
+        companyName: 'CareerPath Media',
+        industry: 'Sports Media',
+        tier: 'entry',
+        totalBudget: 300000,
+        bio: 'A motorsport content platform streaming leagues, highlights, and driver stories to racing fans everywhere.',
+        offerTerms: { basePerRace: 2500, winBonus: 1000, podiumBonus: 500, dnfPenalty: 300 }
+    }
+];
 
 // Export for use in other files — window.Database already set above
 console.log('Database.js fully loaded, Database object:', typeof Database);
