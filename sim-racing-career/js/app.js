@@ -607,12 +607,78 @@ async function handleMemberSignUp() {
     }
 }
 
-function switchActiveRole(roleId) {
+async function switchActiveRole(roleId) {
     AppSession.activeRole = roleId;
     localStorage.setItem('srmpc_active_role', roleId);
+
+    if (roleId === 'driver' && AppSession.memberUid) {
+        await ensureDriverProfileForMember();
+    }
+
     updateAuthUI();
     window.UI?.closeModal('role-picker-modal');
     window.UI?.switchView('member-workspace');
+}
+
+async function ensureDriverProfileForMember() {
+    const uid = AppSession.memberUid;
+    if (!uid) return;
+
+    // Already linked
+    if (AppSession.claimedDriverId) return;
+
+    // Check localStorage profile first
+    try {
+        const saved = JSON.parse(localStorage.getItem('srmpcUserProfile') || '{}');
+        if (saved.primaryDriver) {
+            AppSession.claimedDriverId = saved.primaryDriver;
+            return;
+        }
+    } catch {}
+
+    // Check if a driver record already exists for this user in the DB
+    try {
+        const allDrivers = await Database.drivers.getAll();
+        const existing = allDrivers.find(d => d.ownerUid === uid || d.createdByUid === uid);
+        if (existing) {
+            AppSession.claimedDriverId = existing.id;
+            const profile = JSON.parse(localStorage.getItem('srmpcUserProfile') || '{}');
+            profile.primaryDriver = existing.id;
+            localStorage.setItem('srmpcUserProfile', JSON.stringify(profile));
+            await Database.users.upsertProfile(uid, { primaryDriver: existing.id });
+            return;
+        }
+    } catch {}
+
+    // No driver found — auto-create one from their display name
+    const user = window.AuthService?.getCurrentUser?.();
+    const displayName = user?.displayName || AppSession.memberEmail?.split('@')[0] || 'New Driver';
+
+    try {
+        const driverId = await Database.drivers.create({
+            name: displayName,
+            ownerUid: uid,
+            createdByUid: uid,
+            createdByEmail: AppSession.memberEmail || '',
+            status: 'approved',
+            number: null,
+            teamId: null,
+            country: '',
+            bio: ''
+        });
+
+        AppSession.claimedDriverId = driverId;
+
+        const profile = JSON.parse(localStorage.getItem('srmpcUserProfile') || '{}');
+        profile.primaryDriver = driverId;
+        localStorage.setItem('srmpcUserProfile', JSON.stringify(profile));
+
+        await Database.users.upsertProfile(uid, { primaryDriver: driverId });
+        window.UI?.showNotification('Driver profile created! Edit your details in your workspace.', 'success');
+    } catch (error) {
+        console.error('Error auto-creating driver profile:', error);
+        window.UI?.showNotification('Could not auto-create driver profile: ' + error.message, 'error');
+    }
 }
 
 // ===== EVENT LISTENERS SETUP =====

@@ -3158,7 +3158,12 @@ var UI = {
         const upcomingRaces = allRaces.filter(r => r.status === 'scheduled').slice(0, 3);
 
         if (!myDriver) {
-            content.innerHTML = this._workspaceOnboard('\uD83C\uDFCE\uFE0F', 'Welcome, Driver', 'You haven\'t claimed a driver profile yet. Set your driver in your user profile, or create one from the Drivers page.', 'Go to Driver List', 'UI.switchView(\'drivers\')');
+            // Profile not found yet \u2014 may still be creating. Show a retry prompt.
+            content.innerHTML = this._workspaceOnboard(
+                '\uD83C\uDFCE\uFE0F', 'Setting Up Your Driver Profile',
+                'Your driver profile is being created. If it doesn\'t appear after refreshing, click below to retry.',
+                'Retry', 'window.switchActiveRole && switchActiveRole("driver")'
+            );
             return;
         }
 
