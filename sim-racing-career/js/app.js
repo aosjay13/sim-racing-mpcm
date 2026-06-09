@@ -654,18 +654,51 @@ async function ensureDriverProfileForMember() {
     const user = window.AuthService?.getCurrentUser?.();
     const displayName = user?.displayName || AppSession.memberEmail?.split('@')[0] || 'New Driver';
 
+    const driverPayload = {
+        name: displayName,
+        number: null,
+        teamId: null,
+        ownerUid: uid,
+        createdByUid: uid,
+        createdByEmail: AppSession.memberEmail || '',
+        country: '',
+        bio: '',
+        avatar: '',
+        joinDate: new Date(),
+        isActive: true,
+        stats: {
+            racesEntered: 0, racesCompleted: 0, wins: 0, podiums: 0,
+            polePositions: 0, dnf: 0, totalPoints: 0, averageFinish: 0
+        },
+        careerHistory: [],
+        currentSeasonPoints: 0,
+        currentSeasonRaces: 0,
+        currentSeasonWins: 0,
+        sponsorships: [],
+        status: 'approved',
+        moderationNotes: '',
+        approvedAt: new Date(),
+        approvedByUid: uid,
+        rejectedAt: null,
+        rejectedByUid: null
+    };
+
     try {
-        const driverId = await Database.drivers.create({
-            name: displayName,
-            ownerUid: uid,
-            createdByUid: uid,
-            createdByEmail: AppSession.memberEmail || '',
-            status: 'approved',
-            number: null,
-            teamId: null,
-            country: '',
-            bio: ''
-        });
+        // Use window.Database for a live reference; fall back to direct Firestore if create is unavailable
+        let driverId;
+        const createFn = window.Database?.drivers?.create;
+        if (typeof createFn === 'function') {
+            const result = await createFn.call(window.Database.drivers, driverPayload);
+            // DatabaseHelper.addDocument returns the full object { ...data, id }
+            driverId = (result && typeof result === 'object') ? result.id : result;
+        } else {
+            // Direct Firestore write — bypasses the normalization IIFEs entirely
+            const fbDb = firebase.firestore();
+            const docRef = await fbDb.collection('drivers').add(driverPayload);
+            driverId = docRef.id;
+        }
+
+        if (!driverId) throw new Error('Driver creation returned no ID');
 
         AppSession.claimedDriverId = driverId;
 
@@ -673,11 +706,11 @@ async function ensureDriverProfileForMember() {
         profile.primaryDriver = driverId;
         localStorage.setItem('srmpcUserProfile', JSON.stringify(profile));
 
-        await Database.users.upsertProfile(uid, { primaryDriver: driverId });
+        await Database.users.upsertProfile(uid, { primaryDriver: driverId }).catch(() => {});
         window.UI?.showNotification('Driver profile created! Edit your details in your workspace.', 'success');
     } catch (error) {
-        console.error('Error auto-creating driver profile:', error);
-        window.UI?.showNotification('Could not auto-create driver profile: ' + error.message, 'error');
+        console.error('Error creating driver profile:', error);
+        window.UI?.showNotification('Could not create driver profile: ' + error.message, 'error');
     }
 }
 
