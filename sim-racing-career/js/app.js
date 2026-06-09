@@ -152,6 +152,9 @@ async function initializeAuthSession() {
                 const savedRole = localStorage.getItem('srmpc_active_role');
                 if (savedRole) {
                     AppSession.activeRole = savedRole;
+                    if (savedRole === 'driver') {
+                        ensureDriverProfileForMember().catch(e => console.warn('Driver profile check on login:', e));
+                    }
                     window.UI?.switchView('member-workspace');
                 } else {
                     window.UI?.showRolePicker();
