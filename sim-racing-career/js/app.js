@@ -838,6 +838,22 @@ function initializeEventListeners() {
         UI.focusSponsorshipForm();
     });
 
+    document.getElementById('seed-sponsors-btn')?.addEventListener('click', async () => {
+        if (!requireAdmin()) return;
+        const btn = document.getElementById('seed-sponsors-btn');
+        btn.disabled = true;
+        btn.textContent = 'Seeding...';
+        try {
+            const result = await Database.sponsorCompanies.seedDefaults();
+            UI.showNotification(result.message, 'success');
+        } catch (error) {
+            UI.showNotification('Error seeding sponsors: ' + error.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Seed Default Sponsors';
+        }
+    });
+
     document.getElementById('sponsorship-create-form')?.addEventListener('submit', async (event) => {
         event.preventDefault();
         if (!requireAdmin()) return;
@@ -1610,6 +1626,17 @@ function getGameIcon(gameName) {
         'beamng': '🚗'
     };
     return icons[gameName] || '🎮';
+}
+
+function handleIntentLogin(intent) {
+    const authGate = document.getElementById('auth-gate');
+    const appShell = document.getElementById('app');
+    if (authGate) authGate.classList.remove('hidden');
+    if (appShell) appShell.classList.add('hidden');
+}
+
+function handleEmailPasswordAuth() {
+    // Legacy stub — authentication handled by handleAdminPasscode / handleMemberSignIn
 }
 
 // Make functions globally available for inline onclick handlers

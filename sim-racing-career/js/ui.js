@@ -251,6 +251,108 @@ var UI = {
         }
     },
 
+    async loadDashboard() {
+        try {
+            const [drivers, teams, races] = await Promise.all([
+                this.getVisibleDrivers(),
+                this.getVisibleTeams(),
+                Database.races.getAll()
+            ]);
+
+            const totalDriversEl = document.getElementById('total-drivers');
+            const totalTeamsEl = document.getElementById('total-teams');
+            const racesCompletedEl = document.getElementById('races-completed');
+            const nextRaceDaysEl = document.getElementById('next-race-days');
+
+            if (totalDriversEl) totalDriversEl.textContent = drivers.length;
+            if (totalTeamsEl) totalTeamsEl.textContent = teams.length;
+
+            const completedRaces = races.filter(r => r.status === 'completed');
+            if (racesCompletedEl) racesCompletedEl.textContent = completedRaces.length;
+
+            const now = new Date();
+            const upcomingRaces = races
+                .filter(r => r.status === 'scheduled' && this.normalizeDate(r.date) > now)
+                .sort((a, b) => this.normalizeDate(a.date) - this.normalizeDate(b.date));
+
+            if (nextRaceDaysEl) {
+                if (upcomingRaces.length > 0) {
+                    const daysUntil = Math.ceil((this.normalizeDate(upcomingRaces[0].date) - now) / 86400000);
+                    nextRaceDaysEl.textContent = daysUntil <= 0 ? 'Today' : `${daysUntil}d`;
+                } else {
+                    nextRaceDaysEl.textContent = 'TBD';
+                }
+            }
+
+            const upcomingEventsEl = document.getElementById('upcoming-events');
+            if (upcomingEventsEl) {
+                if (!upcomingRaces.length) {
+                    upcomingEventsEl.innerHTML = '<p class="empty-state">No events scheduled yet</p>';
+                } else {
+                    upcomingEventsEl.innerHTML = upcomingRaces.slice(0, 3).map(race => `
+                        <div class="race-item">
+                            <div class="race-title">${race.name}</div>
+                            <div class="race-details">
+                                <div class="race-detail">
+                                    <span class="race-detail-label">📅</span>
+                                    <span class="race-detail-value">${this.normalizeDate(race.date).toLocaleDateString()}</span>
+                                </div>
+                                <div class="race-detail">
+                                    <span class="race-detail-label">🎮</span>
+                                    <span class="race-detail-value">${race.game}</span>
+                                </div>
+                            </div>
+                            <div class="form-actions" style="margin-top: 0.5rem; justify-content: flex-start;">
+                                <button type="button" class="btn btn-secondary" onclick="UI.openRaceDetails('${race.id}')">View</button>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+            }
+
+            const activityFeedEl = document.getElementById('activity-feed');
+            if (activityFeedEl) {
+                const recent = [...completedRaces]
+                    .sort((a, b) => this.normalizeDate(b.date) - this.normalizeDate(a.date))
+                    .slice(0, 3);
+                if (!recent.length) {
+                    activityFeedEl.innerHTML = `
+                        <div class="activity-item">
+                            <div class="activity-icon">🏁</div>
+                            <div class="activity-content">
+                                <p>Welcome to Sim Racing Career! Start by adding drivers to your team.</p>
+                                <span class="activity-time">Just now</span>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    activityFeedEl.innerHTML = recent.map(race => `
+                        <div class="activity-item">
+                            <div class="activity-icon">🏆</div>
+                            <div class="activity-content">
+                                <p>${race.name} completed</p>
+                                <span class="activity-time">${this.normalizeDate(race.date).toLocaleDateString()}</span>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+            }
+
+            if (this.isAdmin()) {
+                await this.loadAdminCommandCenter();
+            }
+        } catch (error) {
+            console.error('Error loading dashboard:', error);
+        }
+    },
+
+    closeAllModals() {
+        document.querySelectorAll('.modal.active').forEach(modal => {
+            modal.classList.remove('active');
+        });
+        document.body.style.overflow = 'auto';
+    },
+
             // ===== SPONSORS =====
             focusSponsorshipForm() {
                 const form = document.getElementById('sponsorship-create-form');
@@ -2474,8 +2576,8 @@ var UI = {
             }
 
             const [drivers, teams] = await Promise.all([
-                this.db.drivers.getAll(),
-                this.db.teams.getAll()
+                Database.drivers.getAll(),
+                Database.teams.getAll()
             ]);
 
             const driverMap = new Map(drivers.map((driver) => [driver.id, driver]));
@@ -3052,6 +3154,7 @@ var UI = {
         const myDriver = allDrivers.find(d => d.id === claimedId || d.ownerUid === uid);
         const myTeam = myDriver?.teamId ? allTeams.find(t => t.id === myDriver.teamId) : null;
         const mySponsors = allSponsors.filter(s => s.driverId === myDriver?.id);
+        const activeSponsors = mySponsors.filter(s => s.status === 'active');
         const upcomingRaces = allRaces.filter(r => r.status === 'scheduled').slice(0, 3);
 
         if (!myDriver) {
@@ -3059,11 +3162,32 @@ var UI = {
             return;
         }
 
+        const availableSponsors = await Database.sponsorCompanies.getAvailableForDriver(myDriver.id).catch(() => []);
+        const tierLabel = { premium: 'Premium', mid: 'Mid-Tier', entry: 'Entry' };
+        const tierStyle = { premium: 'color:var(--accent);font-weight:600', mid: '', entry: 'color:var(--text-secondary)' };
+
+        const sponsorMarketplaceHtml = availableSponsors.length === 0
+            ? '<p class="empty-state">No sponsors available right now. Ask the GM to seed the sponsor pool.</p>'
+            : availableSponsors.map(s => `
+                <div class="moderation-item">
+                    <div class="moderation-item-header">
+                        <div>
+                            <p class="moderation-title">${s.companyName} <span style="font-size:0.75rem;${tierStyle[s.tier] || ''};">[${tierLabel[s.tier] || s.tier}]</span></p>
+                            <p class="moderation-meta">${s.industry}</p>
+                            <p class="moderation-meta">Base: ${this.formatCurrency(s.offerTerms?.basePerRace || 0)}/race &bull; Win: +${this.formatCurrency(s.offerTerms?.winBonus || 0)} &bull; Podium: +${this.formatCurrency(s.offerTerms?.podiumBonus || 0)} &bull; DNF: -${this.formatCurrency(s.offerTerms?.dnfPenalty || 0)}</p>
+                            ${s.bio ? `<p class="moderation-meta" style="font-style:italic;margin-top:0.2rem;">${s.bio}</p>` : ''}
+                        </div>
+                    </div>
+                    <div class="card-actions" style="padding:0;border:none;">
+                        <button type="button" onclick="UI.requestSponsorDeal('${s.id}', '${myDriver.id}')">Request Deal</button>
+                    </div>
+                </div>`).join('');
+
         content.innerHTML = this._workspaceKpiBar([
             { value: myDriver.stats?.totalPoints || 0, label: 'Season Points' },
             { value: myDriver.stats?.wins || myDriver.stats?.totalWins || 0, label: 'Career Wins' },
             { value: myDriver.stats?.podiums || myDriver.stats?.totalPodiums || 0, label: 'Podiums' },
-            { value: mySponsors.length, label: 'Active Sponsors' },
+            { value: activeSponsors.length, label: 'Active Sponsors' },
             { value: myTeam?.name || 'Free Agent', label: 'Current Team' }
         ]) + `<div class="member-workspace-grid">
             <div class="card"><div class="card-header"><h3>\uD83C\uDFCE\uFE0F Driver Profile</h3></div><div class="form" style="padding:1rem;">
@@ -3074,9 +3198,49 @@ var UI = {
                 <div class="stat-row"><span class="stat-label">Best Finish</span><span class="stat-value">${myDriver.stats?.bestFinish || '—'}</span></div>
                 <div class="card-actions" style="padding:0;border:none;margin-top:0.5rem;"><button type="button" onclick="UI.editDriverModal('${myDriver.id}')">Edit Profile</button></div>
             </div></div>
-            <div class="card"><div class="card-header"><h3>\uD83D\uDCB0 Active Sponsors (${mySponsors.length})</h3></div><div class="form" style="padding:1rem;">${mySponsors.length === 0 ? '<p class="empty-state">No active sponsor deals.</p>' : mySponsors.map(s => `<div class="moderation-item"><div class="moderation-item-header"><div><p class="moderation-title">${s.companyName}</p><p class="moderation-meta">Base: ${this.formatCurrency(s.payoutModel?.basePerRace || 0)}/race | Win: +${this.formatCurrency(s.payoutModel?.winBonus || 0)}</p></div><span class="status-pill status-${s.status === 'active' ? 'approved' : 'pending'}">${s.status}</span></div></div>`).join('')}</div></div>
+            <div class="card"><div class="card-header"><h3>\uD83D\uDCB0 Active Sponsors (${mySponsors.length})</h3></div><div class="form" style="padding:1rem;">${mySponsors.length === 0 ? '<p class="empty-state">No sponsor deals yet. Browse the marketplace below.</p>' : mySponsors.map(s => `<div class="moderation-item"><div class="moderation-item-header"><div><p class="moderation-title">${s.companyName}</p><p class="moderation-meta">Base: ${this.formatCurrency(s.payoutModel?.basePerRace || 0)}/race | Win: +${this.formatCurrency(s.payoutModel?.winBonus || 0)}</p></div><span class="status-pill status-${s.status === 'active' ? 'approved' : s.status === 'pending' ? 'pending' : 'rejected'}">${s.status}</span></div></div>`).join('')}</div></div>
             <div class="card"><div class="card-header"><h3>\uD83C\uDFC1 Upcoming Races (${upcomingRaces.length})</h3></div><div class="form" style="padding:1rem;">${upcomingRaces.length === 0 ? '<p class="empty-state">No upcoming races scheduled.</p>' : upcomingRaces.map(r => `<div class="moderation-item"><div class="moderation-item-header"><div><p class="moderation-title">${r.name}</p><p class="moderation-meta">${this.normalizeDate(r.date).toLocaleDateString()} &bull; ${r.track || 'TBA'} &bull; ${r.game}</p></div></div><div class="card-actions" style="padding:0;border:none;"><button type="button" onclick="UI.openRaceDetails('${r.id}')">View & Sign Up</button></div></div>`).join('')}</div></div>
+            <div class="card" style="grid-column:1/-1;"><div class="card-header"><h3>\uD83D\uDCCA Sponsor Marketplace (${availableSponsors.length} available)</h3></div><div class="form" style="padding:1rem;">${sponsorMarketplaceHtml}</div></div>
         </div>`;
+    },
+
+    async requestSponsorDeal(sponsorCompanyId, driverId) {
+        if (!window.AppSession?.isAuthenticated) {
+            this.showNotification('Sign in to request sponsorship deals.', 'error');
+            return;
+        }
+        if (!driverId) {
+            this.showNotification('No driver profile linked. Claim a driver in your profile first.', 'error');
+            return;
+        }
+        const company = await Database.sponsorCompanies.getById(sponsorCompanyId).catch(() => null);
+        if (!company) {
+            this.showNotification('Sponsor company not found.', 'error');
+            return;
+        }
+        const today = new Date();
+        const endDate = new Date(today);
+        endDate.setFullYear(endDate.getFullYear() + 1);
+        try {
+            await Database.sponsorships.createContract({
+                driverId,
+                teamId: null,
+                companyName: company.companyName,
+                status: 'pending',
+                basePerRace: company.offerTerms?.basePerRace || 0,
+                winBonus: company.offerTerms?.winBonus || 0,
+                podiumBonus: company.offerTerms?.podiumBonus || 0,
+                dnfPenalty: company.offerTerms?.dnfPenalty || 0,
+                startDate: today.toISOString().split('T')[0],
+                endDate: endDate.toISOString().split('T')[0],
+                terms: `Driver-requested deal from ${company.companyName}. Pending GM approval.`
+            });
+            this.showNotification(`Deal request sent to ${company.companyName}! Awaiting GM approval.`, 'success');
+            await this.loadMemberWorkspace();
+        } catch (error) {
+            console.error('Error requesting sponsor deal:', error);
+            this.showNotification('Could not submit deal request: ' + error.message, 'error');
+        }
     },
 
     async _loadCrewChiefWorkspace(uid, content, subtitleEl) {
