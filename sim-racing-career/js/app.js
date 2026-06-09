@@ -153,9 +153,13 @@ async function initializeAuthSession() {
                 if (savedRole) {
                     AppSession.activeRole = savedRole;
                     if (savedRole === 'driver') {
-                        ensureDriverProfileForMember().catch(e => console.warn('Driver profile check on login:', e));
+                        // Must await so claimedDriverId is set before the workspace renders
+                        ensureDriverProfileForMember()
+                            .catch(e => console.warn('Driver profile setup on login:', e))
+                            .finally(() => window.UI?.switchView('member-workspace'));
+                    } else {
+                        window.UI?.switchView('member-workspace');
                     }
-                    window.UI?.switchView('member-workspace');
                 } else {
                     window.UI?.showRolePicker();
                 }

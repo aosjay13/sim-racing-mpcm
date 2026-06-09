@@ -1,5 +1,5 @@
 // Service Worker - Clear cache on update
-const CACHE_VERSION = 'v17-driver-profile-fix';
+const CACHE_VERSION = 'v18-driver-workspace-fix';
 const CACHE_URLS = [
     'app.html',
     'index.html',

@@ -132,7 +132,13 @@ var UI = {
         }
 
         if (addDriverButton) {
-            addDriverButton.textContent = isAdmin ? '+ New Driver' : (isMember ? '+ Add Role Driver' : '+ Request Driver Profile');
+            const isDriverRole = activeRole === 'driver';
+            if (isDriverRole) {
+                addDriverButton.style.display = 'none';
+            } else {
+                addDriverButton.style.display = '';
+                addDriverButton.textContent = isAdmin ? '+ New Driver' : (isMember ? '+ Add Role Driver' : '+ Request Driver Profile');
+            }
         }
 
         if (addTeamButton) {
@@ -3151,18 +3157,23 @@ var UI = {
             Database.races.getAll()
         ]);
         const claimedId = window.AppSession?.claimedDriverId || '';
-        const myDriver = allDrivers.find(d => d.id === claimedId || d.ownerUid === uid);
+        let myDriver = allDrivers.find(d => d.id === claimedId || d.ownerUid === uid);
+
+        // getAll() silently returns [] on error \u2014 fall back to a direct document lookup
+        if (!myDriver && claimedId) {
+            myDriver = await Database.drivers.getById(claimedId).catch(() => null);
+        }
+
         const myTeam = myDriver?.teamId ? allTeams.find(t => t.id === myDriver.teamId) : null;
         const mySponsors = allSponsors.filter(s => s.driverId === myDriver?.id);
         const activeSponsors = mySponsors.filter(s => s.status === 'active');
         const upcomingRaces = allRaces.filter(r => r.status === 'scheduled').slice(0, 3);
 
         if (!myDriver) {
-            // Profile not found yet \u2014 may still be creating. Show a retry prompt.
             content.innerHTML = this._workspaceOnboard(
-                '\uD83C\uDFCE\uFE0F', 'Setting Up Your Driver Profile',
-                'Your driver profile is being created. If it doesn\'t appear after refreshing, click below to retry.',
-                'Retry', 'window.switchActiveRole && switchActiveRole("driver")'
+                '\uD83C\uDFCE\uFE0F', 'Complete Your Driver Setup',
+                'Your driver profile could not be found. Click below to create it now.',
+                'Create My Profile', 'window.switchActiveRole && switchActiveRole("driver")'
             );
             return;
         }
