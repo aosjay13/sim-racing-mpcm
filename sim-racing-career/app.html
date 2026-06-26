@@ -775,13 +775,17 @@
                     <input type="text" id="driver-name" required>
                 </div>
                 <div class="form-group">
-                    <label for="driver-number">Driver Number</label>
-                    <input type="number" id="driver-number" min="1" max="999">
+                    <label for="driver-number">Car Number</label>
+                    <input type="number" id="driver-number" min="1" max="999" placeholder="e.g. 88">
+                </div>
+                <div class="form-group">
+                    <label for="driver-country">Country / Nationality</label>
+                    <input type="text" id="driver-country" placeholder="USA">
                 </div>
                 <div class="form-group">
                     <label for="driver-team">Team</label>
                     <select id="driver-team">
-                        <option value="">No Team</option>
+                        <option value="">No Team (Free Agent)</option>
                         <option value="__create_new__">+ Create New Team</option>
                     </select>
                 </div>
@@ -794,12 +798,8 @@
                     <input type="color" id="new-driver-team-color" value="#FF4444">
                 </div>
                 <div class="form-group">
-                    <label for="driver-country">Country</label>
-                    <input type="text" id="driver-country">
-                </div>
-                <div class="form-group">
-                    <label for="driver-description">Bio</label>
-                    <textarea id="driver-description" rows="3"></textarea>
+                    <label for="driver-description">Driver Bio</label>
+                    <textarea id="driver-description" rows="3" placeholder="Background, racing style, achievements..."></textarea>
                 </div>
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">Add Driver</button>
@@ -819,15 +819,31 @@
             <form id="team-form" class="form">
                 <div class="form-group">
                     <label for="team-name">Team Name *</label>
-                    <input type="text" id="team-name" required>
+                    <input type="text" id="team-name" required placeholder="e.g. Phoenix Racing">
                 </div>
                 <div class="form-group">
                     <label for="team-color">Team Color</label>
                     <input type="color" id="team-color" value="#FF4444">
                 </div>
                 <div class="form-group">
-                    <label for="team-description">Description</label>
-                    <textarea id="team-description" rows="3"></textarea>
+                    <label for="team-owner-name">Team Owner / Principal</label>
+                    <input type="text" id="team-owner-name" placeholder="Owner or principal's name">
+                </div>
+                <div class="form-group">
+                    <label for="team-headquarters">Headquarters / Home City</label>
+                    <input type="text" id="team-headquarters" placeholder="e.g. Phoenix, AZ">
+                </div>
+                <div class="form-group">
+                    <label for="team-budget">Starting Budget ($)</label>
+                    <input type="number" id="team-budget" min="0" step="10000" value="500000" placeholder="500000">
+                </div>
+                <div class="form-group">
+                    <label for="team-car-slots">Car Slots (max drivers)</label>
+                    <input type="number" id="team-car-slots" min="1" max="10" value="2">
+                </div>
+                <div class="form-group">
+                    <label for="team-description">Team Description</label>
+                    <textarea id="team-description" rows="3" placeholder="Team history, goals, racing philosophy..."></textarea>
                 </div>
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">Create Team</button>
@@ -1039,7 +1055,19 @@
                         <input type="color" id="edit-team-color" value="#FF4444">
                     </div>
                     <div class="form-group">
-                        <label for="edit-team-description">Description</label>
+                        <label for="edit-team-owner-name">Team Owner / Principal</label>
+                        <input type="text" id="edit-team-owner-name" placeholder="Owner or principal's name">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-team-headquarters">Headquarters / Home City</label>
+                        <input type="text" id="edit-team-headquarters" placeholder="e.g. Phoenix, AZ">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-team-car-slots">Car Slots (max drivers)</label>
+                        <input type="number" id="edit-team-car-slots" min="1" max="10" value="2">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-team-description">Team Description</label>
                         <textarea id="edit-team-description" rows="3"></textarea>
                     </div>
                     <div class="form-actions">
@@ -1127,8 +1155,8 @@
         </div>
 
         <!-- Scripts -->
-    <script src="js/firebase-config.js?v=19"></script>
-    <script src="js/database.js?v=19"></script>
+    <script src="js/firebase-config.js?v=20"></script>
+    <script src="js/database.js?v=20"></script>
     <script>
         // Ensure Database global is accessible — database.js declares it as var (global)
         // This bridge handles cases where the var assignment completed but window needs it too
@@ -1166,8 +1194,8 @@
             }
         };
     </script>
-    <script src="js/ui.js?v=19"></script>
-    <script src="js/app.js?v=19"></script>
+    <script src="js/ui.js?v=20"></script>
+    <script src="js/app.js?v=20"></script>
     
     <!-- Service Worker for cache management -->
     <script>

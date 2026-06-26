@@ -557,6 +557,12 @@ var UI = {
             document.getElementById('edit-team-name').value = team.name;
             document.getElementById('edit-team-color').value = team.color || '#FF4444';
             document.getElementById('edit-team-description').value = team.description || '';
+            const etOwner = document.getElementById('edit-team-owner-name');
+            const etHQ = document.getElementById('edit-team-headquarters');
+            const etSlots = document.getElementById('edit-team-car-slots');
+            if (etOwner) etOwner.value = team.owner || '';
+            if (etHQ) etHQ.value = team.headquarters || '';
+            if (etSlots) etSlots.value = team.carSlots || 2;
 
             this.showModal('edit-team-modal');
         } catch (error) {
@@ -2904,7 +2910,7 @@ var UI = {
             content.innerHTML = this._workspaceOnboard(
                 '\uD83C\uDFCE\uFE0F', 'Complete Your Driver Setup',
                 'Your driver profile could not be found. Click below to create it now.',
-                'Create My Profile', 'window.switchActiveRole && switchActiveRole("driver")'
+                'Create My Profile', 'UI._createDriverProfile()'
             );
             return;
         }
@@ -2994,7 +3000,7 @@ var UI = {
         if (subtitleEl) subtitleEl.textContent = 'Your assigned drivers, setups, and race strategies';
         const myProfiles = await Database.crewChiefs.getByUser(uid);
         if (myProfiles.length === 0) {
-            content.innerHTML = this._workspaceOnboard('\uD83D\uDEE0\uFE0F', 'Welcome, Crew Chief', 'You haven\'t created a crew chief profile yet. Ask the Game Master to assign you, or create your profile below.', '+ Create Crew Chief Profile', 'UI._createRoleEntityModal("crew-chief")');
+            content.innerHTML = this._workspaceOnboard('\uD83D\uDEE0\uFE0F', 'Welcome, Crew Chief', 'You haven\'t created a crew chief profile yet. Create your profile below to get assigned to a team.', '+ Create Crew Chief Profile', "UI._createRoleEntityModal('crew-chief')");
             return;
         }
         const profile = myProfiles[0];
@@ -3022,7 +3028,7 @@ var UI = {
         if (subtitleEl) subtitleEl.textContent = 'Your assigned cars, maintenance queue, and service logs';
         const myProfiles = await Database.mechanics.getByUser(uid);
         if (myProfiles.length === 0) {
-            content.innerHTML = this._workspaceOnboard('\uD83D\uDD27', 'Welcome, Mechanic', 'You haven\'t set up a mechanic profile yet. Create your profile to start tracking car assignments and service work.', '+ Create Mechanic Profile', 'UI._createRoleEntityModal("mechanic")');
+            content.innerHTML = this._workspaceOnboard('\uD83D\uDD27', 'Welcome, Mechanic', 'You haven\'t set up a mechanic profile yet. Create your profile to start tracking car assignments and service work.', '+ Create Mechanic Profile', "UI._createRoleEntityModal('mechanic')");
             return;
         }
         const profile = myProfiles[0];
@@ -3049,7 +3055,7 @@ var UI = {
         if (subtitleEl) subtitleEl.textContent = 'Your clients, contracts, and commissions';
         const myProfiles = await Database.agents.getByUser(uid);
         if (myProfiles.length === 0) {
-            content.innerHTML = this._workspaceOnboard('\uD83E\uDD1D', 'Welcome, Agent', 'You haven\'t set up an agent profile yet. Create your profile to start representing drivers and teams.', '+ Create Agent Profile', 'UI._createRoleEntityModal("agent")');
+            content.innerHTML = this._workspaceOnboard('\uD83E\uDD1D', 'Welcome, Agent', 'You haven\'t set up an agent profile yet. Create your profile to start representing drivers and teams.', '+ Create Agent Profile', "UI._createRoleEntityModal('agent')");
             return;
         }
         const profile = myProfiles[0];
@@ -3082,7 +3088,7 @@ var UI = {
         const totalValue = myDeals.reduce((s, d) => s + ((d.payoutModel?.basePerRace || 0) * 12), 0);
 
         if (myCompanies.length === 0) {
-            content.innerHTML = this._workspaceOnboard('\uD83D\uDCB0', 'Welcome, Sponsor', 'You haven\'t created a sponsor company profile yet. Register your company to start managing sponsorship investments.', '+ Register Sponsor Company', 'UI._createRoleEntityModal("sponsor")');
+            content.innerHTML = this._workspaceOnboard('\uD83D\uDCB0', 'Welcome, Sponsor', 'You haven\'t created a sponsor company profile yet. Register your company to start managing sponsorship investments.', '+ Register Sponsor Company', "UI._createRoleEntityModal('sponsor')");
             return;
         }
         content.innerHTML = this._workspaceKpiBar([
@@ -3100,7 +3106,7 @@ var UI = {
         if (subtitleEl) subtitleEl.textContent = 'Your racing series, season calendar, and standings';
         const mySeries = await Database.series.getByUser(uid);
         if (mySeries.length === 0) {
-            content.innerHTML = this._workspaceOnboard('\uD83C\uDFC6', 'Welcome, Series Owner', 'You don\'t own any racing series yet. Create your first series to set up a championship, define the rule book, and invite drivers.', '+ Create Racing Series', 'UI._createRoleEntityModal("series")');
+            content.innerHTML = this._workspaceOnboard('\uD83C\uDFC6', 'Welcome, Series Owner', 'You don\'t own any racing series yet. Create your first series to set up a championship, define the rule book, and invite drivers.', '+ Create Racing Series', "UI._createRoleEntityModal('series')");
             return;
         }
         const allRaces = await Database.races.getAll();
@@ -3129,7 +3135,7 @@ var UI = {
         if (subtitleEl) subtitleEl.textContent = 'Your venues, hosted events, and track operations';
         const myTracks = await Database.tracks.getByUser(uid);
         if (myTracks.length === 0) {
-            content.innerHTML = this._workspaceOnboard('\uD83C\uDFC1', 'Welcome, Track Owner', 'You don\'t own any tracks yet. Register your first venue to start hosting race events and managing your circuit portfolio.', '+ Register a Track', 'UI._createRoleEntityModal("track")');
+            content.innerHTML = this._workspaceOnboard('\uD83C\uDFC1', 'Welcome, Track Owner', 'You don\'t own any tracks yet. Register your first venue to start hosting race events and managing your circuit portfolio.', '+ Register a Track', "UI._createRoleEntityModal('track')");
             return;
         }
         const allRaces = await Database.races.getAll();
@@ -3155,14 +3161,195 @@ var UI = {
         </div>`;
     },
 
-    // ===== ROLE ENTITY CREATION MODAL (PLACEHOLDER) =====
+    async _createDriverProfile() {
+        const content = document.getElementById('member-workspace-content');
+        if (content) content.innerHTML = '<div class="empty-state">Creating your driver profile&hellip;</div>';
+        try {
+            if (typeof ensureDriverProfileForMember === 'function') {
+                await ensureDriverProfileForMember();
+            }
+            await this.loadMemberWorkspace();
+        } catch (e) {
+            this.showNotification('Could not create profile: ' + e.message, 'error');
+            await this.loadMemberWorkspace();
+        }
+    },
+
+    // ===== ROLE ENTITY CREATION FORMS =====
     _createRoleEntityModal(entityType) {
-        const labels = {
-            'crew-chief': 'Crew Chief', 'mechanic': 'Mechanic', 'agent': 'Agent',
-            'sponsor': 'Sponsor Company', 'series': 'Racing Series', 'track': 'Track / Venue'
+        const content = document.getElementById('member-workspace-content');
+        if (!content) return;
+
+        const uid = window.AppSession?.memberUid || '';
+        const configs = {
+            'crew-chief': {
+                icon: '🛠️', title: 'Create Crew Chief Profile',
+                fields: `
+                    <div class="form-group"><label>Name *</label><input type="text" id="re-name" required placeholder="Your name"></div>
+                    <div class="form-group"><label>Specialty</label><select id="re-specialty">
+                        <option value="General">General</option><option value="Aerodynamics">Aerodynamics</option>
+                        <option value="Strategy">Strategy</option><option value="Setup">Setup</option><option value="Engine">Engine</option>
+                    </select></div>
+                    <div class="form-group"><label>Seasons Experience</label><input type="number" id="re-experience" min="0" max="50" value="0"></div>
+                    <div class="form-group"><label>Bio</label><textarea id="re-bio" rows="3" placeholder="Tell the team about yourself..."></textarea></div>
+                    <div class="form-group"><label>Strategy Notes</label><textarea id="re-notes" rows="2" placeholder="Your pit strategy approach, setup philosophy..."></textarea></div>`
+            },
+            'mechanic': {
+                icon: '🔧', title: 'Create Mechanic Profile',
+                fields: `
+                    <div class="form-group"><label>Name *</label><input type="text" id="re-name" required placeholder="Your name"></div>
+                    <div class="form-group"><label>Specialty</label><select id="re-specialty">
+                        <option value="General">General</option><option value="Engine">Engine</option>
+                        <option value="Suspension">Suspension</option><option value="Bodywork">Bodywork</option><option value="Electronics">Electronics</option>
+                    </select></div>
+                    <div class="form-group"><label>Seasons Experience</label><input type="number" id="re-experience" min="0" max="50" value="0"></div>
+                    <div class="form-group"><label>Bio</label><textarea id="re-bio" rows="3" placeholder="Your background and expertise..."></textarea></div>`
+            },
+            'agent': {
+                icon: '🤝', title: 'Create Agent Profile',
+                fields: `
+                    <div class="form-group"><label>Name *</label><input type="text" id="re-name" required placeholder="Your name"></div>
+                    <div class="form-group"><label>Commission % (default 10)</label><input type="number" id="re-commission" min="1" max="50" value="10"></div>
+                    <div class="form-group"><label>Specialty</label><select id="re-specialty">
+                        <option value="General">General</option><option value="Driver Contracts">Driver Contracts</option>
+                        <option value="Team Deals">Team Deals</option><option value="Sponsorships">Sponsorships</option>
+                    </select></div>
+                    <div class="form-group"><label>Bio</label><textarea id="re-bio" rows="3" placeholder="Your experience representing drivers and teams..."></textarea></div>`
+            },
+            'sponsor': {
+                icon: '💰', title: 'Register Sponsor Company',
+                fields: `
+                    <div class="form-group"><label>Company Name *</label><input type="text" id="re-company-name" required placeholder="e.g. Apex Energy Drinks"></div>
+                    <div class="form-group"><label>Industry</label><input type="text" id="re-industry" placeholder="e.g. Beverages, Technology, Automotive"></div>
+                    <div class="form-group"><label>Tier</label><select id="re-tier">
+                        <option value="entry">Entry (small deals)</option><option value="mid" selected>Mid-Tier (standard deals)</option><option value="premium">Premium (major deals)</option>
+                    </select></div>
+                    <div class="form-group"><label>Total Budget ($)</label><input type="number" id="re-budget" min="0" step="1000" value="500000"></div>
+                    <div class="form-group"><label>Base Payout Per Race ($)</label><input type="number" id="re-base-per-race" min="0" step="500" value="5000"></div>
+                    <div class="form-group"><label>Win Bonus ($)</label><input type="number" id="re-win-bonus" min="0" step="500" value="2000"></div>
+                    <div class="form-group"><label>Podium Bonus ($)</label><input type="number" id="re-podium-bonus" min="0" step="500" value="1000"></div>
+                    <div class="form-group"><label>DNF Penalty ($)</label><input type="number" id="re-dnf-penalty" min="0" step="100" value="500"></div>
+                    <div class="form-group"><label>Company Bio / Pitch</label><textarea id="re-bio" rows="2" placeholder="What your company brings to the team..."></textarea></div>`
+            },
+            'series': {
+                icon: '🏆', title: 'Create Racing Series',
+                fields: `
+                    <div class="form-group"><label>Series Name *</label><input type="text" id="re-name" required placeholder="e.g. Phoenix Championship Series"></div>
+                    <div class="form-group"><label>Season Year</label><input type="number" id="re-season" value="${new Date().getFullYear()}" min="2000" max="2099"></div>
+                    <div class="form-group"><label>Points System</label><select id="re-points-system">
+                        <option value="f1">F1 Style (25-18-15-12-10...)</option>
+                        <option value="indycar">IndyCar Style (40-34-29-26...)</option>
+                        <option value="nascar">NASCAR Style (43-41-39-37...)</option>
+                    </select></div>
+                    <div class="form-group"><label>Max Participants</label><input type="number" id="re-max-participants" min="2" max="99" value="30"></div>
+                    <div class="form-group"><label>Description</label><textarea id="re-bio" rows="2" placeholder="Brief series overview..."></textarea></div>
+                    <div class="form-group"><label>Rule Book</label><textarea id="re-rules" rows="4" placeholder="Contact rules, damage rules, incident points, car restrictions..."></textarea></div>`
+            },
+            'track': {
+                icon: '🏁', title: 'Register Track / Venue',
+                fields: `
+                    <div class="form-group"><label>Track Name *</label><input type="text" id="re-name" required placeholder="e.g. Phoenix Motorsport Park"></div>
+                    <div class="form-group"><label>Country</label><input type="text" id="re-country" placeholder="USA"></div>
+                    <div class="form-group"><label>Layout Type</label><select id="re-layout">
+                        <option value="Circuit">Circuit</option><option value="Oval">Oval</option>
+                        <option value="Road Course">Road Course</option><option value="Street Circuit">Street Circuit</option><option value="Short Track">Short Track</option>
+                    </select></div>
+                    <div class="form-group"><label>Track Length (miles)</label><input type="number" id="re-length" min="0" step="0.001" placeholder="e.g. 2.5"></div>
+                    <div class="form-group"><label>Number of Corners</label><input type="number" id="re-corners" min="0" max="200" placeholder="e.g. 18"></div>
+                    <div class="form-group"><label>Spectator / Max Participants</label><input type="number" id="re-max-participants" min="1" max="99" value="40"></div>
+                    <div class="form-group"><label>Track Bio</label><textarea id="re-bio" rows="2" placeholder="History and character of the venue..."></textarea></div>`
+            }
         };
-        const label = labels[entityType] || entityType;
-        this.showNotification(`To create a ${label} profile, ask your Game Master to set this up for you, or contact support.`, 'info');
+
+        const cfg = configs[entityType];
+        if (!cfg) { this.showNotification('Unknown role type: ' + entityType, 'error'); return; }
+
+        content.innerHTML = `
+            <div class="card">
+                <div class="card-header">
+                    <h3>${cfg.icon} ${cfg.title}</h3>
+                    <button type="button" class="btn btn-secondary" onclick="UI.loadMemberWorkspace()" style="font-size:0.8rem;padding:0.35rem 0.75rem;">&larr; Back</button>
+                </div>
+                <form class="form" style="padding:1.5rem;" data-entity-type="${entityType}" onsubmit="UI._saveRoleEntity(event)">
+                    ${cfg.fields}
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Save Profile</button>
+                        <button type="button" class="btn btn-secondary" onclick="UI.loadMemberWorkspace()">Cancel</button>
+                    </div>
+                </form>
+            </div>`;
+    },
+
+    async _saveRoleEntity(event) {
+        event.preventDefault();
+        const form = event.target;
+        const entityType = form.dataset.entityType;
+        const uid = window.AppSession?.memberUid || '';
+        const submitBtn = form.querySelector('button[type="submit"]');
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Saving...'; }
+
+        const val = (id) => (document.getElementById(id)?.value || '').trim();
+        const num = (id, def = 0) => parseFloat(document.getElementById(id)?.value || def) || def;
+
+        try {
+            switch (entityType) {
+                case 'crew-chief': {
+                    const name = val('re-name');
+                    if (!name) { this.showNotification('Name is required.', 'error'); return; }
+                    await Database.crewChiefs.create({ name, userId: uid, specialty: val('re-specialty') || 'General', experience: num('re-experience'), bio: val('re-bio'), notes: val('re-notes'), status: 'active' });
+                    this.showNotification('Crew Chief profile created!', 'success');
+                    break;
+                }
+                case 'mechanic': {
+                    const name = val('re-name');
+                    if (!name) { this.showNotification('Name is required.', 'error'); return; }
+                    await Database.mechanics.create({ name, userId: uid, specialty: val('re-specialty') || 'General', experience: num('re-experience'), bio: val('re-bio'), status: 'active' });
+                    this.showNotification('Mechanic profile created!', 'success');
+                    break;
+                }
+                case 'agent': {
+                    const name = val('re-name');
+                    if (!name) { this.showNotification('Name is required.', 'error'); return; }
+                    await Database.agents.create({ name, userId: uid, commissionPct: num('re-commission', 10), specialty: val('re-specialty') || 'General', bio: val('re-bio'), status: 'active' });
+                    this.showNotification('Agent profile created!', 'success');
+                    break;
+                }
+                case 'sponsor': {
+                    const companyName = val('re-company-name');
+                    if (!companyName) { this.showNotification('Company name is required.', 'error'); return; }
+                    await Database.sponsorCompanies.create({
+                        companyName, userId: uid, industry: val('re-industry'), tier: val('re-tier') || 'mid',
+                        totalBudget: num('re-budget', 0), bio: val('re-bio'), isDefault: false,
+                        offerTerms: { basePerRace: num('re-base-per-race', 5000), winBonus: num('re-win-bonus', 2000), podiumBonus: num('re-podium-bonus', 1000), dnfPenalty: num('re-dnf-penalty', 500) },
+                        status: 'active'
+                    });
+                    this.showNotification('Sponsor company registered!', 'success');
+                    break;
+                }
+                case 'series': {
+                    const name = val('re-name');
+                    if (!name) { this.showNotification('Series name is required.', 'error'); return; }
+                    await Database.series.create({ name, userId: uid, season: num('re-season', new Date().getFullYear()), pointsSystem: val('re-points-system') || 'f1', maxParticipants: num('re-max-participants', 30), description: val('re-bio'), ruleSet: val('re-rules'), status: 'active' });
+                    this.showNotification('Racing series created!', 'success');
+                    break;
+                }
+                case 'track': {
+                    const name = val('re-name');
+                    if (!name) { this.showNotification('Track name is required.', 'error'); return; }
+                    await Database.tracks.create({ name, userId: uid, country: val('re-country'), layout: val('re-layout') || 'Circuit', lengthMiles: num('re-length', 0), corners: num('re-corners', 0), maxParticipants: num('re-max-participants', 40), bio: val('re-bio'), status: 'active' });
+                    this.showNotification('Track registered!', 'success');
+                    break;
+                }
+                default:
+                    this.showNotification('Unknown entity type.', 'error');
+                    return;
+            }
+            await this.loadMemberWorkspace();
+        } catch (err) {
+            console.error('Error saving role entity:', err);
+            this.showNotification('Could not save: ' + err.message, 'error');
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Save Profile'; }
+        }
     }
 };
 

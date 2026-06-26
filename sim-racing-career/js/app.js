@@ -1348,6 +1348,10 @@ async function handleAddTeam(e) {
         const teamName = document.getElementById('team-name').value;
         const teamColor = document.getElementById('team-color').value;
         const teamDescription = document.getElementById('team-description').value;
+        const teamOwnerName = document.getElementById('team-owner-name')?.value?.trim() || '';
+        const teamHeadquarters = document.getElementById('team-headquarters')?.value?.trim() || '';
+        const teamBudget = parseFloat(document.getElementById('team-budget')?.value || 0) || 0;
+        const teamCarSlots = parseInt(document.getElementById('team-car-slots')?.value || 2, 10) || 2;
 
         if (!teamName.trim()) {
             UI.showNotification('Team name is required', 'error');
@@ -1360,6 +1364,10 @@ async function handleAddTeam(e) {
             name: teamName,
             color: teamColor,
             description: teamDescription,
+            owner: teamOwnerName,
+            headquarters: teamHeadquarters,
+            budget: teamBudget,
+            carSlots: teamCarSlots,
             ownerUid: AppSession.user?.uid || null,
             status: recordStatus,
             createdByUid: AppSession.user?.uid || null,
@@ -1561,7 +1569,10 @@ async function handleSaveEditTeam(e) {
         const updates = {
             name: document.getElementById('edit-team-name').value,
             color: document.getElementById('edit-team-color').value,
-            description: document.getElementById('edit-team-description').value
+            description: document.getElementById('edit-team-description').value,
+            owner: document.getElementById('edit-team-owner-name')?.value?.trim() || '',
+            headquarters: document.getElementById('edit-team-headquarters')?.value?.trim() || '',
+            carSlots: parseInt(document.getElementById('edit-team-car-slots')?.value || 2, 10) || 2
         };
 
         await Database.teams.update(teamId, updates);
