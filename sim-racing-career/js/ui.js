@@ -150,11 +150,11 @@ var UI = {
         }
 
         if (sponsorsNavButton) {
-            sponsorsNavButton.textContent = isAdmin ? 'Sponsors' : (isMember ? 'Workspace' : 'Overview');
+            sponsorsNavButton.textContent = 'Sponsors';
         }
 
         if (driverHubNavButton) {
-            driverHubNavButton.textContent = isMember ? 'Workspace' : 'Driver Hub';
+            driverHubNavButton.textContent = 'Driver Hub';
         }
 
         if (adminNavButton) {
@@ -359,275 +359,6 @@ var UI = {
         document.body.style.overflow = 'auto';
     },
 
-            // ===== SPONSORS =====
-            focusSponsorshipForm() {
-                const form = document.getElementById('sponsorship-create-form');
-                if (form) {
-                    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }
-
-                const companyInput = document.getElementById('sponsor-company');
-                companyInput?.focus();
-            },
-
-            async loadSponsors() {
-                try {
-                    const [drivers, teams, contracts] = await Promise.all([
-                        this.getVisibleDrivers(),
-                        this.getVisibleTeams(),
-                        Database.sponsorships.getAll()
-                    ]);
-
-                    const sponsorsGrid = document.getElementById('sponsors-grid');
-                    const statusFilter = document.getElementById('sponsor-status-filter')?.value || 'all';
-                    const driverSelect = document.getElementById('sponsor-driver-id');
-                    const teamSelect = document.getElementById('sponsor-team-id');
-                    const createForm = document.getElementById('sponsorship-create-form');
-
-                    const selectedDriver = driverSelect?.value || '';
-                    const selectedTeam = teamSelect?.value || '';
-
-                    if (driverSelect) {
-                        driverSelect.innerHTML = '<option value="">Select driver</option>';
-                        drivers
-                            .sort((a, b) => String(a.name).localeCompare(String(b.name)))
-                            .forEach((driver) => {
-                                const option = document.createElement('option');
-                                option.value = driver.id;
-                                option.textContent = driver.name;
-                                driverSelect.appendChild(option);
-                            });
-                        if (selectedDriver && Array.from(driverSelect.options).some((opt) => opt.value === selectedDriver)) {
-                            driverSelect.value = selectedDriver;
-                        }
-                    }
-
-                    if (teamSelect) {
-                        teamSelect.innerHTML = '<option value="">No team</option>';
-                        teams
-                            .sort((a, b) => String(a.name).localeCompare(String(b.name)))
-                            .forEach((team) => {
-                                const option = document.createElement('option');
-                                option.value = team.id;
-                                option.textContent = team.name;
-                                teamSelect.appendChild(option);
-                            });
-                        if (selectedTeam && Array.from(teamSelect.options).some((opt) => opt.value === selectedTeam)) {
-                            teamSelect.value = selectedTeam;
-                        }
-                    }
-
-                    if (createForm) {
-                        createForm.querySelectorAll('input, select, textarea, button').forEach((el) => {
-                            el.disabled = !this.isAdmin();
-                        });
-                    }
-
-                    if (!sponsorsGrid) return;
-
-                    const driversById = new Map(drivers.map((driver) => [driver.id, driver]));
-                    const teamsById = new Map(teams.map((team) => [team.id, team]));
-
-                    const filtered = contracts.filter((contract) => statusFilter === 'all' || (contract.status || 'active') === statusFilter);
-
-                    if (!filtered.length) {
-                        sponsorsGrid.innerHTML = '<p class="empty-state">No sponsorship contracts for this filter.</p>';
-                        return;
-                    }
-
-                    sponsorsGrid.innerHTML = filtered.map((contract) => {
-                        const driver = driversById.get(contract.driverId);
-                        const team = contract.teamId ? teamsById.get(contract.teamId) : null;
-                        const status = contract.status || 'active';
-                        const model = contract.payoutModel || {};
-                        return `
-                            <div class="moderation-item">
-                                <div class="moderation-item-header">
-                                    <div>
-                                        <p class="moderation-title">${contract.companyName}</p>
-                                        <p class="moderation-meta">Driver: ${driver?.name || contract.driverId}</p>
-                                        <p class="moderation-meta">Team: ${team?.name || 'Independent'}</p>
-                                        <p class="moderation-meta">Base: ${this.formatCurrency(model.basePerRace || 0)} • Win: ${this.formatCurrency(model.winBonus || 0)} • Podium: ${this.formatCurrency(model.podiumBonus || 0)} • DNF Penalty: ${this.formatCurrency(model.dnfPenalty || 0)}</p>
-                                        <p class="moderation-meta">${contract.startDate ? this.normalizeDate(contract.startDate).toLocaleDateString() : 'Now'} - ${contract.endDate ? this.normalizeDate(contract.endDate).toLocaleDateString() : 'Open-ended'}</p>
-                                    </div>
-                                    <span class="status-pill status-${status === 'active' ? 'approved' : status === 'pending' || status === 'paused' ? 'pending' : 'rejected'}">${status}</span>
-                                </div>
-                                ${contract.terms ? `<p class="moderation-meta" style="margin-bottom: 0.75rem;">${contract.terms}</p>` : ''}
-                                ${this.isAdmin() ? `
-                                    <div class="card-actions" style="padding: 0; border: none;">
-                                        <button type="button" onclick="UI.setSponsorshipStatus('${contract.id}', 'active')">Activate</button>
-                                        <button type="button" onclick="UI.setSponsorshipStatus('${contract.id}', 'paused')">Pause</button>
-                                        <button type="button" onclick="UI.setSponsorshipStatus('${contract.id}', 'terminated')">Terminate</button>
-                                    </div>
-                                ` : ''}
-                            </div>
-                        `;
-                    }).join('');
-                } catch (error) {
-                    console.error('Error loading sponsors:', error);
-                    this.showNotification('Error loading sponsorships: ' + error.message, 'error');
-                }
-            },
-
-            async saveSponsorshipContractFromForm() {
-                if (!this.isAdmin()) {
-                    this.showNotification('Only admins can create sponsorship contracts.', 'error');
-                    return;
-                }
-
-                const companyName = document.getElementById('sponsor-company')?.value?.trim();
-                const driverId = document.getElementById('sponsor-driver-id')?.value || '';
-                const teamId = document.getElementById('sponsor-team-id')?.value || '';
-                const status = document.getElementById('sponsor-status')?.value || 'active';
-                const basePerRace = Number(document.getElementById('sponsor-base-per-race')?.value || 0);
-                const winBonus = Number(document.getElementById('sponsor-win-bonus')?.value || 0);
-                const podiumBonus = Number(document.getElementById('sponsor-podium-bonus')?.value || 0);
-                const dnfPenalty = Number(document.getElementById('sponsor-dnf-penalty')?.value || 0);
-                const startDate = document.getElementById('sponsor-start-date')?.value || '';
-                const endDate = document.getElementById('sponsor-end-date')?.value || '';
-                const terms = document.getElementById('sponsor-terms')?.value?.trim() || '';
-
-                if (!companyName || !driverId) {
-                    this.showNotification('Company and driver are required for sponsorship contracts.', 'error');
-                    return;
-                }
-
-                if (basePerRace < 0 || winBonus < 0 || podiumBonus < 0 || dnfPenalty < 0) {
-                    this.showNotification('Payout values must be non-negative.', 'error');
-                    return;
-                }
-
-                try {
-                    await Database.sponsorships.createContract({
-                        companyName,
-                        driverId,
-                        teamId: teamId || null,
-                        status,
-                        basePerRace,
-                        winBonus,
-                        podiumBonus,
-                        dnfPenalty,
-                        startDate: startDate || null,
-                        endDate: endDate || null,
-                        terms
-                    });
-
-                    this.showNotification('Sponsorship contract created.');
-                    document.getElementById('sponsorship-create-form')?.reset();
-                    const statusSelect = document.getElementById('sponsor-status');
-                    if (statusSelect) statusSelect.value = 'active';
-
-                    await Promise.allSettled([
-                        this.loadSponsors(),
-                        this.loadDriverHub()
-                    ]);
-                } catch (error) {
-                    console.error('Error creating sponsorship contract:', error);
-                    this.showNotification('Could not create sponsorship contract: ' + error.message, 'error');
-                }
-            },
-
-            async setSponsorshipStatus(contractId, status) {
-                if (!this.isAdmin()) {
-                    this.showNotification('Only admins can update sponsorship status.', 'error');
-                    return;
-                }
-
-                try {
-                    await Database.sponsorships.updateContract(contractId, { status });
-                    this.showNotification('Sponsorship status updated.');
-                    await Promise.allSettled([
-                        this.loadSponsors(),
-                        this.loadDriverHub()
-                    ]);
-                } catch (error) {
-                    console.error('Error updating sponsorship status:', error);
-                    this.showNotification('Could not update sponsorship status: ' + error.message, 'error');
-                }
-            },
-
-            async saveAdminPayoutFromForm() {
-                if (!this.isAdmin()) {
-                    this.showNotification('Only admins can apply payout adjustments.', 'error');
-                    return;
-                }
-
-                const userId = document.getElementById('admin-payout-user-id')?.value?.trim() || '';
-                const driverId = document.getElementById('admin-payout-driver-id')?.value?.trim() || '';
-                const amount = Number(document.getElementById('admin-payout-amount')?.value || 0);
-                const note = document.getElementById('admin-payout-note')?.value?.trim() || '';
-
-                if (!userId || !note) {
-                    this.showNotification('Target user and reason are required.', 'error');
-                    return;
-                }
-
-                if (!Number.isFinite(amount) || amount === 0) {
-                    this.showNotification('Amount must be a non-zero number.', 'error');
-                    return;
-                }
-
-                try {
-                    await Database.economy.addManualAdjustment({
-                        actorUid: window.AuthService?.getCurrentUser?.()?.uid || null,
-                        userId,
-                        amount,
-                        note,
-                        driverId: driverId || null
-                    });
-
-                    this.showNotification('Manual payout adjustment applied.');
-                    document.getElementById('admin-payout-form')?.reset();
-
-                    await Promise.allSettled([
-                        this.loadAdminPayoutActivity(),
-                        this.loadDriverHub()
-                    ]);
-                } catch (error) {
-                    console.error('Error applying payout adjustment:', error);
-                    this.showNotification('Could not apply payout adjustment: ' + error.message, 'error');
-                }
-            },
-
-            async loadAdminPayoutActivity() {
-                if (!this.isAdmin()) return;
-
-                const list = document.getElementById('admin-payout-audit-list');
-                if (!list) return;
-
-                const [audits, drivers] = await Promise.all([
-                    Database.payoutAudits.getAll(),
-                    Database.drivers.getAll()
-                ]);
-
-                const driversById = new Map(drivers.map((driver) => [driver.id, driver]));
-
-                if (!audits.length) {
-                    list.innerHTML = '<p class="empty-state">No payout adjustments recorded.</p>';
-                    return;
-                }
-
-                list.innerHTML = audits.slice(0, 20).map((audit) => {
-                    const amount = Number(audit.amount || 0);
-                    const isPenalty = amount < 0;
-                    const driver = audit.driverId ? driversById.get(audit.driverId) : null;
-                    return `
-                        <div class="moderation-item">
-                            <div class="moderation-item-header">
-                                <div>
-                                    <p class="moderation-title">${isPenalty ? 'Penalty' : 'Bonus'} ${this.formatCurrency(amount)}</p>
-                                    <p class="moderation-meta">Target UID: ${audit.userId}</p>
-                                    <p class="moderation-meta">Driver: ${driver?.name || audit.driverId || 'N/A'}</p>
-                                    <p class="moderation-meta">Admin UID: ${audit.actorUid || 'Unknown'} • ${this.normalizeDate(audit.createdAt).toLocaleString()}</p>
-                                </div>
-                                <span class="status-pill ${isPenalty ? 'status-rejected' : 'status-approved'}">${audit.adjustmentType || (isPenalty ? 'manual-penalty' : 'manual-bonus')}</span>
-                            </div>
-                            <p class="moderation-meta">Reason: ${audit.reason || 'No reason provided'}</p>
-                        </div>
-                    `;
-                }).join('');
-            },
-
             async loadTeams() {
                 const grid = document.getElementById('teams-grid');
                 if (!grid) return;
@@ -720,8 +451,8 @@ var UI = {
             <div class="driver-stats">
                 ${driver.country ? `<div class="stat-row"><span class="stat-label">Country</span><span class="stat-value">${driver.country}</span></div>` : ''}
                 <div class="stat-row"><span class="stat-label">Points</span><span class="stat-value">${driver.stats?.totalPoints || 0}</span></div>
-                <div class="stat-row"><span class="stat-label">Wins</span><span class="stat-value">${driver.stats?.totalWins || 0}</span></div>
-                <div class="stat-row"><span class="stat-label">Podiums</span><span class="stat-value">${driver.stats?.totalPodiums || 0}</span></div>
+                <div class="stat-row"><span class="stat-label">Wins</span><span class="stat-value">${driver.stats?.wins ?? driver.stats?.totalWins ?? 0}</span></div>
+                <div class="stat-row"><span class="stat-label">Podiums</span><span class="stat-value">${driver.stats?.podiums ?? driver.stats?.totalPodiums ?? 0}</span></div>
             </div>
             <div class="card-actions">
                 ${this.canEditDriver(driver) ? `<button type="button" onclick="UI.editDriverModal('${driver.id}')">Edit</button>` : ''}
@@ -3006,7 +2737,7 @@ var UI = {
         toast.style.opacity = '0';
         toast.style.transform = 'translateY(-8px)';
         toast.style.transition = 'opacity 160ms ease, transform 160ms ease';
-        toast.style.backgroundColor = type === 'error' ? '#c62828' : '#2e7d32';
+        toast.style.backgroundColor = type === 'error' ? '#c62828' : type === 'info' ? '#1565c0' : type === 'warning' ? '#e65100' : '#2e7d32';
 
         container.appendChild(toast);
 

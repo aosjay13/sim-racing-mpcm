@@ -77,6 +77,33 @@ var DatabaseHelper = {
             console.error(`Error deleting document from ${collection}:`, error);
             throw error;
         }
+    },
+
+    async ensureFirebaseReady() {
+        if (!firebase.apps || !firebase.apps.length) {
+            throw new Error('Firebase not initialized.');
+        }
+    },
+
+    async batchWrite(operations) {
+        try {
+            const db = firebase.firestore();
+            const batch = db.batch();
+            for (const op of operations) {
+                const docRef = db.collection(op.collection).doc(op.id);
+                if (op.type === 'set') {
+                    batch.set(docRef, op.data, op.options || {});
+                } else if (op.type === 'update') {
+                    batch.update(docRef, op.data);
+                } else if (op.type === 'delete') {
+                    batch.delete(docRef);
+                }
+            }
+            await batch.commit();
+        } catch (error) {
+            console.error('Error in batch write:', error);
+            throw error;
+        }
     }
 };
 
@@ -873,8 +900,8 @@ var Database = {
             const role = requestedRole === 'admin' ? 'admin' : 'driver';
 
             // Use uid as stable document ID and set() to avoid a read that non-admins can't do.
-            await DatabaseHelper.ensureFirebaseReady();
-            await db.collection('accountRequests').doc(uid).set({
+            const firestoreDb = firebase.firestore();
+            await firestoreDb.collection('accountRequests').doc(uid).set({
                 uid,
                 username: username || '',
                 displayName: displayName || username || '',
@@ -1844,70 +1871,6 @@ Object.assign(Database, {
         async update(id, updates) { return await DatabaseHelper.updateDocument('tracks', id, updates); },
         async delete(id) { return await DatabaseHelper.deleteDocument('tracks', id); }
     },
-
-    admins: {
-        async getAll() { return await DatabaseHelper.getCollection('admins'); },
-        async upsert(uid, data) {
-            const existing = await DatabaseHelper.getDocument('admins', uid);
-            if (existing) {
-                return await DatabaseHelper.updateDocument('admins', uid, { ...data, updatedAt: new Date() });
-            } else {
-                return await DatabaseHelper.addDocument('admins', { ...data, uid, createdAt: new Date(), updatedAt: new Date(), id: uid });
-            }
-        },
-        async setActive(uid, isActive) { return await DatabaseHelper.updateDocument('admins', uid, { isActive, updatedAt: new Date() }); },
-        async remove(uid) { return await DatabaseHelper.deleteDocument('admins', uid); }
-    },
-
-    payoutAudits: {
-        async getAll() { return await DatabaseHelper.getCollection('payoutAudits'); },
-        async create(data) { return await DatabaseHelper.addDocument('payoutAudits', { ...data, createdAt: new Date() }); }
-    },
-
-    integrity: {
-        async rebuildAllAggregates(actorUid) {
-            // Rebuild standings from race results
-            const races = await DatabaseHelper.getCollection('races', [['status', '==', 'completed']]);
-            const drivers = await DatabaseHelper.getCollection('drivers', [['status', '==', 'approved']]);
-            const teams = await DatabaseHelper.getCollection('teams', [['status', '==', 'approved']]);
-
-            const driverPoints = {};
-            const teamPoints = {};
-
-            for (const race of races) {
-                const results = race.results || [];
-                for (const result of results) {
-                    const pts = calculateRacePoints(result.position);
-                    if (result.driverId) {
-                        if (!driverPoints[result.driverId]) driverPoints[result.driverId] = { points: 0, races: 0, wins: 0, podiums: 0 };
-                        driverPoints[result.driverId].points += pts;
-                        driverPoints[result.driverId].races += 1;
-                        if (result.position === 1) driverPoints[result.driverId].wins += 1;
-                        if (result.position <= 3) driverPoints[result.driverId].podiums += 1;
-                    }
-                    if (result.teamId) {
-                        if (!teamPoints[result.teamId]) teamPoints[result.teamId] = { points: 0, races: 0, wins: 0, podiums: 0 };
-                        teamPoints[result.teamId].points += pts;
-                        teamPoints[result.teamId].races += 1;
-                        if (result.position === 1) teamPoints[result.teamId].wins += 1;
-                        if (result.position <= 3) teamPoints[result.teamId].podiums += 1;
-                    }
-                }
-            }
-
-            const entries = drivers.map(d => ({ driverId: d.id, ...( driverPoints[d.id] || { points: 0, races: 0, wins: 0, podiums: 0 }) }));
-            const teamEntries = teams.map(t => ({ teamId: t.id, ...( teamPoints[t.id] || { points: 0, races: 0, wins: 0, podiums: 0 }) }));
-
-            await DatabaseHelper.addDocument('standings', {
-                season: new Date().getFullYear(),
-                entries,
-                teamEntries,
-                rebuiltAt: new Date(),
-                rebuiltBy: actorUid || null
-            });
-            console.log('✓ Standings rebuilt by integrity check');
-        }
-    }
 
 });
 
