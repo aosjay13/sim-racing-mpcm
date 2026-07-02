@@ -1300,7 +1300,7 @@ var UI = {
     },
 
     async loadAccountRequests() {
-        if (!this.isAdmin()) return;
+        if (!this.isAdmin()) { console.warn('loadAccountRequests skipped: not an admin'); return; }
 
         const list = document.getElementById('account-request-list');
         if (!list) return;
@@ -1414,7 +1414,7 @@ var UI = {
     },
 
     async loadModerationQueue() {
-        if (!this.isAdmin()) return;
+        if (!this.isAdmin()) { console.warn('loadModerationQueue skipped: not an admin'); return; }
 
         const typeFilter = document.getElementById('moderation-type-filter')?.value || 'all';
 
@@ -1518,7 +1518,7 @@ var UI = {
     },
 
     async loadAdminList() {
-        if (!this.isAdmin()) return;
+        if (!this.isAdmin()) { console.warn('loadAdminList skipped: not an admin'); return; }
 
         const admins = await Database.admins.getAll();
         const list = document.getElementById('admin-list');
@@ -1821,7 +1821,7 @@ var UI = {
     },
 
     async editRace(raceId) {
-        if (!this.isAdmin()) return;
+        if (!this.isAdmin()) { this.showNotification('Only a Game Master can edit races.', 'error'); return; }
         try {
             const race = await Database.races.getById(raceId);
             if (!race) { this.showNotification('Race not found.', 'error'); return; }
@@ -1886,7 +1886,7 @@ var UI = {
     },
 
     async deleteRace(raceId) {
-        if (!this.isAdmin()) return;
+        if (!this.isAdmin()) { this.showNotification('Only a Game Master can delete races.', 'error'); return; }
         const race = await Database.races.getById(raceId);
         if (!race) { this.showNotification('Race not found.', 'error'); return; }
         if (!window.confirm(`Delete "${race.name}"? This cannot be undone.`)) return;
@@ -1906,7 +1906,7 @@ var UI = {
     },
 
     async setRaceLive(raceId) {
-        if (!this.isAdmin()) return;
+        if (!this.isAdmin()) { this.showNotification('Only a Game Master can set a race live.', 'error'); return; }
         const race = await Database.races.getById(raceId);
         if (!race) { this.showNotification('Race not found.', 'error'); return; }
         if (!window.confirm(`Set "${race.name}" to ACTIVE (go live)? Signups will close.`)) return;
@@ -1926,7 +1926,7 @@ var UI = {
     },
 
     async loadRaceSchedule() {
-        if (!this.isAdmin()) return;
+        if (!this.isAdmin()) { console.warn('loadRaceSchedule skipped: not an admin'); return; }
 
         const list = document.getElementById('admin-race-schedule-list');
         if (!list) return;
@@ -2675,7 +2675,7 @@ var UI = {
     },
 
     async loadAdminPayoutActivity() {
-        if (!this.isAdmin()) return;
+        if (!this.isAdmin()) { console.warn('loadAdminPayoutActivity skipped: not an admin'); return; }
 
         const list = document.getElementById('admin-payout-audit-list');
         if (!list) return;
@@ -3165,11 +3165,24 @@ var UI = {
         const content = document.getElementById('member-workspace-content');
         if (content) content.innerHTML = '<div class="empty-state">Creating your driver profile&hellip;</div>';
         try {
-            if (typeof ensureDriverProfileForMember === 'function') {
-                await ensureDriverProfileForMember();
+            if (typeof ensureDriverProfileForMember !== 'function') {
+                throw new Error('Profile creation is unavailable (ensureDriverProfileForMember missing).');
             }
+            await ensureDriverProfileForMember();
+
+            // Verify a driver actually resolved for this member. If not, tell the user
+            // explicitly instead of silently re-rendering the same onboarding card.
+            const uid = window.AppSession?.memberUid;
+            const claimedId = window.AppSession?.claimedDriverId;
+            const drivers = await Database.drivers.getAll().catch(() => []);
+            const myDriver = drivers.find(d => d.id === claimedId || d.ownerUid === uid);
+            if (!myDriver) {
+                throw new Error('Profile was not created. Check the console for details.');
+            }
+
             await this.loadMemberWorkspace();
         } catch (e) {
+            console.error('_createDriverProfile failed:', e);
             this.showNotification('Could not create profile: ' + e.message, 'error');
             await this.loadMemberWorkspace();
         }

@@ -72,6 +72,19 @@ window._memberSignupMode = false;
 // ===== APPLICATION INITIALIZATION =====
 console.log('✅ NEW MEMBER SYSTEM LOADED - Member login panel and 8-role workspace system is active');
 
+// Global error surface — no button can ever fail silently again. Any uncaught error or
+// unhandled promise rejection (e.g. from an inline onclick="UI.someAsyncMethod()") gets
+// logged and shown to the user instead of vanishing.
+window.addEventListener('unhandledrejection', (event) => {
+    const reason = event.reason;
+    console.error('Unhandled promise rejection:', reason);
+    const message = reason?.message || (typeof reason === 'string' ? reason : 'Unexpected error');
+    window.UI?.showNotification?.('Something went wrong: ' + message, 'error');
+});
+window.addEventListener('error', (event) => {
+    console.error('Uncaught error:', event.error || event.message);
+});
+
 document.addEventListener('DOMContentLoaded', async function() {
     // Add visible timestamp to prove page is loading fresh
     const loadTime = new Date().toLocaleTimeString();
@@ -631,21 +644,45 @@ async function ensureDriverProfileForMember() {
     const uid = AppSession.memberUid;
     if (!uid) return;
 
-    // Already linked
-    if (AppSession.claimedDriverId) return;
+    // Load the current driver list once so we can VALIDATE any saved reference instead of
+    // blindly trusting it. A stale claimedDriverId / primaryDriver (driver deleted, never
+    // synced, or belonging to another account) used to trap the user on the onboarding
+    // screen forever — the early return skipped creation but the workspace never found a
+    // driver either. Now an invalid reference is cleared and we fall through to creation.
+    let allDrivers = [];
+    try {
+        allDrivers = await Database.drivers.getAll();
+    } catch (e) {
+        console.error('ensureDriverProfileForMember: failed to load drivers', e);
+    }
+    const driverExists = (id) => !!id && allDrivers.some(d => d.id === id);
 
-    // Check localStorage profile first
+    // Already linked — but only trust it if the driver still exists.
+    if (AppSession.claimedDriverId) {
+        if (driverExists(AppSession.claimedDriverId)) return;
+        console.warn('Clearing stale claimedDriverId:', AppSession.claimedDriverId);
+        AppSession.claimedDriverId = '';
+    }
+
+    // Check localStorage profile — again, only if it points at a real driver.
     try {
         const saved = JSON.parse(localStorage.getItem('srmpcUserProfile') || '{}');
         if (saved.primaryDriver) {
-            AppSession.claimedDriverId = saved.primaryDriver;
-            return;
+            if (driverExists(saved.primaryDriver)) {
+                AppSession.claimedDriverId = saved.primaryDriver;
+                return;
+            }
+            // Stale — drop it so it stops blocking creation.
+            console.warn('Clearing stale localStorage primaryDriver:', saved.primaryDriver);
+            delete saved.primaryDriver;
+            localStorage.setItem('srmpcUserProfile', JSON.stringify(saved));
         }
-    } catch {}
+    } catch (e) {
+        console.error('ensureDriverProfileForMember: bad srmpcUserProfile in localStorage', e);
+    }
 
     // Check if a driver record already exists for this user in the DB
     try {
-        const allDrivers = await Database.drivers.getAll();
         const existing = allDrivers.find(d => d.ownerUid === uid || d.createdByUid === uid);
         if (existing) {
             AppSession.claimedDriverId = existing.id;
@@ -655,7 +692,9 @@ async function ensureDriverProfileForMember() {
             await Database.users.upsertProfile(uid, { primaryDriver: existing.id });
             return;
         }
-    } catch {}
+    } catch (e) {
+        console.error('ensureDriverProfileForMember: failed to link existing driver', e);
+    }
 
     // No driver found — auto-create one from their display name
     const user = window.AuthService?.getCurrentUser?.();
@@ -718,6 +757,9 @@ async function ensureDriverProfileForMember() {
     } catch (error) {
         console.error('Error creating driver profile:', error);
         window.UI?.showNotification('Could not create driver profile: ' + error.message, 'error');
+        // Re-throw so the caller (and the global error surface) knows creation failed
+        // instead of silently re-rendering the same onboarding screen.
+        throw error;
     }
 }
 
