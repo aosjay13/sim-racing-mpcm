@@ -350,6 +350,24 @@ const Stats = {
         return rows;
     },
 
+    // Cumulative points per driver across the (round-ordered) races in a filter.
+    // Returns { labels:['R1','R2',…], series:[{driverId,name,values:[y,…]}] }.
+    pointsProgression(races, world, filter, driverIds) {
+        const completed = this.completedRaces(races, filter).slice()
+            .sort((a, b) => (Number(a.round) || 0) - (Number(b.round) || 0) || (a.date || '').localeCompare(b.date || ''));
+        const labels = completed.map((r, i) => r.round ? 'R' + r.round : (r.date ? Util.fmtDateShort(r.date) : 'R' + (i + 1)));
+        const totals = Object.fromEntries(driverIds.map(id => [id, 0]));
+        const series = driverIds.map(id => ({ driverId: id, name: world.driversById[id]?.name || '?', values: [] }));
+        for (const race of completed) {
+            for (const s of series) {
+                const res = race.results.find(r => r.driverId === s.driverId);
+                if (res) totals[s.driverId] += pointsForResult(res, world.seriesById[race.seriesId]);
+                s.values.push(totals[s.driverId]);
+            }
+        }
+        return { labels, series };
+    },
+
     // Freeze a season's final standings + champions. Pure — recomputed from
     // results, returns the snapshot to store on the season doc.
     crownSeason(races, world, seasonId) {

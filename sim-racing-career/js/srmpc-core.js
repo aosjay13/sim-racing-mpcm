@@ -315,18 +315,47 @@ const Auth = {
     },
 
     // ----- Admin -----
-    _currentHash() { return localStorage.getItem(this._HASH_KEY) || this._DEFAULT_HASH; },
+    // The active passcode hash lives in Firestore (config/admin) so the Game
+    // Master works on every device. localStorage is a per-device cache, and the
+    // built-in default is the final fallback — so a failed cloud read can never
+    // lock the admin out.
+    async _remotePasscodeHash() {
+        if (!fbDb) return null;
+        try {
+            const snap = await fbDb.collection('config').doc('admin').get();
+            return snap.exists ? (snap.data().passcodeHash || null) : null;
+        } catch (e) {
+            console.warn('Could not read admin config; falling back to local hash.', e);
+            return null;
+        }
+    },
+
+    async _activeHash() {
+        const remote = await this._remotePasscodeHash();
+        return remote || localStorage.getItem(this._HASH_KEY) || this._DEFAULT_HASH;
+    },
 
     async verifyPasscode(passcode) {
         const hash = await Util.sha256(String(passcode || '').trim());
-        return hash === this._currentHash();
+        return hash === (await this._activeHash());
     },
 
     async changePasscode(currentPasscode, newPasscode) {
         if (!(await this.verifyPasscode(currentPasscode))) throw new Error('Current passcode is incorrect.');
         const trimmed = String(newPasscode || '').trim();
         if (trimmed.length < 6) throw new Error('New passcode must be at least 6 characters.');
-        localStorage.setItem(this._HASH_KEY, await Util.sha256(trimmed));
+        const newHash = await Util.sha256(trimmed);
+        localStorage.setItem(this._HASH_KEY, newHash); // local cache
+        if (fbDb) {
+            try {
+                await fbDb.collection('config').doc('admin').set({
+                    passcodeHash: newHash,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
+            } catch (e) {
+                throw new Error('Passcode updated on this device, but syncing to the cloud failed (' + e.message + '). Other devices will keep the old passcode until you retry.');
+            }
+        }
     },
 
     _saveAdminSession() {

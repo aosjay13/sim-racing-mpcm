@@ -90,6 +90,55 @@ const C = {
             `<span class="pip pip-${c}" title="${title[c] || ''}"></span>`).join('')}</span>`;
     },
 
+    // Colorblind-validated categorical hues (dataviz skill, direct-labelled below).
+    CHART_COLORS: ['#3987e5', '#17a673', '#e0a11a', '#e05a5a', '#9085e9'],
+
+    // Inline responsive SVG line chart for points progression.
+    // series: [{ name, values:[y…] }] sharing `labels` (x axis).
+    // Single series → area-filled accent line; multi → direct end labels + legend.
+    lineChart(series, labels, { height = 180 } = {}) {
+        series = (series || []).filter(s => s.values && s.values.length);
+        const n = labels ? labels.length : 0;
+        if (!series.length || n < 2) return '<p class="muted small" style="padding:1rem 0">Not enough completed races to chart yet — needs at least two rounds.</p>';
+
+        const W = 560, H = height, padL = 30, padR = 96, padT = 14, padB = 26;
+        const maxY = Math.max(1, ...series.flatMap(s => s.values));
+        const yStep = maxY <= 5 ? 1 : Math.ceil(maxY / 4);
+        const X = i => padL + i * (W - padL - padR) / (n - 1);
+        const Y = v => H - padB - (v / maxY) * (H - padT - padB);
+        const colors = this.CHART_COLORS;
+
+        // horizontal gridlines + y labels
+        let grid = '';
+        for (let v = 0; v <= maxY; v += yStep) {
+            const y = Y(v);
+            grid += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}" stroke="var(--panel-border)" stroke-width="1"/>`;
+            grid += `<text x="${padL - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--text-faint)">${v}</text>`;
+        }
+        // x labels (first, middle, last to avoid clutter)
+        const xIdx = n <= 6 ? labels.map((_, i) => i) : [0, Math.floor((n - 1) / 2), n - 1];
+        const xLabels = xIdx.map(i => `<text x="${X(i).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="var(--text-faint)">${Util.esc(labels[i])}</text>`).join('');
+
+        const paths = series.map((s, si) => {
+            const color = colors[si % colors.length];
+            const pts = s.values.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
+            const last = s.values.length - 1;
+            const area = series.length === 1
+                ? `<polygon points="${X(0).toFixed(1)},${Y(0).toFixed(1)} ${pts} ${X(last).toFixed(1)},${Y(0).toFixed(1)}" fill="${color}" opacity="0.12"/>` : '';
+            const markers = s.values.map((v, i) =>
+                `<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="7" fill="transparent"><title>${Util.esc(s.name)} — ${Util.esc(labels[i])}: ${v} pts</title></circle>
+                 <circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="3" fill="${color}" stroke="var(--bg-1)" stroke-width="1.5"/>`).join('');
+            const endLabel = `<text x="${(X(last) + 8).toFixed(1)}" y="${(Y(s.values[last]) + 3).toFixed(1)}" font-size="11" font-weight="700" fill="${color}">${Util.esc(s.name)}</text>`;
+            return `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>${area}${markers}${endLabel}`;
+        }).join('');
+
+        return `<div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Points progression chart" style="min-width:340px;display:block">
+            ${grid}${xLabels}
+            <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="var(--hairline)" stroke-width="1"/>
+            ${paths}
+        </svg></div>`;
+    },
+
     winnerOf(race, world) {
         if (race.status !== 'completed' || !race.results?.length) return null;
         const w = race.results.find(r => Number(r.position) === 1 && !r.dnf);
@@ -553,6 +602,9 @@ const Views = {
         const selSeries = world.seriesById[sel];
         const selSeason = seasonId ? world.seasonsById[seasonId] : null;
         const scopeLabel = selSeason ? ` — ${Util.esc(selSeason.name)}` : selSeries ? ` — ${Util.esc(selSeries.name)}` : sel === '__career__' ? ' — Career' : '';
+        // Top-5 points progression chart — only meaningful within one series/season.
+        const topIds = sel === '__career__' ? [] : drivers.slice(0, 5).map(d => d.driverId);
+        const prog = topIds.length ? Stats.pointsProgression(world.races, world, filter, topIds) : { labels: [], series: [] };
 
         el.innerHTML = `
         <div class="view-head">
@@ -569,6 +621,10 @@ const Views = {
             </select>` : ''}
         </div>
         ${selSeason && selSeason.status === 'completed' && selSeason.championDriverId ? `<div class="warn-banner" style="background:rgba(255,212,77,.1);border-color:rgba(255,212,77,.35);color:var(--gold)">🏆 Champion: <strong>${Util.esc(world.driversById[selSeason.championDriverId]?.name || 'Champion')}</strong>${selSeason.championTeamId ? ` · Constructors: <strong>${Util.esc(world.teamsById[selSeason.championTeamId]?.name || '')}</strong>` : ''}</div>` : ''}
+        ${prog.labels.length >= 2 ? `<section class="panel" style="margin-bottom:1.1rem">
+            <div class="panel-head"><h2>📈 Title Fight — Points Progression</h2><span class="chip chip-dim">Top ${prog.series.length}</span></div>
+            ${C.lineChart(prog.series.map(s => ({ ...s, labels: prog.labels })), prog.labels, { height: 200 })}
+        </section>` : ''}
 
         <div class="grid-2">
             <section class="panel">
@@ -719,6 +775,8 @@ const Views = {
         const team = world.teamsById[driver.teamId];
         const career = Stats.driverTable(world.races, world).find(r => r.driverId === driverId);
         const history = Stats.driverHistory(driverId, world.races, world).slice(0, 10);
+        // Career points progression (oldest→newest across all completed races).
+        const prog = Stats.pointsProgression(world.races, world, {}, [driverId]);
 
         Modal.open(`
             ${Modal.header(`${driver.number ? '#' + driver.number + ' ' : ''}${driver.name}`, `${team?.name || 'Free agent'}${driver.country ? ' · ' + driver.country : ''}`)}
@@ -731,6 +789,8 @@ const Views = {
                 ${C.statChip(career?.points || 0, 'Points')}
                 ${C.statChip(career?.avgFinish ? career.avgFinish.toFixed(1) : '—', 'Avg finish')}
             </div>
+            ${prog.labels.length >= 2 ? `<h3 class="section-label">Career points progression</h3>
+                ${C.lineChart(prog.series.map(s => ({ ...s, labels: prog.labels })), prog.labels, { height: 170 })}` : ''}
             ${history.length ? `
                 <h3 class="section-label">Recent races</h3>
                 <table class="table table-tight">
