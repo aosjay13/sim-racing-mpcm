@@ -8,7 +8,16 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=2.0.0">
+    <link rel="stylesheet" href="css/style.css?v=3.0.0">
+    <!-- Apply saved theme before paint to avoid a flash -->
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem('srmpc_theme');
+                if (t) document.documentElement.setAttribute('data-theme', t);
+            } catch (e) {}
+        })();
+    </script>
 
     <!-- Firebase (compat SDK) -->
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
@@ -104,6 +113,7 @@
                 <div class="header-user">
                     <span id="header-username" class="header-username"></span>
                     <span id="role-badge" class="role-badge"></span>
+                    <button id="theme-toggle" class="icon-btn" title="Toggle light / dark" aria-label="Toggle theme">🌙</button>
                     <button id="gm-elevate-btn" class="btn btn-ghost btn-sm hidden" title="Unlock Game Master controls">GM</button>
                     <button id="signout-btn" class="btn btn-ghost btn-sm">Sign out</button>
                 </div>
@@ -120,11 +130,11 @@
     </div>
 
     <!-- App scripts -->
-    <script src="js/srmpc-core.js?v=2.0.0"></script>
-    <script src="js/srmpc-data.js?v=2.0.0"></script>
-    <script src="js/srmpc-views.js?v=2.0.0"></script>
-    <script src="js/srmpc-career.js?v=2.0.0"></script>
-    <script src="js/srmpc-admin.js?v=2.0.0"></script>
-    <script src="js/srmpc-app.js?v=2.0.0"></script>
+    <script src="js/srmpc-core.js?v=3.0.0"></script>
+    <script src="js/srmpc-data.js?v=3.0.0"></script>
+    <script src="js/srmpc-views.js?v=3.0.0"></script>
+    <script src="js/srmpc-career.js?v=3.0.0"></script>
+    <script src="js/srmpc-admin.js?v=3.0.0"></script>
+    <script src="js/srmpc-app.js?v=3.0.0"></script>
 </body>
 </html>

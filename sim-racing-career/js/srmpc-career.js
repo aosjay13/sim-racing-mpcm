@@ -798,13 +798,24 @@ const Challenges = {
         const myClaims = claims.filter(c => c.uid === uid);
         const claimByChallenge = Object.fromEntries(myClaims.map(c => [c.challengeId, c]));
 
-        // Leaderboard: approved completions per player.
-        const counts = new Map();
+        // Leaderboard: challenge points earned per player from approved claims.
+        // Each challenge carries a numeric `points` value; older challenges
+        // without one count as 1 point so nobody loses past progress.
+        const pointsByChallenge = Object.fromEntries(challenges.map(c => [c.id, Number(c.points) || 1]));
+        const tally = new Map(); // name -> { points, done }
         claims.filter(c => c.status === 'approved').forEach(c => {
             const key = c.playerName || c.uid;
-            counts.set(key, (counts.get(key) || 0) + 1);
+            const row = tally.get(key) || { points: 0, done: 0 };
+            row.points += pointsByChallenge[c.challengeId] ?? 1;
+            row.done += 1;
+            tally.set(key, row);
         });
-        const leaderboard = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10);
+        const leaderboard = Array.from(tally.entries())
+            .sort((a, b) => b[1].points - a[1].points || b[1].done - a[1].done)
+            .slice(0, 10);
+        // This player's own challenge-point total (surfaced in workspaces too).
+        const myApproved = myClaims.filter(c => c.status === 'approved');
+        const myChallengePoints = myApproved.reduce((s, c) => s + (pointsByChallenge[c.challengeId] ?? 1), 0);
 
         el.innerHTML = `
         <div class="view-head">
@@ -846,11 +857,12 @@ const Challenges = {
 
             <div class="stack">
                 <section class="panel">
-                    <div class="panel-head"><h2>🏅 Completions</h2></div>
+                    <div class="panel-head"><h2>🏅 Challenge Points</h2>
+                        ${Auth.isPlayer() ? `<span class="chip chip-dim">You: ${myChallengePoints} pts</span>` : ''}</div>
                     ${leaderboard.length ? `<table class="table table-tight">
-                        <thead><tr><th>#</th><th>Player</th><th class="num">Done</th></tr></thead>
-                        <tbody>${leaderboard.map(([name, n], i) => `
-                            <tr><td class="rank">${i + 1}</td><td>${Util.esc(name)}</td><td class="num strong">${n}</td></tr>`).join('')}
+                        <thead><tr><th>#</th><th>Player</th><th class="num">Pts</th><th class="num">Done</th></tr></thead>
+                        <tbody>${leaderboard.map(([name, row], i) => `
+                            <tr><td class="rank">${i + 1}</td><td>${Util.esc(name)}</td><td class="num strong">${row.points}</td><td class="num muted">${row.done}</td></tr>`).join('')}
                         </tbody></table>`
                         : '<p class="muted">No completed challenges yet. Be the first!</p>'}
                 </section>

@@ -1,41 +1,26 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Public read collections accessible to guests and all users
     function isAuthenticated() {
       return request.auth != null;
     }
-    function isSelf(uid) {
-      return request.auth != null && request.auth.uid == uid;
-    }
 
-    // Public read: drivers, teams, races, standings (guests can browse)
-    match /drivers/{doc} { allow read: if true; allow write: if isAuthenticated(); }
-    match /teams/{doc} { allow read: if true; allow write: if isAuthenticated(); }
-    match /races/{doc} { allow read: if true; allow write: if isAuthenticated(); }
-    match /standings/{doc} { allow read: if true; allow write: if isAuthenticated(); }
-    match /games/{doc} { allow read: if true; allow write: if isAuthenticated(); }
-    match /cars/{doc} { allow read: if true; allow write: if isAuthenticated(); }
-    match /sponsorships/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
-    match /raceSignups/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
+    // ----- Public-read league data (guests can browse; members write) -----
+    match /games/{doc}    { allow read: if true; allow write: if isAuthenticated(); }
+    match /series/{doc}   { allow read: if true; allow write: if isAuthenticated(); }
+    match /seasons/{doc}  { allow read: if true; allow write: if isAuthenticated(); }
+    match /races/{doc}    { allow read: if true; allow write: if isAuthenticated(); }
+    match /teams/{doc}    { allow read: if true; allow write: if isAuthenticated(); }
+    match /drivers/{doc}  { allow read: if true; allow write: if isAuthenticated(); }
+    match /challenges/{doc} { allow read: if true; allow write: if isAuthenticated(); }
 
-    // Role entity collections — authenticated members only
-    match /crewChiefs/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
-    match /mechanics/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
-    match /agents/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
-    match /sponsorCompanies/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
-    match /series/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
-    match /tracks/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
+    // ----- Member-only data -----
+    match /users/{userId}        { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
+    match /roleProfiles/{doc}    { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
+    match /challengeClaims/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
+    match /raceSignups/{doc}     { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
 
-    // Per-user data — only the owning user or admin passcode users (uid:'local') may write
-    match /users/{userId} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
-    match /garage/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
-    match /walletTransactions/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
-
-    // Admin-managed collections
-    match /admins/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
-    match /accountRequests/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
-    match /raceResultAudits/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
-    match /payoutAudits/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
+    // ----- App config (admin passcode hash, future settings) -----
+    match /config/{doc}          { allow read: if true; allow write: if isAuthenticated(); }
   }
 }

@@ -397,13 +397,33 @@ const Admin = {
             try {
                 const sid = Util.$('#sb-series').value;
                 const s = editable.find(x => x.id === sid);
+
+                // Idempotency: if this series already has a calendar, ask whether to
+                // replace it or append — never silently duplicate the whole season.
+                const allRaces = await DB.races({ force: true });
+                const existing = allRaces.filter(r => r.seriesId === sid);
+                let startRound = 1;
+                if (existing.length) {
+                    const choice = confirm(
+                        `${s.name} already has ${Util.plural(existing.length, 'race')}.\n\n` +
+                        `OK = APPEND the new rounds after the existing ones.\n` +
+                        `Cancel = REPLACE the whole schedule (deletes the current ${existing.length}).`
+                    );
+                    if (choice) {
+                        startRound = existing.reduce((m, r) => Math.max(m, Number(r.round) || 0), 0) + 1;
+                    } else {
+                        for (const r of existing) await DB.remove('races', r.id);
+                    }
+                }
+
                 const races = generateScheduleRaces({
                     series: s,
                     cadence: Util.$('#sb-cadence').value,
                     startDate: Util.$('#sb-start').value,
                     time: Util.$('#sb-time').value,
                     laps: Util.$('#sb-laps').value ? Number(Util.$('#sb-laps').value) : null,
-                    tracks: Util.$('#sb-tracks').value.split('\n')
+                    tracks: Util.$('#sb-tracks').value.split('\n'),
+                    startRound
                 });
                 await DB.batchCreate('races', races);
                 Modal.close();
@@ -434,6 +454,7 @@ const Admin = {
                         <td class="muted">${Util.esc(world.seriesById[r.seriesId]?.name || '—')}</td>
                         <td>${C.statusBadge(r.status)}</td>
                         <td class="row-actions">
+                            ${r.status !== 'completed' ? `<button class="btn btn-ghost btn-sm" onclick="Admin.toggleLive('${Util.attr(r.id)}')">${r.status === 'live' ? '⏹ End live' : '🔴 Go live'}</button>` : ''}
                             <button class="btn ${r.status === 'completed' ? 'btn-ghost' : 'btn-primary'} btn-sm" onclick="Admin.resultsForm('${Util.attr(r.id)}')">${r.status === 'completed' ? 'Edit results' : 'Enter results'}</button>
                             <button class="btn btn-ghost btn-sm" onclick="Admin.raceForm('${Util.attr(r.id)}')">Edit</button>
                             <button class="btn btn-danger btn-sm" onclick="Admin.deleteRace('${Util.attr(r.id)}')">Delete</button>
@@ -446,8 +467,8 @@ const Admin = {
 
     async raceForm(raceId = null, presetSeriesId = null) {
         if (!this.guard()) return;
-        const [race, series, games] = await Promise.all([
-            raceId ? DB.get('races', raceId) : null, DB.series(), DB.games()
+        const [race, series, games, allRaces] = await Promise.all([
+            raceId ? DB.get('races', raceId) : null, DB.series(), DB.games(), DB.races()
         ]);
         Modal.open(`
             ${Modal.header(race ? 'Edit Race' : 'Add Race')}
@@ -460,6 +481,7 @@ const Admin = {
                 <div class="form-row">
                     <label class="field"><span>Date *</span><input id="rf-date" class="input" type="date" required value="${Util.esc(race?.date || Util.todayISO())}"></label>
                     <label class="field"><span>Time</span><input id="rf-time" class="input" type="time" value="${Util.esc(race?.time || '20:00')}"></label>
+                    <label class="field"><span>Round</span><input id="rf-round" class="input" type="number" min="1" value="${race?.round || ''}" placeholder="Auto"></label>
                 </div>
                 <div class="form-row">
                     <label class="field"><span>Series</span>
@@ -484,12 +506,25 @@ const Admin = {
             try {
                 const seriesId = Util.$('#rf-series').value || null;
                 const linkedSeries = series.find(s => s.id === seriesId);
+
+                // Round: use the entered value, otherwise auto-assign the next round
+                // for this series (so manually added races sort correctly instead of
+                // falling to the bottom with no round).
+                let round = Util.$('#rf-round').value ? Number(Util.$('#rf-round').value) : null;
+                if (!round && seriesId) {
+                    const maxRound = allRaces
+                        .filter(r => r.seriesId === seriesId && r.id !== raceId)
+                        .reduce((m, r) => Math.max(m, Number(r.round) || 0), 0);
+                    round = maxRound + 1;
+                }
+
                 const data = {
                     name: Util.$('#rf-name').value.trim() || Util.$('#rf-track').value.trim(),
                     track: Util.$('#rf-track').value.trim(),
                     laps: Util.$('#rf-laps').value ? Number(Util.$('#rf-laps').value) : null,
                     date: Util.$('#rf-date').value,
                     time: Util.$('#rf-time').value,
+                    round: round || null,
                     seriesId,
                     gameId: Util.$('#rf-game').value || linkedSeries?.gameId || null
                 };
@@ -503,6 +538,18 @@ const Admin = {
                 if (App.current.view !== 'admin') App.go(App.current.view, App.current.param);
             } catch (err) { Util.notify(err.message, 'error'); }
         });
+    },
+
+    async toggleLive(raceId) {
+        if (!this.guard()) return;
+        try {
+            const race = await DB.get('races', raceId);
+            if (!race) throw new Error('Race not found.');
+            const next = race.status === 'live' ? 'scheduled' : 'live';
+            await DB.update('races', raceId, { status: next });
+            Util.notify(next === 'live' ? 'Race is now LIVE. 🔴' : 'Race set back to scheduled.');
+            this.refresh();
+        } catch (e) { Util.notify(e.message, 'error'); }
     },
 
     async deleteRace(raceId) {
@@ -953,7 +1000,8 @@ const Admin = {
                 </div>
                 <div class="form-row">
                     <label class="field"><span>Ends</span><input id="cf-end" class="input" type="date" value="${Util.esc(ch?.endDate || defEnd)}"></label>
-                    <label class="field"><span>Reward</span><input id="cf-reward" class="input" value="${Util.esc(ch?.reward || '')}" maxlength="80" placeholder="e.g. 3 challenge points"></label>
+                    <label class="field"><span>Points</span><input id="cf-points" class="input" type="number" min="0" value="${ch?.points ?? 3}"></label>
+                    <label class="field"><span>Reward text</span><input id="cf-reward" class="input" value="${Util.esc(ch?.reward || '')}" maxlength="80" placeholder="e.g. 3 challenge points"></label>
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
@@ -970,6 +1018,7 @@ const Admin = {
                     mode: Util.$('#cf-mode').value,
                     cadence: Util.$('#cf-cadence').value,
                     endDate: Util.$('#cf-end').value,
+                    points: Util.$('#cf-points').value ? Number(Util.$('#cf-points').value) : 0,
                     reward: Util.$('#cf-reward').value.trim()
                 };
                 if (!data.title || !data.description) throw new Error('Title and description are required.');

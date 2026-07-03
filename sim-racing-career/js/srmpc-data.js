@@ -37,12 +37,19 @@ const POINTS_SYSTEMS = {
 };
 
 function pointsForResult(result, series) {
-    if (!result || result.dnf) {
-        // DNFs still score bonuses in some leagues; keep it simple: zero.
-        return 0;
-    }
+    if (!result) return 0;
     const systemId = series?.pointsSystem || 'f1';
     const system = POINTS_SYSTEMS[systemId] || POINTS_SYSTEMS.f1;
+
+    // A DNF scores no finishing points, but pole / fastest-lap bonuses still
+    // count if the league's points system awards them (matches real series).
+    if (result.dnf) {
+        let bonus = 0;
+        if (result.fastestLap && system.fastestLapBonus) bonus += system.fastestLapBonus;
+        if (result.pole && system.poleBonus) bonus += system.poleBonus;
+        return bonus;
+    }
+
     const table = (systemId === 'custom' && Array.isArray(series?.customPoints) && series.customPoints.length)
         ? series.customPoints
         : system.points;
@@ -165,6 +172,9 @@ window.pointsForResult = pointsForResult;
    changing a points system retroactively fixes every standing.
    ============================================================ */
 const Stats = {
+    // How many drivers per team count toward constructor points.
+    CONSTRUCTOR_CAP: 2,
+
     completedRaces(races, { seriesId = null, gameId = null } = {}) {
         return races.filter(r =>
             r.status === 'completed' &&
@@ -223,8 +233,11 @@ const Stats = {
         return list;
     },
 
-    // Team standings: sum of member drivers' points within the filter.
+    // Team standings. Wins/podiums count the whole roster, but constructor
+    // POINTS only count each team's top-N scoring drivers (like real series,
+    // where a third car doesn't inflate the constructors' championship).
     teamTable(races, world, filter = {}) {
+        const scoringCap = Number(filter.constructorCap) || Stats.CONSTRUCTOR_CAP;
         const driverRows = this.driverTable(races, world, filter);
         const teams = new Map();
         for (const row of driverRows) {
@@ -235,12 +248,17 @@ const Stats = {
                 t = { teamId, team: world.teamsById[teamId], points: 0, wins: 0, podiums: 0, drivers: [] };
                 teams.set(teamId, t);
             }
-            t.points += row.points;
             t.wins += row.wins;
             t.podiums += row.podiums;
             t.drivers.push(row);
         }
         const list = Array.from(teams.values());
+        list.forEach(t => {
+            // driverTable already sorts by points desc, so keep the ordering when
+            // capping the scorers.
+            const scorers = t.drivers.slice().sort((a, b) => b.points - a.points).slice(0, scoringCap);
+            t.points = scorers.reduce((sum, d) => sum + d.points, 0);
+        });
         list.sort((a, b) => b.points - a.points || b.wins - a.wins);
         list.forEach((t, i) => { t.rank = i + 1; });
         return list;
@@ -296,6 +314,21 @@ const Stats = {
         };
     },
 
+    // A driver's recent form as category tags (oldest→newest of the last n),
+    // for the little pip strip in standings. Categories: win/podium/points/out/dnf.
+    driverForm(driverId, races, world, n = 5) {
+        const history = this.driverHistory(driverId, races, world).slice(0, n).reverse();
+        return history.map(h => {
+            const res = h.result;
+            if (res.dnf) return 'dnf';
+            const pos = Number(res.position) || 99;
+            if (pos === 1) return 'win';
+            if (pos <= 3) return 'podium';
+            if (h.points > 0) return 'points';
+            return 'out';
+        });
+    },
+
     // A single driver's full race-by-race history (newest first).
     driverHistory(driverId, races, world) {
         const rows = [];
@@ -319,7 +352,7 @@ window.Stats = Stats;
 /* ============================================================
    Schedule generator — a full series calendar in one click.
    ============================================================ */
-function generateScheduleRaces({ series, cadence, startDate, time, tracks, laps }) {
+function generateScheduleRaces({ series, cadence, startDate, time, tracks, laps, startRound = 1 }) {
     const start = Util.parseISODate(startDate);
     if (!start) throw new Error('Pick a valid start date.');
     const trackList = tracks.map(t => t.trim()).filter(Boolean);
@@ -328,14 +361,16 @@ function generateScheduleRaces({ series, cadence, startDate, time, tracks, laps 
     const stepDays = cadence === 'weekly' ? 7 : cadence === 'biweekly' ? 14 : 0; // 0 → monthly
     const races = [];
     const d = new Date(start);
+    const base = Number(startRound) || 1;
 
     trackList.forEach((track, i) => {
+        const round = base + i;
         const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         races.push({
             seriesId: series.id,
             gameId: series.gameId || null,
-            name: `${series.name} — Round ${i + 1}`,
-            round: i + 1,
+            name: `${series.name} — Round ${round}`,
+            round,
             track,
             date: iso,
             time: time || '',
@@ -355,22 +390,22 @@ window.generateScheduleRaces = generateScheduleRaces;
    {TRACK} and {GAME} get filled from live league data when possible.
    ============================================================ */
 const CHALLENGE_TEMPLATES = [
-    { title: 'Podium Push', description: 'Finish on the podium in any league race this period.', mode: 'solo', reward: 'Bragging rights + 3 challenge points' },
-    { title: 'Clean Sweep', description: 'Complete a race with zero incidents or penalties.', mode: 'solo', reward: '2 challenge points' },
-    { title: 'Qualifying Ace', description: 'Take pole position in any series this period.', mode: 'solo', reward: '3 challenge points' },
-    { title: 'Iron Driver', description: 'Enter and finish every scheduled race this period — no DNFs, no absences.', mode: 'solo', reward: '4 challenge points' },
-    { title: 'Charge Through the Field', description: 'Gain 5 or more positions from your starting spot in a single race.', mode: 'solo', reward: '3 challenge points' },
-    { title: 'Fastest Lap Hunter', description: 'Set the fastest lap in any league race this period.', mode: 'solo', reward: '2 challenge points' },
-    { title: 'New Frontier', description: 'Run a race in a game you have never raced in the league before.', mode: 'solo', reward: '2 challenge points' },
-    { title: 'Track Specialist', description: 'Post your personal best lap time at {TRACK} and share proof in the league chat.', mode: 'solo', reward: '2 challenge points' },
-    { title: 'Team Stack', description: 'Get both teammates into the top 5 of the same race.', mode: 'multiplayer', reward: '4 challenge points each' },
-    { title: 'Convoy', description: 'Complete a full multiplayer endurance session (45+ min) with at least 3 league members.', mode: 'multiplayer', reward: '3 challenge points each' },
-    { title: 'Mentor Session', description: 'Pair up: a veteran coaches a newer member for a practice session at {TRACK}.', mode: 'multiplayer', reward: '3 challenge points each' },
-    { title: 'Rivals Duel', description: 'Challenge another driver to a best-of-3 sprint duel and report the result.', mode: 'multiplayer', reward: 'Winner gets 3 points, loser 1' },
-    { title: 'Team Time Attack', description: 'Combine your team’s best lap times at {TRACK} — beat the rival team’s combined time.', mode: 'multiplayer', reward: '4 challenge points each' },
-    { title: 'Full Grid Night', description: 'Help fill a full public/league lobby — 8+ league members in one race.', mode: 'multiplayer', reward: '2 challenge points each' },
-    { title: 'Photo Finish', description: 'Finish within 1 second of another league driver (any position) — both get credit.', mode: 'multiplayer', reward: '2 challenge points each' },
-    { title: 'Reverse Grid Hero', description: 'Organize and complete a reverse-grid race with 4+ members.', mode: 'multiplayer', reward: '3 challenge points each' }
+    { title: 'Podium Push', description: 'Finish on the podium in any league race this period.', mode: 'solo', points: 3, reward: 'Bragging rights + 3 challenge points' },
+    { title: 'Clean Sweep', description: 'Complete a race with zero incidents or penalties.', mode: 'solo', points: 2, reward: '2 challenge points' },
+    { title: 'Qualifying Ace', description: 'Take pole position in any series this period.', mode: 'solo', points: 3, reward: '3 challenge points' },
+    { title: 'Iron Driver', description: 'Enter and finish every scheduled race this period — no DNFs, no absences.', mode: 'solo', points: 4, reward: '4 challenge points' },
+    { title: 'Charge Through the Field', description: 'Gain 5 or more positions from your starting spot in a single race.', mode: 'solo', points: 3, reward: '3 challenge points' },
+    { title: 'Fastest Lap Hunter', description: 'Set the fastest lap in any league race this period.', mode: 'solo', points: 2, reward: '2 challenge points' },
+    { title: 'New Frontier', description: 'Run a race in a game you have never raced in the league before.', mode: 'solo', points: 2, reward: '2 challenge points' },
+    { title: 'Track Specialist', description: 'Post your personal best lap time at {TRACK} and share proof in the league chat.', mode: 'solo', points: 2, reward: '2 challenge points' },
+    { title: 'Team Stack', description: 'Get both teammates into the top 5 of the same race.', mode: 'multiplayer', points: 4, reward: '4 challenge points each' },
+    { title: 'Convoy', description: 'Complete a full multiplayer endurance session (45+ min) with at least 3 league members.', mode: 'multiplayer', points: 3, reward: '3 challenge points each' },
+    { title: 'Mentor Session', description: 'Pair up: a veteran coaches a newer member for a practice session at {TRACK}.', mode: 'multiplayer', points: 3, reward: '3 challenge points each' },
+    { title: 'Rivals Duel', description: 'Challenge another driver to a best-of-3 sprint duel and report the result.', mode: 'multiplayer', points: 3, reward: 'Winner gets 3 points, loser 1' },
+    { title: 'Team Time Attack', description: 'Combine your team’s best lap times at {TRACK} — beat the rival team’s combined time.', mode: 'multiplayer', points: 4, reward: '4 challenge points each' },
+    { title: 'Full Grid Night', description: 'Help fill a full public/league lobby — 8+ league members in one race.', mode: 'multiplayer', points: 2, reward: '2 challenge points each' },
+    { title: 'Photo Finish', description: 'Finish within 1 second of another league driver (any position) — both get credit.', mode: 'multiplayer', points: 2, reward: '2 challenge points each' },
+    { title: 'Reverse Grid Hero', description: 'Organize and complete a reverse-grid race with 4+ members.', mode: 'multiplayer', points: 3, reward: '3 challenge points each' }
 ];
 
 function generateChallenges({ cadence, count, tracks = [], games = [] }) {
@@ -397,6 +432,7 @@ function generateChallenges({ cadence, count, tracks = [], games = [] }) {
             description: t.description.replaceAll('{TRACK}', track).replaceAll('{GAME}', game),
             mode: t.mode,
             cadence,
+            points: t.points || 0,
             reward: t.reward,
             startDate: iso(start),
             endDate: iso(end),

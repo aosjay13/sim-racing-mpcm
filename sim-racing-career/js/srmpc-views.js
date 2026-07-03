@@ -81,6 +81,15 @@ const C = {
         return `<div class="stat-chip"><span class="stat-value">${value}</span><span class="stat-label">${Util.esc(label)}</span></div>`;
     },
 
+    // Recent-form pip strip. `form` is an array of category strings
+    // (win/podium/points/out/dnf) oldest→newest, from Stats.driverForm.
+    formPips(form) {
+        if (!form || !form.length) return '<span class="muted small">—</span>';
+        const title = { win: 'Win', podium: 'Podium', points: 'Points finish', out: 'Out of points', dnf: 'DNF' };
+        return `<span class="form-pips">${form.map(c =>
+            `<span class="pip pip-${c}" title="${title[c] || ''}"></span>`).join('')}</span>`;
+    },
+
     winnerOf(race, world) {
         if (race.status !== 'completed' || !race.results?.length) return null;
         const w = race.results.find(r => Number(r.position) === 1 && !r.dnf);
@@ -527,7 +536,7 @@ const Views = {
             <section class="panel">
                 <div class="panel-head"><h2>🏆 Drivers${selSeries ? ` — ${Util.esc(selSeries.name)}` : sel === '__career__' ? ' — Career' : ''}</h2></div>
                 ${drivers.length ? `<table class="table">
-                    <thead><tr><th>#</th><th>Driver</th><th>Team</th><th class="num">Pts</th><th class="num">W</th><th class="num">Pod</th><th class="num">Poles</th><th class="num">DNF</th></tr></thead>
+                    <thead><tr><th>#</th><th>Driver</th><th>Team</th><th class="num">Pts</th><th class="num">W</th><th class="num">Pod</th><th class="num">DNF</th><th>Form</th></tr></thead>
                     <tbody>${drivers.map(row => `
                         <tr onclick="Views.showDriver('${Util.attr(row.driverId)}')">
                             <td class="rank">${row.rank <= 3 ? ['🥇', '🥈', '🥉'][row.rank - 1] : row.rank}</td>
@@ -536,8 +545,8 @@ const Views = {
                             <td class="num strong">${row.points}</td>
                             <td class="num">${row.wins}</td>
                             <td class="num">${row.podiums}</td>
-                            <td class="num">${row.poles}</td>
                             <td class="num">${row.dnfs}</td>
+                            <td>${C.formPips(Stats.driverForm(row.driverId, world.races, world))}</td>
                         </tr>`).join('')}
                     </tbody></table>`
                     : C.empty('🏆', 'No results yet', 'Standings appear the moment the first result is saved.')}
@@ -629,6 +638,12 @@ const Views = {
         el.innerHTML = `
         <div class="view-head">
             <div><h1>Statistics</h1><p class="muted">Career numbers across every game — like a real career mode.</p></div>
+        </div>
+        <div class="stat-strip">
+            ${C.statChip(Stats.completedRaces(world.races, filter).length, 'Races run')}
+            ${C.statChip(Stats.driverTable(world.races, world, filter).length, 'Drivers scored')}
+            ${C.statChip(Stats.trackTable(world.races, world, filter).length, 'Tracks raced')}
+            ${(() => { const r = Stats.records(world.races, world); return C.statChip(r.mostWins ? r.mostWins.wins : 0, 'Most wins'); })()}
         </div>
         <div class="filter-bar">
             <div class="tab-row">

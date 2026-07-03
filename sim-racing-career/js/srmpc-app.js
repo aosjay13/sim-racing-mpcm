@@ -97,14 +97,21 @@ const App = {
             Util.notify('Signed out. See you on the grid!');
         });
 
-        document.getElementById('gm-elevate-btn').addEventListener('click', async () => {
-            const passcode = prompt('Enter the Game Master passcode:');
-            if (!passcode) return;
-            try {
-                await Auth.elevateToAdmin(passcode);
-                Util.notify('Game Master unlocked. ⚙');
-                this.go('admin');
-            } catch (e) { Util.notify(e.message, 'error'); }
+        document.getElementById('gm-elevate-btn').addEventListener('click', () => this.showGmModal());
+
+        // Theme toggle (light / dark)
+        const themeBtn = document.getElementById('theme-toggle');
+        const applyThemeIcon = () => {
+            const dark = document.documentElement.getAttribute('data-theme') !== 'light';
+            themeBtn.textContent = dark ? '🌙' : '☀️';
+        };
+        applyThemeIcon();
+        themeBtn.addEventListener('click', () => {
+            const dark = document.documentElement.getAttribute('data-theme') !== 'light';
+            const next = dark ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', next);
+            try { localStorage.setItem('srmpc_theme', next); } catch (e) { /* */ }
+            applyThemeIcon();
         });
 
         // Mobile nav toggle
@@ -218,6 +225,40 @@ const App = {
                 btn.textContent = 'Unlock Game Master';
             }
         });
+    },
+
+    /* ---------------- Game Master elevation ---------------- */
+    showGmModal() {
+        Modal.open(`
+            ${Modal.header('⚙ Unlock Game Master', 'Enter the passcode to run the league on top of your player account.')}
+            <form id="gm-form" class="form-grid">
+                <label class="field"><span>Game Master passcode</span>
+                    <input id="gm-pass" class="input" type="password" autocomplete="off" placeholder="Passcode" required autofocus></label>
+                <p id="gm-error" class="form-error"></p>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Unlock</button>
+                </div>
+            </form>
+        `);
+        const form = document.getElementById('gm-form');
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = form.querySelector('button[type=submit]');
+            const passcode = document.getElementById('gm-pass').value;
+            if (!passcode) return;
+            btn.disabled = true; btn.textContent = 'Unlocking…';
+            try {
+                await Auth.elevateToAdmin(passcode);
+                Modal.close();
+                Util.notify('Game Master unlocked. ⚙');
+                this.go('admin');
+            } catch (err) {
+                document.getElementById('gm-error').textContent = err.message || 'Incorrect passcode.';
+                btn.disabled = false; btn.textContent = 'Unlock';
+            }
+        });
+        setTimeout(() => document.getElementById('gm-pass')?.focus(), 50);
     },
 
     _gateError(msg) {
