@@ -134,6 +134,7 @@ const DB = {
     /* --- convenience loaders used all over the UI --- */
     games(opts) { return this.list('games', opts); },
     series(opts) { return this.list('series', opts); },
+    seasons(opts) { return this.list('seasons', opts); },
     races(opts) { return this.list('races', opts); },
     teams(opts) { return this.list('teams', opts); },
     drivers(opts) { return this.list('drivers', opts); },
@@ -145,14 +146,15 @@ const DB = {
 
     // Everything most views need, in one parallel load.
     async loadWorld(force = false) {
-        const [games, series, races, teams, drivers] = await Promise.all([
+        const [games, series, races, teams, drivers, seasons] = await Promise.all([
             this.games({ force }), this.series({ force }), this.races({ force }),
-            this.teams({ force }), this.drivers({ force })
+            this.teams({ force }), this.drivers({ force }), this.seasons({ force }).catch(() => [])
         ]);
         return {
-            games, series, races, teams, drivers,
+            games, series, races, teams, drivers, seasons,
             gamesById: Object.fromEntries(games.map(g => [g.id, g])),
             seriesById: Object.fromEntries(series.map(s => [s.id, s])),
+            seasonsById: Object.fromEntries(seasons.map(s => [s.id, s])),
             teamsById: Object.fromEntries(teams.map(t => [t.id, t])),
             driversById: Object.fromEntries(drivers.map(d => [d.id, d]))
         };
@@ -175,12 +177,13 @@ const Stats = {
     // How many drivers per team count toward constructor points.
     CONSTRUCTOR_CAP: 2,
 
-    completedRaces(races, { seriesId = null, gameId = null } = {}) {
+    completedRaces(races, { seriesId = null, gameId = null, seasonId = null } = {}) {
         return races.filter(r =>
             r.status === 'completed' &&
             Array.isArray(r.results) && r.results.length &&
             (!seriesId || r.seriesId === seriesId) &&
-            (!gameId || r.gameId === gameId)
+            (!gameId || r.gameId === gameId) &&
+            (!seasonId || r.seasonId === seasonId)
         );
     },
 
@@ -345,6 +348,26 @@ const Stats = {
         }
         rows.sort((a, b) => (b.race.date || '').localeCompare(a.race.date || ''));
         return rows;
+    },
+
+    // Freeze a season's final standings + champions. Pure — recomputed from
+    // results, returns the snapshot to store on the season doc.
+    crownSeason(races, world, seasonId) {
+        const filter = { seasonId };
+        const drivers = this.driverTable(races, world, filter);
+        const teams = this.teamTable(races, world, filter);
+        return {
+            championDriverId: drivers[0]?.driverId || null,
+            championTeamId: teams[0]?.teamId || null,
+            standingsArchive: drivers.map(d => ({
+                driverId: d.driverId, name: d.driver?.name || '', rank: d.rank,
+                points: d.points, wins: d.wins, podiums: d.podiums
+            })),
+            teamArchive: teams.map(t => ({
+                teamId: t.teamId, name: t.team?.name || '', rank: t.rank,
+                points: t.points, wins: t.wins
+            }))
+        };
     }
 };
 window.Stats = Stats;
@@ -352,7 +375,7 @@ window.Stats = Stats;
 /* ============================================================
    Schedule generator — a full series calendar in one click.
    ============================================================ */
-function generateScheduleRaces({ series, cadence, startDate, time, tracks, laps, startRound = 1 }) {
+function generateScheduleRaces({ series, cadence, startDate, time, tracks, laps, startRound = 1, seasonId = null }) {
     const start = Util.parseISODate(startDate);
     if (!start) throw new Error('Pick a valid start date.');
     const trackList = tracks.map(t => t.trim()).filter(Boolean);
@@ -368,6 +391,7 @@ function generateScheduleRaces({ series, cadence, startDate, time, tracks, laps,
         const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         races.push({
             seriesId: series.id,
+            seasonId: seasonId || null,
             gameId: series.gameId || null,
             name: `${series.name} — Round ${round}`,
             round,

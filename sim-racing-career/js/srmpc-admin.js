@@ -223,12 +223,142 @@ const Admin = {
                             <button class="btn btn-ghost btn-sm" onclick="App.go('series-detail','${Util.attr(s.id)}')">View</button>
                             <button class="btn btn-ghost btn-sm" onclick="Admin.seriesForm('${Util.attr(s.id)}')">Edit</button>
                             <button class="btn btn-ghost btn-sm" onclick="Admin.scheduleBuilder('${Util.attr(s.id)}')">Schedule</button>
+                            <button class="btn btn-ghost btn-sm" onclick="Admin.seasonsModal('${Util.attr(s.id)}')">Seasons</button>
                             <button class="btn btn-danger btn-sm" onclick="Admin.deleteSeries('${Util.attr(s.id)}')">Delete</button>
                         </td>
                     </tr>`).join('')}</tbody></table>`
             : C.empty('🏆', 'No series yet', 'A series is a championship: pick a game, a points system, upload a logo, then build the schedule.',
                 `<button class="btn btn-primary" onclick="Admin.seriesForm()">Create your first series</button>`)}
         </section>`;
+    },
+
+    /* ---------------- Seasons ---------------- */
+    async seasonsModal(seriesId) {
+        if (!this.guard()) return;
+        const [series, seasons, world] = await Promise.all([
+            DB.get('series', seriesId),
+            DB.seasons({ force: true }),
+            DB.loadWorld(true)
+        ]);
+        if (!series) { Util.notify('Series not found.', 'error'); return; }
+        const mine = seasons.filter(s => s.seriesId === seriesId)
+            .sort((a, b) => (b.year || 0) - (a.year || 0) || (b.startDate || '').localeCompare(a.startDate || ''));
+
+        const rows = mine.map(se => {
+            const raceCount = world.races.filter(r => r.seasonId === se.id).length;
+            const champ = se.championDriverId ? (world.driversById[se.championDriverId]?.name || '—') : null;
+            return `<div class="race-row">
+                <div class="race-row-main">
+                    <span class="race-title">${Util.esc(se.name)} ${C.statusBadge(se.status || 'active')}</span>
+                    <span class="race-sub">${Util.plural(raceCount, 'race')}${champ ? ` · 🏆 ${Util.esc(champ)}` : ''}</span>
+                </div>
+                <div class="row-actions">
+                    ${se.status === 'completed'
+                        ? `<button class="btn btn-ghost btn-sm" onclick="Admin.reopenSeason('${Util.attr(se.id)}','${Util.attr(seriesId)}')">Reopen</button>`
+                        : `<button class="btn btn-primary btn-sm" onclick="Admin.closeSeason('${Util.attr(se.id)}','${Util.attr(seriesId)}')">Close &amp; crown</button>`}
+                    <button class="btn btn-ghost btn-sm" onclick="Admin.seasonForm('${Util.attr(seriesId)}','${Util.attr(se.id)}')">Edit</button>
+                    <button class="btn btn-danger btn-sm" onclick="Admin.deleteSeason('${Util.attr(se.id)}','${Util.attr(seriesId)}')">Delete</button>
+                </div>
+            </div>`;
+        }).join('');
+
+        Modal.open(`
+            ${Modal.header(`📆 Seasons — ${Util.esc(series.name)}`, 'Each season is a dated edition with its own calendar and champion.')}
+            ${mine.length ? `<div class="stack" style="gap:.2rem">${rows}</div>` : C.empty('📆', 'No seasons yet', 'Create a season, then build its schedule to assign races to it.')}
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="Modal.close()">Close</button>
+                <button type="button" class="btn btn-primary" onclick="Admin.seasonForm('${Util.attr(seriesId)}')">＋ New Season</button>
+            </div>
+        `, { wide: true });
+    },
+
+    async seasonForm(seriesId, seasonId = null) {
+        if (!this.guard()) return;
+        const [series, season] = await Promise.all([
+            DB.get('series', seriesId),
+            seasonId ? DB.get('seasons', seasonId) : null
+        ]);
+        const yr = season?.year || new Date().getFullYear();
+        Modal.open(`
+            ${Modal.header(season ? 'Edit Season' : 'New Season')}
+            <form id="season-form" class="form-grid">
+                <label class="field"><span>Season name *</span><input id="se-name" class="input" required value="${Util.esc(season?.name || `${series?.name || 'Season'} ${yr}`)}" maxlength="60"></label>
+                <div class="form-row">
+                    <label class="field"><span>Year</span><input id="se-year" class="input" type="number" value="${yr}"></label>
+                    <label class="field"><span>Status</span>
+                        <select id="se-status" class="input">
+                            <option value="upcoming" ${season?.status === 'upcoming' ? 'selected' : ''}>Upcoming</option>
+                            <option value="active" ${(season?.status || 'active') === 'active' ? 'selected' : ''}>Active</option>
+                            <option value="completed" ${season?.status === 'completed' ? 'selected' : ''}>Completed</option>
+                        </select></label>
+                </div>
+                <div class="form-row">
+                    <label class="field"><span>Start date</span><input id="se-start" class="input" type="date" value="${Util.esc(season?.startDate || '')}"></label>
+                    <label class="field"><span>End date</span><input id="se-end" class="input" type="date" value="${Util.esc(season?.endDate || '')}"></label>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" onclick="Admin.seasonsModal('${Util.attr(seriesId)}')">Back</button>
+                    <button type="submit" class="btn btn-primary">${season ? 'Save' : 'Create Season'}</button>
+                </div>
+            </form>
+        `);
+        Util.$('#season-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            try {
+                const data = {
+                    seriesId,
+                    gameId: series?.gameId || null,
+                    name: Util.$('#se-name').value.trim(),
+                    year: Util.$('#se-year').value ? Number(Util.$('#se-year').value) : null,
+                    status: Util.$('#se-status').value,
+                    startDate: Util.$('#se-start').value || null,
+                    endDate: Util.$('#se-end').value || null
+                };
+                if (!data.name) throw new Error('Season name is required.');
+                if (season) await DB.update('seasons', season.id, data);
+                else await DB.create('seasons', { ...data, ownerUid: Auth.uid(), championDriverId: null, championTeamId: null });
+                Util.notify(season ? 'Season saved.' : 'Season created. 📆');
+                this.seasonsModal(seriesId);
+            } catch (err) { Util.notify(err.message, 'error'); }
+        });
+    },
+
+    async closeSeason(seasonId, seriesId) {
+        if (!this.guard()) return;
+        try {
+            const world = await DB.loadWorld(true);
+            const snapshot = Stats.crownSeason(world.races, world, seasonId);
+            if (!snapshot.championDriverId) {
+                if (!confirm('No completed races are assigned to this season yet, so there is no champion to crown. Close it anyway?')) return;
+            }
+            await DB.update('seasons', seasonId, { ...snapshot, status: 'completed' });
+            const champ = snapshot.championDriverId ? (world.driversById[snapshot.championDriverId]?.name || 'Champion') : null;
+            Util.notify(champ ? `Season closed — 🏆 ${champ} is your champion!` : 'Season closed.');
+            this.seasonsModal(seriesId);
+        } catch (e) { Util.notify(e.message, 'error'); }
+    },
+
+    async reopenSeason(seasonId, seriesId) {
+        if (!this.guard()) return;
+        try {
+            await DB.update('seasons', seasonId, { status: 'active', championDriverId: null, championTeamId: null, standingsArchive: [], teamArchive: [] });
+            Util.notify('Season reopened — standings are live again.');
+            this.seasonsModal(seriesId);
+        } catch (e) { Util.notify(e.message, 'error'); }
+    },
+
+    async deleteSeason(seasonId, seriesId) {
+        if (!this.guard()) return;
+        if (!confirm('Delete this season? Races assigned to it are kept but become unassigned.')) return;
+        try {
+            const races = await DB.races({ force: true });
+            for (const r of races.filter(r => r.seasonId === seasonId)) {
+                await DB.update('races', r.id, { seasonId: null });
+            }
+            await DB.remove('seasons', seasonId);
+            Util.notify('Season deleted.');
+            this.seasonsModal(seriesId);
+        } catch (e) { Util.notify(e.message, 'error'); }
     },
 
     async seriesForm(seriesId = null) {
@@ -344,20 +474,32 @@ const Admin = {
     /* ---------------- Schedule builder ---------------- */
     async scheduleBuilder(seriesId = null) {
         if (!this.guard()) return;
-        const series = await DB.series();
+        const [series, seasons] = await Promise.all([DB.series(), DB.seasons({ force: true })]);
         const editable = series.filter(s => (s.status || 'active') === 'active');
         if (!editable.length) {
             Util.notify('Create a series first — the builder generates its schedule.', 'info');
             this.seriesForm();
             return;
         }
+        const initialSid = seriesId && editable.find(s => s.id === seriesId) ? seriesId : editable[0].id;
+        const seasonOptions = (sid) => {
+            const list = seasons.filter(se => se.seriesId === sid && se.status !== 'completed')
+                .sort((a, b) => (b.year || 0) - (a.year || 0));
+            return `<option value="__new__">＋ New season for this series</option>
+                <option value="">— No season (unassigned) —</option>
+                ${list.map(se => `<option value="${Util.attr(se.id)}">${Util.esc(se.name)}</option>`).join('')}`;
+        };
         Modal.open(`
             ${Modal.header('📅 Schedule Builder', 'Type your tracks, pick a cadence — get a full season in one click')}
             <form id="sched-form" class="form-grid">
-                <label class="field"><span>Series *</span>
-                    <select id="sb-series" class="input">
-                        ${editable.map(s => `<option value="${Util.attr(s.id)}" ${seriesId === s.id ? 'selected' : ''}>${Util.esc(s.name)}</option>`).join('')}
-                    </select></label>
+                <div class="form-row">
+                    <label class="field"><span>Series *</span>
+                        <select id="sb-series" class="input">
+                            ${editable.map(s => `<option value="${Util.attr(s.id)}" ${initialSid === s.id ? 'selected' : ''}>${Util.esc(s.name)}</option>`).join('')}
+                        </select></label>
+                    <label class="field"><span>Season</span>
+                        <select id="sb-season" class="input">${seasonOptions(initialSid)}</select></label>
+                </div>
                 <div class="form-row">
                     <label class="field"><span>First race date *</span><input id="sb-start" class="input" type="date" required value="${Util.todayISO()}"></label>
                     <label class="field"><span>Race time</span><input id="sb-time" class="input" type="time" value="20:00"></label>
@@ -389,6 +531,11 @@ const Admin = {
         };
         ['sb-tracks', 'sb-start', 'sb-cadence'].forEach(id => Util.$('#' + id).addEventListener('input', preview));
 
+        // Keep the season dropdown in sync with the chosen series.
+        Util.$('#sb-series').addEventListener('change', (e) => {
+            Util.$('#sb-season').innerHTML = seasonOptions(e.target.value);
+        });
+
         Util.$('#sched-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const btn = e.target.querySelector('button[type=submit]');
@@ -398,16 +545,31 @@ const Admin = {
                 const sid = Util.$('#sb-series').value;
                 const s = editable.find(x => x.id === sid);
 
-                // Idempotency: if this series already has a calendar, ask whether to
-                // replace it or append — never silently duplicate the whole season.
+                // Resolve the season: create a new one, use an existing one, or none.
+                let seasonId = Util.$('#sb-season').value;
+                if (seasonId === '__new__') {
+                    const yr = Util.parseISODate(Util.$('#sb-start').value)?.getFullYear() || new Date().getFullYear();
+                    const name = (prompt('Name this season:', `${s.name} ${yr}`) || '').trim();
+                    if (!name) { btn.disabled = false; btn.textContent = 'Generate Schedule 🏁'; return; }
+                    seasonId = await DB.create('seasons', {
+                        seriesId: sid, gameId: s.gameId || null, name, year: yr,
+                        status: 'active', startDate: Util.$('#sb-start').value || null, endDate: null,
+                        ownerUid: Auth.uid(), championDriverId: null, championTeamId: null
+                    });
+                } else if (!seasonId) {
+                    seasonId = null;
+                }
+
+                // Idempotency: if this series+season already has a calendar, ask whether
+                // to append or replace — never silently duplicate the whole season.
                 const allRaces = await DB.races({ force: true });
-                const existing = allRaces.filter(r => r.seriesId === sid);
+                const existing = allRaces.filter(r => r.seriesId === sid && (r.seasonId || null) === seasonId);
                 let startRound = 1;
                 if (existing.length) {
                     const choice = confirm(
-                        `${s.name} already has ${Util.plural(existing.length, 'race')}.\n\n` +
+                        `${s.name} already has ${Util.plural(existing.length, 'race')} in this season.\n\n` +
                         `OK = APPEND the new rounds after the existing ones.\n` +
-                        `Cancel = REPLACE the whole schedule (deletes the current ${existing.length}).`
+                        `Cancel = REPLACE this season's schedule (deletes the current ${existing.length}).`
                     );
                     if (choice) {
                         startRound = existing.reduce((m, r) => Math.max(m, Number(r.round) || 0), 0) + 1;
@@ -418,6 +580,7 @@ const Admin = {
 
                 const races = generateScheduleRaces({
                     series: s,
+                    seasonId,
                     cadence: Util.$('#sb-cadence').value,
                     startDate: Util.$('#sb-start').value,
                     time: Util.$('#sb-time').value,
@@ -467,9 +630,14 @@ const Admin = {
 
     async raceForm(raceId = null, presetSeriesId = null) {
         if (!this.guard()) return;
-        const [race, series, games, allRaces] = await Promise.all([
-            raceId ? DB.get('races', raceId) : null, DB.series(), DB.games(), DB.races()
+        const [race, series, games, allRaces, seasons] = await Promise.all([
+            raceId ? DB.get('races', raceId) : null, DB.series(), DB.games(), DB.races(), DB.seasons()
         ]);
+        const seasonOptionsFor = (sid, selId) => {
+            const list = seasons.filter(se => se.seriesId === sid);
+            return `<option value="">— No season —</option>${list.map(se =>
+                `<option value="${Util.attr(se.id)}" ${selId === se.id ? 'selected' : ''}>${Util.esc(se.name)}</option>`).join('')}`;
+        };
         Modal.open(`
             ${Modal.header(race ? 'Edit Race' : 'Add Race')}
             <form id="race-form" class="form-grid">
@@ -494,6 +662,8 @@ const Admin = {
                             <option value="">—</option>
                             ${games.map(g => `<option value="${Util.attr(g.id)}" ${race?.gameId === g.id ? 'selected' : ''}>${Util.esc(g.name)}</option>`).join('')}
                         </select></label>
+                    <label class="field"><span>Season</span>
+                        <select id="rf-season" class="input">${seasonOptionsFor(race?.seriesId || presetSeriesId || '', race?.seasonId)}</select></label>
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
@@ -501,6 +671,10 @@ const Admin = {
                 </div>
             </form>
         `);
+        // Repopulate seasons when the series changes.
+        Util.$('#rf-series').addEventListener('change', (e) => {
+            Util.$('#rf-season').innerHTML = seasonOptionsFor(e.target.value, null);
+        });
         Util.$('#race-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             try {
@@ -526,6 +700,7 @@ const Admin = {
                     time: Util.$('#rf-time').value,
                     round: round || null,
                     seriesId,
+                    seasonId: Util.$('#rf-season').value || null,
                     gameId: Util.$('#rf-game').value || linkedSeries?.gameId || null
                 };
                 if (!data.track) throw new Error('Track is required.');

@@ -210,6 +210,27 @@ const Views = {
                     : C.empty('🎯', 'No active challenges', isAdmin ? 'Generate a weekly or monthly challenge set from the Admin Console.' : 'New solo and multiplayer challenges drop weekly/monthly.',
                         isAdmin ? `<button class="btn btn-primary" onclick="App.go('admin','challenges')">Generate Challenges</button>` : '')}
             </section>
+
+            ${(() => {
+                const champions = (world.seasons || [])
+                    .filter(se => se.status === 'completed' && se.championDriverId)
+                    .sort((a, b) => (b.year || 0) - (a.year || 0)).slice(0, 6);
+                if (!champions.length) return '';
+                return `<section class="panel">
+                    <div class="panel-head"><h2>🏆 Hall of Fame</h2><button class="btn btn-ghost btn-sm" onclick="App.go('standings')">Standings →</button></div>
+                    <div class="stack" style="gap:.2rem">${champions.map(se => {
+                        const d = world.driversById[se.championDriverId];
+                        const t = se.championTeamId ? world.teamsById[se.championTeamId] : null;
+                        return `<div class="race-row" ${d ? `onclick="Views.showDriver('${Util.attr(se.championDriverId)}')"` : ''}>
+                            <div class="race-row-date"><span class="race-day">${Util.esc(String(se.year || ''))}</span></div>
+                            <div class="race-row-main">
+                                <span class="race-title">🏆 ${Util.esc(d?.name || 'Champion')}</span>
+                                <span class="race-sub">${Util.esc(se.name)}${t ? ` · ${Util.esc(t.name)}` : ''}</span>
+                            </div>
+                        </div>`;
+                    }).join('')}</div>
+                </section>`;
+            })()}
         </div>`;
     },
 
@@ -504,6 +525,7 @@ const Views = {
 
     /* ---------------- Standings ---------------- */
     _standingsSeriesId: '',
+    _standingsSeasonId: '',
 
     async standings(el) {
         const world = await DB.loadWorld();
@@ -516,25 +538,41 @@ const Views = {
                 .sort((a, b) => b.n - a.n)[0]?.s.id || activeSeries[0].id;
         }
         const sel = this._standingsSeriesId;
-        const filter = sel === '__career__' ? {} : { seriesId: sel };
+        // Seasons available for the selected series.
+        const seriesSeasons = (world.seasons || []).filter(se => se.seriesId === sel)
+            .sort((a, b) => (b.year || 0) - (a.year || 0));
+        // Reset season pick if it no longer belongs to the selected series.
+        if (this._standingsSeasonId && !seriesSeasons.find(se => se.id === this._standingsSeasonId)) {
+            this._standingsSeasonId = '';
+        }
+        const seasonId = this._standingsSeasonId || null;
+
+        const filter = sel === '__career__' ? {} : { seriesId: sel, ...(seasonId ? { seasonId } : {}) };
         const drivers = Stats.driverTable(world.races, world, filter);
         const teams = Stats.teamTable(world.races, world, filter);
         const selSeries = world.seriesById[sel];
+        const selSeason = seasonId ? world.seasonsById[seasonId] : null;
+        const scopeLabel = selSeason ? ` — ${Util.esc(selSeason.name)}` : selSeries ? ` — ${Util.esc(selSeries.name)}` : sel === '__career__' ? ' — Career' : '';
 
         el.innerHTML = `
         <div class="view-head">
             <div><h1>Standings</h1><p class="muted">Computed live from race results — always accurate.</p></div>
         </div>
-        <div class="filter-bar">
-            <select id="standings-series" class="input">
-                ${activeSeries.map(s => `<option value="${Util.attr(s.id)}" ${sel === s.id ? 'selected' : ''}>${Util.esc(s.name)}${s.season ? ` (S${Util.esc(String(s.season))})` : ''}</option>`).join('')}
+        <div class="filter-bar btn-row">
+            <select id="standings-series" class="input" style="max-width:280px">
+                ${activeSeries.map(s => `<option value="${Util.attr(s.id)}" ${sel === s.id ? 'selected' : ''}>${Util.esc(s.name)}</option>`).join('')}
                 <option value="__career__" ${sel === '__career__' ? 'selected' : ''}>🌐 Career — all games combined</option>
             </select>
+            ${sel !== '__career__' && seriesSeasons.length ? `<select id="standings-season" class="input" style="max-width:220px">
+                <option value="">All seasons</option>
+                ${seriesSeasons.map(se => `<option value="${Util.attr(se.id)}" ${seasonId === se.id ? 'selected' : ''}>${Util.esc(se.name)}${se.status === 'completed' ? ' 🏆' : ''}</option>`).join('')}
+            </select>` : ''}
         </div>
+        ${selSeason && selSeason.status === 'completed' && selSeason.championDriverId ? `<div class="warn-banner" style="background:rgba(255,212,77,.1);border-color:rgba(255,212,77,.35);color:var(--gold)">🏆 Champion: <strong>${Util.esc(world.driversById[selSeason.championDriverId]?.name || 'Champion')}</strong>${selSeason.championTeamId ? ` · Constructors: <strong>${Util.esc(world.teamsById[selSeason.championTeamId]?.name || '')}</strong>` : ''}</div>` : ''}
 
         <div class="grid-2">
             <section class="panel">
-                <div class="panel-head"><h2>🏆 Drivers${selSeries ? ` — ${Util.esc(selSeries.name)}` : sel === '__career__' ? ' — Career' : ''}</h2></div>
+                <div class="panel-head"><h2>🏆 Drivers${scopeLabel}</h2></div>
                 ${drivers.length ? `<table class="table">
                     <thead><tr><th>#</th><th>Driver</th><th>Team</th><th class="num">Pts</th><th class="num">W</th><th class="num">Pod</th><th class="num">DNF</th><th>Form</th></tr></thead>
                     <tbody>${drivers.map(row => `
@@ -571,6 +609,11 @@ const Views = {
 
         Util.$('#standings-series', el)?.addEventListener('change', (e) => {
             this._standingsSeriesId = e.target.value;
+            this._standingsSeasonId = '';
+            this.standings(el);
+        });
+        Util.$('#standings-season', el)?.addEventListener('change', (e) => {
+            this._standingsSeasonId = e.target.value;
             this.standings(el);
         });
     },

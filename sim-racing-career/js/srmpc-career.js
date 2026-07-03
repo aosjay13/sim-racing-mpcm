@@ -521,65 +521,134 @@ const Career = {
             return;
         }
 
-        // Role-flavored context panel
-        let contextHtml = '';
+        // Player's challenge points (approved claims × each challenge's points).
+        let challengePoints = 0;
+        try {
+            const [challenges, claims] = await Promise.all([DB.challenges(), DB.claims()]);
+            const ptsById = Object.fromEntries(challenges.map(c => [c.id, Number(c.points) || 1]));
+            challengePoints = claims.filter(c => c.uid === Auth.uid() && c.status === 'approved')
+                .reduce((s, c) => s + (ptsById[c.challengeId] ?? 1), 0);
+        } catch (e) { /* challenges optional */ }
+
+        const driverRows = Stats.driverTable(world.races, world);
+        const rowFor = (id) => driverRows.find(r => r.driverId === id);
+        const kpi = (v, l) => C.statChip(v, l);
+        let kpis = '', contextHtml = '';
+
         if (roleId === 'crew-chief' || roleId === 'agent') {
             const clientIds = mine.clientDriverIds || [];
             const clients = clientIds.map(id => world.driversById[id]).filter(Boolean);
+            const rows = clients.map(d => rowFor(d.id)).filter(Boolean);
+            const totWins = rows.reduce((s, r) => s + r.wins, 0);
+            const totPod = rows.reduce((s, r) => s + r.podiums, 0);
+            const totPts = rows.reduce((s, r) => s + r.points, 0);
+            const bestRank = rows.length ? Math.min(...rows.map(r => r.rank)) : null;
             const label = roleId === 'agent' ? 'Clients' : 'My Drivers';
+            const marketValue = (r) => r ? Math.round(r.points + r.wins * 15 + r.podiums * 6 + r.poles * 3) : 0;
+
+            kpis = `${kpi(clients.length, label)}${kpi(totWins, 'Client wins')}${kpi(totPod, 'Client podiums')}${kpi(bestRank ? '#' + bestRank : '—', 'Best ranked')}`;
             contextHtml = `<section class="panel">
-                <div class="panel-head"><h2>${roleId === 'agent' ? '💼' : '📋'} ${label}</h2>
+                <div class="panel-head"><h2>${roleId === 'agent' ? '💼' : '📋'} ${label} — Form Board</h2>
                     <button class="btn btn-secondary btn-sm" onclick="Career.pickClients('${Util.attr(mine.id)}')">✎ Manage</button></div>
                 ${clients.length ? clients.map(d => {
-                    const career = Stats.driverTable(world.races, world).find(r => r.driverId === d.id);
+                    const r = rowFor(d.id);
+                    const form = Stats.driverForm(d.id, world.races, world);
                     return `<div class="race-row" onclick="Views.showDriver('${Util.attr(d.id)}')">
                         <div class="race-row-main">
-                            <span class="race-title">${Util.esc(d.name)}</span>
-                            <span class="race-sub">${career ? `${career.points} pts · ${career.wins} wins · avg ${career.avgFinish ? career.avgFinish.toFixed(1) : '—'}` : 'No results yet'}</span>
+                            <span class="race-title">${Util.esc(d.name)} ${r ? `<span class="chip chip-dim">#${r.rank}</span>` : ''}</span>
+                            <span class="race-sub">${r ? `${r.points} pts · ${r.wins}W · avg ${r.avgFinish ? r.avgFinish.toFixed(1) : '—'}${roleId === 'agent' ? ` · 💵 value ${marketValue(r)}` : ''}` : 'No results yet'}</span>
                         </div>
+                        <div class="race-row-side">${C.formPips(form)}</div>
                     </div>`;
-                }).join('') : C.empty('👥', `No ${label.toLowerCase()} yet`, `Add drivers to your book to track their performance here.`)}
+                }).join('') : C.empty('👥', `No ${label.toLowerCase()} yet`, `Add drivers to your book to track their form here.`)}
             </section>`;
+
+            if (roleId === 'agent') {
+                const openSeats = world.teams.filter(t => t.recruiting).map(t => ({ t, n: world.drivers.filter(d => d.teamId === t.id).length }));
+                contextHtml += `<section class="panel">
+                    <div class="panel-head"><h2>🪑 Open Seats</h2></div>
+                    ${openSeats.length ? openSeats.map(({ t, n }) => `<div class="race-row" onclick="Views.showTeam('${Util.attr(t.id)}')">
+                        ${C.logoBox(t)}<div class="race-row-main"><span class="race-title">${Util.esc(t.name)}</span><span class="race-sub">${Util.plural(n, 'driver')} signed · recruiting</span></div>
+                        <span class="badge badge-green">Hiring</span></div>`).join('')
+                        : C.empty('🪑', 'No open seats', 'No teams are recruiting right now — check back after the next round.')}
+                </section>`;
+            }
         } else if (roleId === 'mechanic') {
             const team = world.teamsById[mine.teamId];
             const roster = team ? world.drivers.filter(d => d.teamId === team.id) : [];
+            const rosterRows = roster.map(d => rowFor(d.id)).filter(Boolean);
+            const teamRank = team ? Stats.teamTable(world.races, world).find(t => t.teamId === team.id)?.rank : null;
+            const starts = rosterRows.reduce((s, r) => s + r.starts, 0);
+            const dnfs = rosterRows.reduce((s, r) => s + r.dnfs, 0);
+            const reliability = starts ? Math.round((1 - dnfs / starts) * 100) : null;
+
+            kpis = `${kpi(teamRank ? '#' + teamRank : '—', 'Constructor rank')}${kpi(roster.length, 'Cars')}${kpi(reliability != null ? reliability + '%' : '—', 'Reliability')}${kpi(dnfs, 'DNFs')}`;
             contextHtml = `<section class="panel">
                 <div class="panel-head"><h2>🔧 My Garage</h2>
                     <button class="btn btn-secondary btn-sm" onclick="Career.pickTeamForRole('${Util.attr(mine.id)}')">✎ Choose Team</button></div>
                 ${team ? `<div class="race-row" onclick="Views.showTeam('${Util.attr(team.id)}')">
                         ${C.logoBox(team)}
                         <div class="race-row-main"><span class="race-title">${Util.esc(team.name)}</span>
-                        <span class="race-sub">${Util.plural(roster.length, 'driver')} on the roster</span></div>
-                    </div>`
+                        <span class="race-sub">${Util.plural(roster.length, 'car')} · ${reliability != null ? reliability + '% finish rate' : 'no data yet'}</span></div>
+                    </div>
+                    ${rosterRows.map(r => `<div class="race-row" onclick="Views.showDriver('${Util.attr(r.driverId)}')">
+                        <div class="race-row-main"><span class="race-title">${Util.esc(r.driver.name)}</span>
+                        <span class="race-sub">${r.starts} starts · ${r.dnfs} DNF · ${r.starts ? Math.round((1 - r.dnfs / r.starts) * 100) : 0}% finish</span></div>
+                        <div class="progress" style="width:80px"><div class="progress-fill" style="width:${r.starts ? Math.round((1 - r.dnfs / r.starts) * 100) : 0}%"></div></div>
+                    </div>`).join('')}`
                     : C.empty('🔧', 'No team yet', 'Pick the team whose cars you keep alive.')}
             </section>`;
         } else if (roleId === 'sponsor') {
             const sponsoredTeam = world.teamsById[mine.sponsoredTeamId];
             const sponsoredDriver = world.driversById[mine.sponsoredDriverId];
+            const teamRow = sponsoredTeam ? Stats.teamTable(world.races, world).find(t => t.teamId === sponsoredTeam.id) : null;
+            const drvRow = sponsoredDriver ? rowFor(sponsoredDriver.id) : null;
+            const exposurePts = (teamRow?.points || 0) + (drvRow?.points || 0);
+            const exposureWins = (teamRow?.wins || 0) + (drvRow?.wins || 0);
+            const exposurePod = (teamRow?.podiums || 0) + (drvRow?.podiums || 0);
+
+            kpis = `${kpi(exposurePts, 'Exposure pts')}${kpi(exposureWins, 'Wins backed')}${kpi(exposurePod, 'Podiums backed')}${kpi(challengePoints, 'Challenge pts')}`;
             contextHtml = `<section class="panel">
-                <div class="panel-head"><h2>💰 My Portfolio</h2>
+                <div class="panel-head"><h2>💰 Portfolio ROI</h2>
                     <button class="btn btn-secondary btn-sm" onclick="Career.sponsorPortfolio('${Util.attr(mine.id)}')">✎ Manage</button></div>
                 ${sponsoredTeam || sponsoredDriver ? `
-                    ${sponsoredTeam ? `<div class="race-row" onclick="Views.showTeam('${Util.attr(sponsoredTeam.id)}')">${C.logoBox(sponsoredTeam)}<div class="race-row-main"><span class="race-title">${Util.esc(sponsoredTeam.name)}</span><span class="race-sub">Sponsored team</span></div></div>` : ''}
-                    ${sponsoredDriver ? `<div class="race-row" onclick="Views.showDriver('${Util.attr(sponsoredDriver.id)}')"><div class="race-row-main"><span class="race-title">${Util.esc(sponsoredDriver.name)}</span><span class="race-sub">Sponsored driver</span></div></div>` : ''}`
+                    ${sponsoredTeam ? `<div class="race-row" onclick="Views.showTeam('${Util.attr(sponsoredTeam.id)}')">${C.logoBox(sponsoredTeam)}<div class="race-row-main"><span class="race-title">${Util.esc(sponsoredTeam.name)}</span><span class="race-sub">${teamRow ? `#${teamRow.rank} · ${teamRow.points} pts · ${teamRow.wins} wins` : 'Sponsored team'}</span></div></div>` : ''}
+                    ${sponsoredDriver ? `<div class="race-row" onclick="Views.showDriver('${Util.attr(sponsoredDriver.id)}')"><div class="race-row-main"><span class="race-title">${Util.esc(sponsoredDriver.name)}</span><span class="race-sub">${drvRow ? `#${drvRow.rank} · ${drvRow.points} pts · ${drvRow.wins} wins` : 'Sponsored driver'}</span></div></div>` : ''}`
                     : C.empty('💰', 'Nothing sponsored yet', 'Put your brand on a team or driver and follow the ROI on race day.')}
             </section>`;
         } else if (roleId === 'series-owner') {
             const mySeries = world.series.filter(s => s.ownerUid === Auth.uid());
+            const seriesIds = new Set(mySeries.map(s => s.id));
+            const myRaces = world.races.filter(r => seriesIds.has(r.seriesId));
+            const needResults = myRaces.filter(r => r.status !== 'completed' && Util.isPast(r.date));
+            const mySeasons = (world.seasons || []).filter(se => seriesIds.has(se.seriesId));
+
+            kpis = `${kpi(mySeries.length, 'My series')}${kpi(myRaces.length, 'Races')}${kpi(mySeasons.length, 'Seasons')}${kpi(needResults.length, 'Need results')}`;
             contextHtml = `<section class="panel">
                 <div class="panel-head"><h2>🏆 My Series</h2>
                     <button class="btn btn-secondary btn-sm" onclick="Career.proposeSeries()">＋ Propose Series</button></div>
-                ${mySeries.length ? mySeries.map(s => `
-                    <div class="race-row" onclick="App.go('series-detail','${Util.attr(s.id)}')">
+                ${mySeries.length ? mySeries.map(s => {
+                    const sRaces = world.races.filter(r => r.seriesId === s.id);
+                    const pending = sRaces.filter(r => r.status !== 'completed' && Util.isPast(r.date)).length;
+                    return `<div class="race-row" onclick="App.go('series-detail','${Util.attr(s.id)}')">
                         ${C.logoBox(s)}
-                        <div class="race-row-main"><span class="race-title">${Util.esc(s.name)}</span><span class="race-sub">${Util.esc(world.gamesById[s.gameId]?.name || '')}</span></div>
+                        <div class="race-row-main"><span class="race-title">${Util.esc(s.name)}</span>
+                            <span class="race-sub">${Util.plural(sRaces.length, 'race')}${pending ? ` · ⚠ ${pending} awaiting results` : ' · schedule healthy'}</span></div>
                         ${C.statusBadge(s.status || 'active')}
-                    </div>`).join('')
+                    </div>`;
+                }).join('')
                     : C.empty('🏆', 'No series yet', 'Propose a championship — the Game Master approves and publishes it.')}
             </section>`;
         } else if (roleId === 'track-owner') {
             const trackStats = Stats.trackTable(world.races, world);
             const myTracks = (mine.tracks || []);
+            const hosted = myTracks.reduce((s, name) => {
+                const ts = trackStats.find(t => t.track.toLowerCase() === name.toLowerCase());
+                return s + (ts?.races || 0);
+            }, 0);
+            const kings = myTracks.filter(name => trackStats.find(t => t.track.toLowerCase() === name.toLowerCase())?.kingOfTrack).length;
+
+            kpis = `${kpi(myTracks.length, 'Venues')}${kpi(hosted, 'Races hosted')}${kpi(kings, 'Track kings')}${kpi(challengePoints, 'Challenge pts')}`;
             contextHtml = `<section class="panel">
                 <div class="panel-head"><h2>🛣️ My Venues</h2>
                     <button class="btn btn-secondary btn-sm" onclick="Career.addVenue('${Util.attr(mine.id)}')">＋ Register Venue</button></div>
@@ -587,7 +656,7 @@ const Career = {
                     const ts = trackStats.find(t => t.track.toLowerCase() === name.toLowerCase());
                     return `<div class="race-row">
                         <div class="race-row-main"><span class="race-title">${Util.esc(name)}</span>
-                        <span class="race-sub">${ts ? `${Util.plural(ts.races, 'league race')} hosted${ts.kingOfTrack ? ` · 👑 ${Util.esc(ts.kingOfTrack.name)}` : ''}` : 'No league races hosted yet'}</span></div>
+                        <span class="race-sub">${ts ? `${Util.plural(ts.races, 'league race')} · ${Util.plural(ts.uniqueWinners, 'winner')}${ts.kingOfTrack ? ` · 👑 ${Util.esc(ts.kingOfTrack.name)} (${ts.kingOfTrack.wins})` : ''}` : 'No league races hosted yet'}</span></div>
                     </div>`;
                 }).join('') : C.empty('🛣️', 'No venues registered', 'Register the tracks you host — league races there count toward your venue stats.')}
             </section>`;
@@ -600,13 +669,15 @@ const Career = {
             <div class="driver-hero-info">
                 <h2>${Util.esc(mine.name)}</h2>
                 ${mine.bio ? `<p class="muted">${Util.esc(mine.bio)}</p>` : ''}
+                <div class="chip-row"><span class="chip">${info.label}</span><span class="chip chip-dim">🎯 ${challengePoints} challenge pts</span></div>
             </div>
         </div>
+        ${kpis ? `<div class="stat-strip">${kpis}</div>` : ''}
         <div class="grid-2">
             ${contextHtml}
             <section class="panel">
                 <div class="panel-head"><h2>🎯 Active Challenges</h2><button class="btn btn-ghost btn-sm" onclick="App.go('challenges')">All →</button></div>
-                <p class="muted">Complete solo and multiplayer challenges to earn league recognition, whatever your role.</p>
+                <p class="muted">You've banked <strong>${challengePoints}</strong> challenge ${challengePoints === 1 ? 'point' : 'points'}. Complete solo & multiplayer challenges to climb the league leaderboard, whatever your role.</p>
                 <button class="btn btn-primary" onclick="App.go('challenges')">Browse challenges</button>
             </section>
         </div>`;
