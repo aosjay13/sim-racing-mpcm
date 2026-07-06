@@ -197,7 +197,12 @@ a:hover { text-decoration: underline; }
 .stack { display: flex; flex-direction: column; gap: 1.1rem; }
 .btn-row { display: flex; gap: .5rem; flex-wrap: wrap; }
 .btn-col { display: flex; flex-direction: column; gap: .5rem; }
-.row-actions { display: flex; gap: .35rem; justify-content: flex-end; flex-wrap: wrap; }
+.row-actions { display: flex; gap: .35rem; justify-content: flex-end; flex-wrap: wrap; align-items: center; }
+/* Inside a table, the cell must stay a real table-cell or vertical-align:middle
+   stops applying and the buttons drift out of line with the text columns. */
+td.row-actions { display: table-cell; text-align: right; white-space: nowrap; }
+td.row-actions .btn { vertical-align: middle; }
+td.row-actions .btn + .btn { margin-left: .35rem; }
 .cell-flex { display: flex; align-items: center; gap: .6rem; }
 
 /* ============================================================
@@ -546,7 +551,9 @@ select.input { cursor: pointer; }
 .cal-dow { text-align: center; font-size: .7rem; text-transform: uppercase; letter-spacing: .5px; color: var(--text-faint); padding: .3rem 0; }
 .cal-cell { background: var(--bg-2); border: 1px solid var(--panel-border); border-radius: 6px; min-height: 74px; padding: .3rem; font-size: .75rem; }
 .cal-cell.cal-empty { background: transparent; border: 0; }
-.cal-cell.today { border-color: var(--accent-2); box-shadow: inset 0 0 0 1px var(--accent-2); }
+.cal-cell.cal-today { border-color: var(--accent-2); box-shadow: inset 0 0 0 1px var(--accent-2); }
+.cal-cell.cal-today .cal-daynum { color: var(--accent-2); }
+.cal-cell.cal-has-race { background: var(--bg-3); }
 .cal-daynum { color: var(--text-faint); font-weight: 600; }
 .cal-race { background: var(--accent); color: #fff; border-radius: 4px; padding: .1rem .3rem; margin-top: .2rem; font-size: .68rem; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cal-more { color: var(--text-faint); font-size: .68rem; margin-top: .15rem; }

@@ -597,10 +597,28 @@ const Views = {
         const seasonId = this._standingsSeasonId || null;
 
         const filter = sel === '__career__' ? {} : { seriesId: sel, ...(seasonId ? { seasonId } : {}) };
-        const drivers = Stats.driverTable(world.races, world, filter);
-        const teams = Stats.teamTable(world.races, world, filter);
+        let drivers = Stats.driverTable(world.races, world, filter);
+        let teams = Stats.teamTable(world.races, world, filter);
         const selSeries = world.seriesById[sel];
         const selSeason = seasonId ? world.seasonsById[seasonId] : null;
+        // A completed season keeps its crowned standings forever: if its races
+        // were later pruned (live recompute comes back empty), fall back to the
+        // archive snapshot frozen at "Close & crown".
+        if (selSeason?.status === 'completed') {
+            if (!drivers.length && Array.isArray(selSeason.standingsArchive) && selSeason.standingsArchive.length) {
+                drivers = selSeason.standingsArchive.map(a => ({
+                    driverId: a.driverId, rank: a.rank, points: a.points, wins: a.wins,
+                    podiums: a.podiums, dnfs: a.dnfs ?? 0,
+                    driver: world.driversById[a.driverId] || { name: a.name || 'Driver', teamId: null }
+                }));
+            }
+            if (!teams.length && Array.isArray(selSeason.teamArchive) && selSeason.teamArchive.length) {
+                teams = selSeason.teamArchive.map(a => ({
+                    teamId: a.teamId, rank: a.rank, points: a.points, wins: a.wins, podiums: a.podiums ?? 0,
+                    team: world.teamsById[a.teamId] || { name: a.name || 'Team', color: '#666' }
+                }));
+            }
+        }
         const scopeLabel = selSeason ? ` — ${Util.esc(selSeason.name)}` : selSeries ? ` — ${Util.esc(selSeries.name)}` : sel === '__career__' ? ' — Career' : '';
         // Top-5 points progression chart — only meaningful within one series/season.
         const topIds = sel === '__career__' ? [] : drivers.slice(0, 5).map(d => d.driverId);
