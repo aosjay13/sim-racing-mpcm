@@ -27,7 +27,8 @@ const Admin = {
         const tabs = [
             ['overview', '🎛 Overview'], ['games', '🎮 Games'], ['series', '🏆 Series'],
             ['races', '🏁 Races'], ['teams', '🛠 Teams'], ['drivers', '🏎 Drivers'],
-            ['players', '👥 Players'], ['challenges', '🎯 Challenges'], ['settings', '⚙ Settings']
+            ['world', '🌍 World'], ['players', '👥 Players'], ['challenges', '🎯 Challenges'],
+            ['settings', '⚙ Settings']
         ];
 
         el.innerHTML = `
@@ -91,6 +92,7 @@ const Admin = {
                     <button class="btn btn-secondary" onclick="Admin.generateChallengesForm()">🎯 Generate Challenges</button>
                     <button class="btn btn-secondary" onclick="Admin.challengeForm()">＋ Custom Challenge</button>
                     <button class="btn btn-secondary" onclick="Admin.generateNPCsForm()">🤖 Generate Free Agents</button>
+                    <button class="btn btn-secondary" onclick="Admin.installPack()">🌍 Install Real-World Pack</button>
                 </div>
             </section>
 
@@ -618,6 +620,7 @@ const Admin = {
                         <td class="muted">${Util.esc(world.seriesById[r.seriesId]?.name || '—')}</td>
                         <td>${C.statusBadge(r.status)}</td>
                         <td class="row-actions">
+                            ${r.status !== 'completed' ? `<button class="btn btn-ghost btn-sm" onclick="Admin.simRace('${Util.attr(r.id)}')">▶ Simulate</button>` : ''}
                             ${r.status !== 'completed' ? `<button class="btn btn-ghost btn-sm" onclick="Admin.toggleLive('${Util.attr(r.id)}')">${r.status === 'live' ? '⏹ End live' : '🔴 Go live'}</button>` : ''}
                             <button class="btn ${r.status === 'completed' ? 'btn-ghost' : 'btn-primary'} btn-sm" onclick="Admin.resultsForm('${Util.attr(r.id)}')">${r.status === 'completed' ? 'Edit results' : 'Enter results'}</button>
                             <button class="btn btn-ghost btn-sm" onclick="Admin.raceForm('${Util.attr(r.id)}')">Edit</button>
@@ -839,12 +842,16 @@ const Admin = {
                 });
 
                 if (!results.length) throw new Error('Enter at least one finishing position or DNF.');
+                const wasCompleted = race.status === 'completed';
                 await DB.update('races', raceId, { status: 'completed', results });
                 const winner = results.find(r => Number(r.position) === 1 && !r.dnf);
                 const winnerName = winner ? world.driversById[winner.driverId]?.name : null;
                 if (winnerName) News.post('🏆', `${winnerName} wins ${race.name || race.track || 'a league race'}!`);
+                // Prize money + sponsor payouts — only on first completion, so
+                // editing results never double-pays.
+                if (!wasCompleted) await Sim.payoutRace({ ...race, results }, world);
                 Modal.close();
-                Util.notify('Results saved — standings and stats updated everywhere. 🏆');
+                Util.notify('Results saved — standings, stats, and race earnings updated. 🏆');
                 this.refresh();
             } catch (err) { Util.notify(err.message, 'error'); }
         });
@@ -878,7 +885,7 @@ const Admin = {
 
     async teamForm(teamId = null) {
         if (!this.guard()) return;
-        const team = teamId ? await DB.get('teams', teamId) : null;
+        const [team, series] = await Promise.all([teamId ? DB.get('teams', teamId) : null, DB.series()]);
         Modal.open(`
             ${Modal.header(team ? 'Edit Team' : 'Add Team', 'Teams without an owner can be taken over by Team Owner players')}
             <form id="admin-team-form" class="form-grid">
@@ -887,6 +894,12 @@ const Admin = {
                     <label class="field"><span>Color</span><input id="atf-color" class="input input-color" type="color" value="${Util.esc(team?.color || '#ff5a36')}"></label>
                     <label class="field"><span>Headquarters</span><input id="atf-hq" class="input" value="${Util.esc(team?.headquarters || '')}" maxlength="50"></label>
                 </div>
+                <label class="field"><span>Championship entry (the team's drivers join this series' simulated grid)</span>
+                    <select id="atf-series" class="input">
+                        <option value="">— Not entered in a championship —</option>
+                        ${series.filter(s => (s.status || 'active') === 'active').map(s =>
+                            `<option value="${Util.attr(s.id)}" ${team?.seriesId === s.id ? 'selected' : ''}>${Util.esc(s.name)}</option>`).join('')}
+                    </select></label>
                 <label class="field"><span>Logo</span><input id="atf-logo" class="input" type="file" accept="image/*"></label>
                 <label class="field"><span>Description</span><textarea id="atf-desc" class="input" rows="2" maxlength="300">${Util.esc(team?.description || '')}</textarea></label>
                 <label class="check"><input id="atf-recruiting" type="checkbox" ${team?.recruiting !== false ? 'checked' : ''}> Recruiting (drivers can join)</label>
@@ -908,7 +921,8 @@ const Admin = {
                     headquarters: Util.$('#atf-hq').value.trim(),
                     description: Util.$('#atf-desc').value.trim(),
                     recruiting: Util.$('#atf-recruiting').checked,
-                    isEstablished: Util.$('#atf-established').checked
+                    isEstablished: Util.$('#atf-established').checked,
+                    seriesId: Util.$('#atf-series').value || null
                 };
                 if (!data.name) throw new Error('Team name is required.');
                 const file = Util.$('#atf-logo').files[0];
@@ -979,6 +993,7 @@ const Admin = {
                 <div class="form-row">
                     <label class="field"><span>Number</span><input id="adf-number" class="input" type="number" min="0" max="999" value="${driver?.number ?? ''}"></label>
                     <label class="field"><span>Country</span><input id="adf-country" class="input" value="${Util.esc(driver?.country || '')}" maxlength="30"></label>
+                    <label class="field"><span>Skill rating (AI pace, 50–99)</span><input id="adf-rating" class="input" type="number" min="50" max="99" value="${driver?.rating ?? ''}" placeholder="75"></label>
                 </div>
                 <label class="field"><span>Team</span>
                     <select id="adf-team" class="input">
@@ -1000,6 +1015,7 @@ const Admin = {
                     number: Util.$('#adf-number').value ? Number(Util.$('#adf-number').value) : null,
                     country: Util.$('#adf-country').value.trim(),
                     teamId: Util.$('#adf-team').value || null,
+                    rating: Util.$('#adf-rating').value ? Math.min(99, Math.max(50, Number(Util.$('#adf-rating').value))) : null,
                     bio: Util.$('#adf-bio').value.trim()
                 };
                 if (!data.name) throw new Error('Driver name is required.');
@@ -1060,6 +1076,323 @@ const Admin = {
             Modal.close();
             Util.notify('Driver deleted.');
             this.refresh();
+        } catch (e) { Util.notify(e.message, 'error'); }
+    },
+
+    /* ---------------- World: tracks, sponsors, staff, AI personas ---------------- */
+    async tab_world(el) {
+        const [tracks, sponsors, staff, profiles, world] = await Promise.all([
+            DB.tracks({ force: true }).catch(() => []),
+            DB.sponsors({ force: true }).catch(() => []),
+            DB.staff({ force: true }).catch(() => []),
+            DB.roleProfiles({ force: true }).catch(() => []),
+            DB.loadWorld(true)
+        ]);
+        const personas = profiles.filter(p => p.isNPC || !p.uid);
+        const teamName = (id) => world.teamsById[id]?.name || '—';
+        const roleLabel = (id) => Career.roleInfo(id)?.label || staffRoleInfo(id).label;
+
+        el.innerHTML = `
+        <div class="panel" style="margin-bottom:1.1rem">
+            <div class="panel-head"><h2>🌍 League World</h2>
+                <div class="btn-row">
+                    <button class="btn btn-primary btn-sm" onclick="Admin.installPack()">🌍 Install Real-World Pack</button>
+                    <button class="btn btn-secondary btn-sm" onclick="Admin.generateNPCsForm()">🤖 Generate Free Agents</button>
+                </div></div>
+            <p class="muted small">The Real-World Pack seeds ${REAL_TRACKS.length} real tracks and ${REAL_WORLD_PACK.length} championships
+                (${REAL_WORLD_PACK.map(p => p.name).join(' · ')}) with full AI grids — teams, drivers, crew, sponsors, agents, and
+                series/track owner personas. Simulate their races from Admin → Races or any series page. Re-running skips anything that already exists.</p>
+        </div>
+
+        <div class="grid-2">
+            <section class="panel">
+                <div class="panel-head"><h2>🛣 Tracks (${tracks.length})</h2>
+                    <button class="btn btn-primary btn-sm" onclick="Admin.trackForm()">＋ Add Track</button></div>
+                ${tracks.length ? `<table class="table table-tight">
+                    <thead><tr><th>Track</th><th>Country</th><th>Type</th><th></th></tr></thead>
+                    <tbody>${tracks.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(t => `
+                        <tr>
+                            <td class="strong">${Util.esc(t.name)}</td>
+                            <td class="muted">${Util.esc(t.country || '—')}</td>
+                            <td class="muted">${Util.esc(t.type || '—')}${t.length ? ` · ${Util.esc(t.length)}` : ''}</td>
+                            <td class="row-actions">
+                                <button class="btn btn-ghost btn-sm" onclick="Admin.trackForm('${Util.attr(t.id)}')">Edit</button>
+                                <button class="btn btn-danger btn-sm" onclick="Admin.deleteWorldDoc('tracks','${Util.attr(t.id)}','track')">Del</button>
+                            </td>
+                        </tr>`).join('')}</tbody></table>`
+                : C.empty('🛣', 'No tracks yet', 'Install the Real-World Pack for 26 real circuits, or add your own venues.')}
+            </section>
+
+            <section class="panel">
+                <div class="panel-head"><h2>💰 Sponsors (${sponsors.length})</h2>
+                    <button class="btn btn-primary btn-sm" onclick="Admin.sponsorForm()">＋ Add Sponsor</button></div>
+                ${sponsors.length ? sponsors.map(s => `
+                    <div class="race-row">
+                        <div class="race-row-main">
+                            <span class="race-title">${Util.esc(s.name)} ${Prestige.chip(Prestige.stored(s))}</span>
+                            <span class="race-sub">${Util.esc(s.industry || 'Sponsor')} · backs ${Util.esc(teamName(s.teamId))} · pays ${Economy.fmt(s.payoutPerRace)}/race</span>
+                        </div>
+                        <div class="row-actions">
+                            <button class="btn btn-ghost btn-sm" onclick="Admin.sponsorForm('${Util.attr(s.id)}')">Edit</button>
+                            <button class="btn btn-danger btn-sm" onclick="Admin.deleteWorldDoc('sponsors','${Util.attr(s.id)}','sponsor')">Del</button>
+                        </div>
+                    </div>`).join('')
+                : C.empty('💰', 'No sponsor brands yet', 'Sponsors back a team and pay the owner every race. The Real-World Pack seeds a full portfolio.')}
+            </section>
+
+            <section class="panel">
+                <div class="panel-head"><h2>🧰 Crew & Staff (${staff.length})</h2>
+                    <button class="btn btn-primary btn-sm" onclick="Admin.staffForm()">＋ Add Staff</button></div>
+                ${staff.length ? staff.map(s => `
+                    <div class="race-row">
+                        <div class="race-row-main">
+                            <span class="race-title">${Util.esc(s.name)} ${Prestige.chip(Prestige.stored(s))}</span>
+                            <span class="race-sub">${Util.esc(staffRoleInfo(s.role).label)}${s.rating ? ` · ⭐ ${s.rating}` : ''} · ${Util.esc(s.teamId ? teamName(s.teamId) : 'Free agent')}</span>
+                        </div>
+                        <div class="row-actions">
+                            <button class="btn btn-ghost btn-sm" onclick="Admin.staffForm('${Util.attr(s.id)}')">Edit</button>
+                            <button class="btn btn-danger btn-sm" onclick="Admin.deleteWorldDoc('staff','${Util.attr(s.id)}','staff member')">Del</button>
+                        </div>
+                    </div>`).join('')
+                : C.empty('🧰', 'No crew yet', 'Generate free agents or install the Real-World Pack to fill the pit lane.')}
+            </section>
+
+            <section class="panel">
+                <div class="panel-head"><h2>🤖 AI Personas (${personas.length})</h2>
+                    <button class="btn btn-primary btn-sm" onclick="Admin.personaForm()">＋ Add Persona</button></div>
+                <p class="muted small">AI characters filling the league's non-driving roles — agents, series owners, track owners, and more.</p>
+                ${personas.length ? personas.map(p => `
+                    <div class="race-row">
+                        <div class="race-row-main">
+                            <span class="race-title">${Util.esc(p.name)} ${Prestige.chip(Prestige.stored(p))}</span>
+                            <span class="race-sub">${Util.esc(roleLabel(p.role))}${p.bio ? ` · ${Util.esc(p.bio)}` : ''}${(p.tracks || []).length ? ` · ${Util.plural(p.tracks.length, 'venue')}` : ''}${(p.clientDriverIds || []).length ? ` · ${Util.plural(p.clientDriverIds.length, 'client')}` : ''}</span>
+                        </div>
+                        <div class="row-actions">
+                            <button class="btn btn-ghost btn-sm" onclick="Admin.personaForm('${Util.attr(p.id)}')">Edit</button>
+                            <button class="btn btn-danger btn-sm" onclick="Admin.deleteWorldDoc('roleProfiles','${Util.attr(p.id)}','persona')">Del</button>
+                        </div>
+                    </div>`).join('')
+                : C.empty('🤖', 'No AI personas yet', 'The Real-World Pack creates agents, promoters, and venue owners automatically.')}
+            </section>
+        </div>`;
+    },
+
+    async trackForm(trackId = null) {
+        if (!this.guard()) return;
+        const track = trackId ? await DB.get('tracks', trackId) : null;
+        Modal.open(`
+            ${Modal.header(track ? 'Edit Track' : 'Add Track')}
+            <form id="track-form" class="form-grid">
+                <label class="field"><span>Track name *</span><input id="tk-name" class="input" required value="${Util.esc(track?.name || '')}" maxlength="80"></label>
+                <div class="form-row">
+                    <label class="field"><span>Country</span><input id="tk-country" class="input" value="${Util.esc(track?.country || '')}" maxlength="40"></label>
+                    <label class="field"><span>Type</span>
+                        <select id="tk-type" class="input">
+                            ${['Road', 'Oval', 'Street', 'Rally', 'Kart'].map(t => `<option ${track?.type === t ? 'selected' : ''}>${t}</option>`).join('')}
+                        </select></label>
+                    <label class="field"><span>Length</span><input id="tk-length" class="input" value="${Util.esc(track?.length || '')}" maxlength="20" placeholder="e.g. 5.89 km"></label>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">${track ? 'Save' : 'Add Track'}</button>
+                </div>
+            </form>
+        `);
+        Util.$('#track-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            try {
+                const data = {
+                    name: Util.$('#tk-name').value.trim(),
+                    country: Util.$('#tk-country').value.trim(),
+                    type: Util.$('#tk-type').value,
+                    length: Util.$('#tk-length').value.trim()
+                };
+                if (!data.name) throw new Error('Track name is required.');
+                if (track) await DB.update('tracks', track.id, data);
+                else await DB.create('tracks', data);
+                Modal.close();
+                Util.notify(track ? 'Track updated.' : 'Track added. 🛣');
+                this.refresh();
+            } catch (err) { Util.notify(err.message, 'error'); }
+        });
+    },
+
+    async sponsorForm(sponsorId = null) {
+        if (!this.guard()) return;
+        const [sponsor, teams] = await Promise.all([sponsorId ? DB.get('sponsors', sponsorId) : null, DB.teams()]);
+        Modal.open(`
+            ${Modal.header(sponsor ? 'Edit Sponsor' : 'Add Sponsor', 'Sponsors back a team and pay its owner every race')}
+            <form id="sponsor-form" class="form-grid">
+                <label class="field"><span>Brand name *</span><input id="sp-name" class="input" required value="${Util.esc(sponsor?.name || '')}" maxlength="60"></label>
+                <div class="form-row">
+                    <label class="field"><span>Industry</span><input id="sp-industry" class="input" value="${Util.esc(sponsor?.industry || '')}" maxlength="40"></label>
+                    <label class="field"><span>Prestige (1–5 ★)</span><input id="sp-prestige" class="input" type="number" min="1" max="5" value="${Prestige.stored(sponsor)}"></label>
+                    <label class="field"><span>Payout per race</span><input id="sp-payout" class="input" type="number" min="0" step="10" value="${sponsor?.payoutPerRace ?? 300}"></label>
+                </div>
+                <label class="field"><span>Sponsored team</span>
+                    <select id="sp-team" class="input">
+                        <option value="">— Unattached (available) —</option>
+                        ${teams.map(t => `<option value="${Util.attr(t.id)}" ${sponsor?.teamId === t.id ? 'selected' : ''}>${Util.esc(t.name)}</option>`).join('')}
+                    </select></label>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">${sponsor ? 'Save' : 'Add Sponsor'}</button>
+                </div>
+            </form>
+        `);
+        Util.$('#sponsor-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            try {
+                const data = {
+                    name: Util.$('#sp-name').value.trim(),
+                    industry: Util.$('#sp-industry').value.trim(),
+                    prestige: Prestige.clamp(Util.$('#sp-prestige').value),
+                    payoutPerRace: Math.round(Number(Util.$('#sp-payout').value) || 0),
+                    teamId: Util.$('#sp-team').value || null
+                };
+                if (!data.name) throw new Error('Brand name is required.');
+                if (sponsor) await DB.update('sponsors', sponsor.id, data);
+                else await DB.create('sponsors', { ...data, isNPC: true });
+                Modal.close();
+                Util.notify(sponsor ? 'Sponsor updated.' : 'Sponsor added. 💰');
+                this.refresh();
+            } catch (err) { Util.notify(err.message, 'error'); }
+        });
+    },
+
+    async staffForm(staffId = null) {
+        if (!this.guard()) return;
+        const [person, teams] = await Promise.all([staffId ? DB.get('staff', staffId) : null, DB.teams()]);
+        Modal.open(`
+            ${Modal.header(person ? 'Edit Staff' : 'Add Staff')}
+            <form id="staff-form" class="form-grid">
+                <label class="field"><span>Name *</span><input id="st-name" class="input" required value="${Util.esc(person?.name || '')}" maxlength="50"></label>
+                <div class="form-row">
+                    <label class="field"><span>Role</span>
+                        <select id="st-role" class="input">
+                            ${STAFF_ROLES.map(r => `<option value="${r.id}" ${person?.role === r.id ? 'selected' : ''}>${r.icon} ${r.label}</option>`).join('')}
+                        </select></label>
+                    <label class="field"><span>Skill rating (50–99)</span><input id="st-rating" class="input" type="number" min="50" max="99" value="${person?.rating ?? 70}"></label>
+                    <label class="field"><span>Prestige (1–5 ★)</span><input id="st-prestige" class="input" type="number" min="1" max="5" value="${Prestige.stored(person)}"></label>
+                </div>
+                <label class="field"><span>Team</span>
+                    <select id="st-team" class="input">
+                        <option value="">Free agent</option>
+                        ${teams.map(t => `<option value="${Util.attr(t.id)}" ${person?.teamId === t.id ? 'selected' : ''}>${Util.esc(t.name)}</option>`).join('')}
+                    </select></label>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">${person ? 'Save' : 'Add Staff'}</button>
+                </div>
+            </form>
+        `);
+        Util.$('#staff-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            try {
+                const rating = Math.min(99, Math.max(50, Number(Util.$('#st-rating').value) || 70));
+                const data = {
+                    name: Util.$('#st-name').value.trim(),
+                    role: Util.$('#st-role').value,
+                    rating,
+                    prestige: Prestige.clamp(Util.$('#st-prestige').value),
+                    teamId: Util.$('#st-team').value || null,
+                    askingSalary: staffAskingSalary(Util.$('#st-role').value, rating)
+                };
+                if (!data.name) throw new Error('Name is required.');
+                if (person) await DB.update('staff', person.id, data);
+                else await DB.create('staff', { ...data, isNPC: true, ownerUid: null });
+                Modal.close();
+                Util.notify(person ? 'Staff updated.' : 'Staff added. 🧰');
+                this.refresh();
+            } catch (err) { Util.notify(err.message, 'error'); }
+        });
+    },
+
+    async personaForm(profileId = null) {
+        if (!this.guard()) return;
+        const persona = profileId ? await DB.get('roleProfiles', profileId) : null;
+        const roles = ROLES.filter(r => r.id !== 'driver' && r.id !== 'team-owner');
+        Modal.open(`
+            ${Modal.header(persona ? 'Edit AI Persona' : 'Add AI Persona', 'An AI character filling a league role')}
+            <form id="persona-form" class="form-grid">
+                <label class="field"><span>Name *</span><input id="pe-name" class="input" required value="${Util.esc(persona?.name || '')}" maxlength="50"></label>
+                <div class="form-row">
+                    <label class="field"><span>Role</span>
+                        <select id="pe-role" class="input">
+                            ${roles.map(r => `<option value="${r.id}" ${persona?.role === r.id ? 'selected' : ''}>${r.icon} ${r.label}</option>`).join('')}
+                        </select></label>
+                    <label class="field"><span>Prestige (1–5 ★)</span><input id="pe-prestige" class="input" type="number" min="1" max="5" value="${Prestige.stored(persona)}"></label>
+                </div>
+                <label class="field"><span>Bio</span><textarea id="pe-bio" class="input" rows="2" maxlength="300">${Util.esc(persona?.bio || '')}</textarea></label>
+                <label class="field"><span>Venues (track owners — one per line)</span><textarea id="pe-tracks" class="input" rows="3">${Util.esc((persona?.tracks || []).join('\n'))}</textarea></label>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">${persona ? 'Save' : 'Add Persona'}</button>
+                </div>
+            </form>
+        `);
+        Util.$('#persona-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            try {
+                const data = {
+                    name: Util.$('#pe-name').value.trim(),
+                    role: Util.$('#pe-role').value,
+                    prestige: Prestige.clamp(Util.$('#pe-prestige').value),
+                    bio: Util.$('#pe-bio').value.trim(),
+                    tracks: Util.$('#pe-tracks').value.split('\n').map(t => t.trim()).filter(Boolean)
+                };
+                if (!data.name) throw new Error('Name is required.');
+                if (persona) await DB.update('roleProfiles', persona.id, data);
+                else await DB.create('roleProfiles', { ...data, uid: null, isNPC: true });
+                Modal.close();
+                Util.notify(persona ? 'Persona updated.' : 'Persona added. 🤖');
+                this.refresh();
+            } catch (err) { Util.notify(err.message, 'error'); }
+        });
+    },
+
+    async deleteWorldDoc(collection, id, label) {
+        if (!this.guard()) return;
+        if (!confirm(`Delete this ${label}?`)) return;
+        try {
+            await DB.remove(collection, id);
+            Util.notify(`Deleted ${label}.`);
+            this.refresh();
+        } catch (e) { Util.notify(e.message, 'error'); }
+    },
+
+    /* ---------------- Real-World Pack & simulation ---------------- */
+    async installPack() {
+        if (!this.guard()) return;
+        if (!confirm(`Install the Real-World Racing Pack?\n\n` +
+            `• ${REAL_TRACKS.length} real tracks\n` +
+            `• ${REAL_WORLD_PACK.length} championships with full schedules & active seasons\n` +
+            `• AI teams, drivers, crew, sponsors, agents, and owner personas\n\n` +
+            `Anything that already exists (matched by name) is skipped.`)) return;
+        Util.notify('Installing the Real-World Pack — this takes a few seconds…', 'info');
+        try {
+            const s = await installRealWorldPack();
+            Util.notify(`Pack installed: ${s.series} series, ${s.races} races, ${s.teams} teams, ${s.drivers} drivers, ${s.tracks} tracks, ${s.sponsors} sponsors, ${s.personas} AI personas. 🌍`);
+            this.refresh();
+        } catch (e) { Util.notify('Pack install failed: ' + e.message, 'error'); }
+    },
+
+    async simRace(raceId) {
+        if (!this.guard()) return;
+        try {
+            await Sim.simulateRace(raceId);
+            this.refresh();
+            if (App.current.view !== 'admin') App.go(App.current.view, App.current.param);
+        } catch (e) { Util.notify(e.message, 'error'); }
+    },
+
+    async simSeries(seriesId, onlyNext = false) {
+        if (!this.guard()) return;
+        try {
+            if (!onlyNext && !confirm('Simulate ALL remaining scheduled races in this series?')) return;
+            await Sim.simulateSeason(seriesId, { onlyNext });
+            if (App.current.view === 'admin') this.refresh();
+            else App.go(App.current.view, App.current.param);
         } catch (e) { Util.notify(e.message, 'error'); }
     },
 
@@ -1306,7 +1639,7 @@ const Admin = {
 
         Util.$('#export-btn', el).addEventListener('click', async () => {
             try {
-                const collections = ['games', 'series', 'races', 'teams', 'drivers', 'users', 'challenges', 'challengeClaims', 'raceSignups', 'roleProfiles', 'staff', 'contracts'];
+                const collections = ['games', 'series', 'seasons', 'races', 'teams', 'drivers', 'users', 'challenges', 'challengeClaims', 'raceSignups', 'roleProfiles', 'staff', 'contracts', 'tracks', 'sponsors', 'news', 'recruitment'];
                 const backup = { exportedAt: new Date().toISOString() };
                 for (const c of collections) {
                     try { backup[c] = await DB.list(c, { force: true }); } catch (err) { backup[c] = { error: err.message }; }

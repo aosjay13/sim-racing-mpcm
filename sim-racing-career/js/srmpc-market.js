@@ -209,6 +209,7 @@ function makeNpcStaff(roleId, usedNames, teamId = null) {
         ownerUid: null,
         isNPC: true,
         rating,
+        prestige: 1, // everyone starts their career at 1 star
         askingSalary: staffAskingSalary(roleId, rating)
     };
 }
@@ -265,31 +266,43 @@ const Market = {
 
     _ratingChip(r) { return r ? `<span class="chip rating-chip" title="Skill rating">⭐ ${r}</span>` : ''; },
 
-    askingFor(person, kind) {
-        if (person.askingSalary) return person.askingSalary;
-        return kind === 'driver'
+    // Prestige makes people expensive: base rating salary × star multiplier.
+    askingFor(person, kind, stars = 1) {
+        const base = person.askingSalary || (kind === 'driver'
             ? driverAskingSalary(person.rating || 70)
-            : staffAskingSalary(person.role, person.rating || 70);
+            : staffAskingSalary(person.role, person.rating || 70));
+        return Math.round(base * Prestige.multiplier(stars) / 10) * 10;
+    },
+
+    // Stars for a market listing: drivers earn theirs on track, staff/others
+    // carry a stored level.
+    starsFor(person, kind, world, rows) {
+        return kind === 'driver' ? Prestige.driverStars(person.id, world, rows) : Prestige.stored(person);
     },
 
     /* ----- Free agent market (team owners) ----- */
     async hireModal(teamId) {
-        const [drivers, staff] = await Promise.all([
+        const [drivers, staff, world] = await Promise.all([
             DB.drivers({ force: true }),
-            DB.list('staff', { force: true }).catch(() => [])
+            DB.list('staff', { force: true }).catch(() => []),
+            DB.loadWorld()
         ]);
+        const rows = Stats.driverTable(world.races, world);
+        const teamStars = Prestige.teamStars(teamId, world);
         // Free agents only: no team and not another player's driver.
         const freeDrivers = drivers.filter(d => !d.teamId && !d.ownerUid);
         const freeCrew = staff.filter(s => !s.teamId);
 
         const row = (p, kind) => {
             const info = kind === 'staff' ? staffRoleInfo(p.role) : null;
-            const asking = this.askingFor(p, kind);
+            const stars = this.starsFor(p, kind, world, rows);
+            const asking = this.askingFor(p, kind, stars);
+            const outOfReach = stars > teamStars + 1;
             return `<div class="race-row">
                 <div class="driver-hero-num" style="font-size:1rem;min-width:2.6rem;height:2.6rem">${kind === 'driver' ? (p.number ? '#' + Util.esc(String(p.number)) : '🏎️') : info.icon}</div>
                 <div class="race-row-main">
-                    <span class="race-title">${Util.esc(p.name)}</span>
-                    <span class="race-sub">${kind === 'driver' ? 'Driver' : Util.esc(info.label)}${p.country ? ' · ' + Util.esc(p.country) : ''}</span>
+                    <span class="race-title">${Util.esc(p.name)} ${Prestige.chip(stars)}</span>
+                    <span class="race-sub">${kind === 'driver' ? 'Driver' : Util.esc(info.label)}${p.country ? ' · ' + Util.esc(p.country) : ''}${outOfReach ? ' · 🔒 needs a more prestigious team' : ''}</span>
                 </div>
                 <div class="race-row-side">
                     ${this._ratingChip(p.rating)}
@@ -310,7 +323,8 @@ const Market = {
 
         Modal.open(`
             ${Modal.header('🤝 Free Agent Market', 'Hire drivers and pit crew — you set the pay, they sign a season contract')}
-            <p class="muted small">💵 Your balance: <strong>${Economy.fmt(Economy.balance())}</strong> · Signing bonus = one race of salary, paid up front.</p>
+            <p class="muted small">💵 Your balance: <strong>${Economy.fmt(Economy.balance())}</strong> · Signing bonus = one race of salary, paid up front.
+                Your team's prestige: <strong>${Prestige.stars(teamStars)}</strong> — stars set what talent will sign for you and what they cost.</p>
             ${freeDrivers.length ? `<h3 class="section-label">🏎 Drivers (${freeDrivers.length})</h3>
                 <div class="stack" style="gap:.15rem">${freeDrivers.map(d => row(d, 'driver')).join('')}</div>` : ''}
             ${freeCrew.length ? `<h3 class="section-label" style="margin-top:1rem">🧰 Pit Crew & Staff (${freeCrew.length})</h3>
@@ -321,19 +335,37 @@ const Market = {
     /* ----- Salary negotiation ----- */
     async negotiate(kind, personId, teamId) {
         const collection = kind === 'driver' ? 'drivers' : 'staff';
-        const [person, team] = await Promise.all([
+        const [person, team, world] = await Promise.all([
             DB.get(collection, personId),
-            DB.get('teams', teamId).catch(() => null)
+            DB.get('teams', teamId).catch(() => null),
+            DB.loadWorld()
         ]);
         if (!person) { Util.notify('That free agent is no longer available.', 'error'); return; }
         if (person.teamId) { Util.notify(`${person.name} already signed elsewhere.`, 'info'); return; }
-        const asking = this.askingFor(person, kind);
+
+        // Prestige gate: stars only sign for teams within one star of their level.
+        const stars = this.starsFor(person, kind, world, Stats.driverTable(world.races, world));
+        const teamStars = Prestige.teamStars(teamId, world);
+        if (stars > teamStars + 1) {
+            Modal.open(`
+                ${Modal.header(`🔒 ${Util.esc(person.name)} isn't interested`, 'Prestige gap')}
+                <p class="muted">${Util.esc(person.name)} is a <strong>${Prestige.stars(stars)}</strong> talent, and
+                ${Util.esc(team?.name || 'your team')} is currently <strong>${Prestige.stars(teamStars)}</strong>.
+                Stars only sign for teams within one star of their level — win races, take podiums, and collect
+                championships to raise your team's prestige, then come back with the contract.</p>
+                <div class="modal-actions"><button class="btn btn-primary" onclick="Modal.close()">Understood</button></div>
+            `);
+            return;
+        }
+
+        const asking = this.askingFor(person, kind, stars);
         const roleLabel = kind === 'driver' ? 'Driver' : staffRoleInfo(person.role).label;
 
         Modal.open(`
             ${Modal.header(`✍️ Contract Offer — ${Util.esc(person.name)}`, `${roleLabel} · asking ${Economy.fmt(asking)} per race`)}
             <form id="offer-form" class="form-grid">
                 <div class="chip-row">
+                    ${Prestige.chip(stars)}
                     ${this._ratingChip(person.rating)}
                     ${person.country ? `<span class="chip chip-dim">${Util.esc(person.country)}</span>` : ''}
                     <span class="chip chip-dim">Season contract</span>

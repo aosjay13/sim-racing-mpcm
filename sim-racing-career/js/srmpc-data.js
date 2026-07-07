@@ -147,6 +147,8 @@ const DB = {
     contracts(opts) { return this.list('contracts', opts); },
     news(opts) { return this.list('news', opts); },
     recruitment(opts) { return this.list('recruitment', opts); },
+    tracks(opts) { return this.list('tracks', opts); },
+    sponsors(opts) { return this.list('sponsors', opts); },
 
     // Everything most views need, in one parallel load.
     async loadWorld(force = false) {

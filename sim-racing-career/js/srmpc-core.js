@@ -228,14 +228,16 @@ const Auth = {
             return;
         }
 
-        const adminSession = this._loadAdminSession();
-
         await new Promise((resolve) => {
             let first = true;
             fbAuth.onAuthStateChanged(async (user) => {
                 this.state.user = user || null;
 
-                if (adminSession && this._loadAdminSession()) {
+                // Live re-check (NOT a value captured at page load): unlocking
+                // admin at the gate saves the session and THEN signs in
+                // anonymously — a stale captured value made this listener treat
+                // that fresh anon session as orphaned and sign the GM back out.
+                if (this._loadAdminSession()) {
                     // Valid admin session — make sure we hold a Firebase session too.
                     this.state.mode = 'admin';
                     if (!user) await this._ensureAdminFirebaseAuth();

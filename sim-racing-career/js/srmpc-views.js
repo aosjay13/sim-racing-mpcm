@@ -343,6 +343,9 @@ const Views = {
                 <button class="btn btn-secondary btn-sm" onclick="Admin.seriesForm('${Util.attr(s.id)}')">✎ Edit Series</button>
                 <button class="btn btn-secondary btn-sm" onclick="Admin.scheduleBuilder('${Util.attr(s.id)}')">📅 Schedule Builder</button>
                 <button class="btn btn-secondary btn-sm" onclick="Admin.raceForm(null,'${Util.attr(s.id)}')">＋ Add Race</button>
+                ${seriesRaces.some(r => r.status !== 'completed') ? `
+                <button class="btn btn-primary btn-sm" onclick="Admin.simSeries('${Util.attr(s.id)}', true)">▶ Simulate Next Round</button>
+                <button class="btn btn-secondary btn-sm" onclick="Admin.simSeries('${Util.attr(s.id)}')">⏩ Simulate Season</button>` : ''}
             </div>` : ''}
         </div>
 
@@ -647,21 +650,27 @@ const Views = {
         <div class="grid-2">
             <section class="panel">
                 <div class="panel-head"><h2>🏆 Drivers${scopeLabel}</h2></div>
-                ${drivers.length ? `<table class="table">
-                    <thead><tr><th>#</th><th>Driver</th><th>Team</th><th class="num">Pts</th><th class="num">W</th><th class="num">Pod</th><th class="num">DNF</th><th>Form</th></tr></thead>
+                ${drivers.length ? (() => {
+                    const careerRows = Stats.driverTable(world.races, world);
+                    const titles = Prestige._titleCounts(world, 'championDriverId');
+                    const starsOf = (id) => Prestige.starsFromScore(
+                        Prestige.driverScore(careerRows.find(r => r.driverId === id), titles[id] || 0));
+                    return `<table class="table">
+                    <thead><tr><th>#</th><th>Driver</th><th>Team</th><th title="Career prestige">★</th><th class="num">Pts</th><th class="num">W</th><th class="num">Pod</th><th class="num">DNF</th><th>Form</th></tr></thead>
                     <tbody>${drivers.map(row => `
                         <tr onclick="Views.showDriver('${Util.attr(row.driverId)}')">
                             <td class="rank">${row.rank <= 3 ? ['🥇', '🥈', '🥉'][row.rank - 1] : row.rank}</td>
                             <td>${Util.esc(row.driver.name)}</td>
                             <td class="muted">${Util.esc(world.teamsById[row.driver.teamId]?.name || 'Free agent')}</td>
+                            <td class="prestige-cell" title="Career prestige ${starsOf(row.driverId)}/5">${'★'.repeat(starsOf(row.driverId))}</td>
                             <td class="num strong">${row.points}</td>
                             <td class="num">${row.wins}</td>
                             <td class="num">${row.podiums}</td>
                             <td class="num">${row.dnfs}</td>
                             <td>${C.formPips(Stats.driverForm(row.driverId, world.races, world))}</td>
                         </tr>`).join('')}
-                    </tbody></table>`
-                    : C.empty('🏆', 'No results yet', 'Standings appear the moment the first result is saved.')}
+                    </tbody></table>`;
+                })() : C.empty('🏆', 'No results yet', 'Standings appear the moment the first result is saved.')}
             </section>
 
             <section class="panel">
@@ -791,13 +800,22 @@ const Views = {
         const driver = world.driversById[driverId];
         if (!driver) { Util.notify('Driver not found.', 'error'); return; }
         const team = world.teamsById[driver.teamId];
-        const career = Stats.driverTable(world.races, world).find(r => r.driverId === driverId);
+        const rows = Stats.driverTable(world.races, world);
+        const career = rows.find(r => r.driverId === driverId);
         const history = Stats.driverHistory(driverId, world.races, world).slice(0, 10);
         // Career points progression (oldest→newest across all completed races).
         const prog = Stats.pointsProgression(world.races, world, {}, [driverId]);
+        const stars = Prestige.driverStars(driverId, world, rows);
+        const worth = Prestige.driverWorth(driver, stars);
 
         Modal.open(`
             ${Modal.header(`${driver.number ? '#' + driver.number + ' ' : ''}${driver.name}`, `${team?.name || 'Free agent'}${driver.country ? ' · ' + driver.country : ''}`)}
+            <div class="chip-row" style="margin-bottom:.6rem">
+                ${Prestige.chip(stars)}
+                <span class="chip chip-dim" title="Market worth per race — grows with prestige">💵 worth ${Economy.fmt(worth)}/race</span>
+                ${driver.rating ? `<span class="chip rating-chip" title="Skill rating">⭐ ${driver.rating}</span>` : ''}
+                ${driver.ownerUid ? '<span class="badge badge-blue">Player</span>' : '<span class="badge badge-dim">AI</span>'}
+            </div>
             ${driver.bio ? `<p class="muted" style="margin-bottom:1rem">${Util.esc(driver.bio)}</p>` : ''}
             <div class="stat-strip">
                 ${C.statChip(career?.starts || 0, 'Starts')}
@@ -840,8 +858,11 @@ const Views = {
             <div class="team-modal-top">
                 ${C.logoBox(team, 'logo-lg')}
                 <div class="chip-row">
+                    ${Prestige.chip(Prestige.teamStars(teamId, world), 'Team prestige')}
+                    ${team.seriesId && world.seriesById[team.seriesId] ? `<span class="chip chip-dim">🏆 ${Util.esc(world.seriesById[team.seriesId].name)}</span>` : ''}
                     ${team.recruiting ? '<span class="badge badge-green">Recruiting drivers</span>' : ''}
                     ${team.isEstablished ? '<span class="badge badge-blue">Established team</span>' : ''}
+                    ${team.isNPC ? '<span class="badge badge-dim">AI team</span>' : ''}
                 </div>
             </div>
             ${team.description ? `<p class="muted" style="margin:0.75rem 0">${Util.esc(team.description)}</p>` : ''}

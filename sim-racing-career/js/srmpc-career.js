@@ -171,6 +171,7 @@ const Career = {
             <div class="driver-hero-info">
                 <h2>${Util.esc(driver.name)}</h2>
                 <div class="chip-row">
+                    ${Prestige.chip(Prestige.driverStars(driver.id, world), 'Your prestige — win races and titles to climb the star ladder')}
                     ${team ? `<button class="chip chip-btn" onclick="Views.showTeam('${Util.attr(team.id)}')"><span class="team-dot" style="background:${Util.esc(team.color || '#666')}"></span>${Util.esc(team.name)}</button>` : '<span class="chip chip-dim">Free agent</span>'}
                     ${driver.country ? `<span class="chip chip-dim">${Util.esc(driver.country)}</span>` : ''}
                     ${myContract ? `<span class="chip chip-dim" title="Your active contract">📜 ${Economy.fmt(myContract.salary)}/race${Number(myContract.buyout) ? ` · buyout ${Economy.fmt(myContract.buyout)}` : ''}</span>` : ''}
@@ -242,6 +243,8 @@ const Career = {
                 </div>
                 ${teamsHtml}
                 <label class="field"><span>Bio (optional)</span><textarea id="ob-bio" class="input" rows="2" maxlength="300" placeholder="Tell the league who you are…"></textarea></label>
+                <p class="muted small">⭐ Every career begins at <strong>1-star prestige</strong> (${Prestige.stars(1)}). Wins, podiums, poles, and championships
+                    raise your stars — and the higher your prestige, the more money you're worth.</p>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
                     <button type="submit" class="btn btn-primary">Start Career 🏁</button>
@@ -264,7 +267,8 @@ const Career = {
                     teamId,
                     ownerUid: Auth.uid(),
                     careerStart: startMode,
-                    status: 'approved'
+                    status: 'approved',
+                    prestige: 1 // everyone starts their career at 1 star
                 });
                 await Auth.updateProfile({ driverId, teamId: teamId || null });
                 if (teamId) {
@@ -412,6 +416,7 @@ const Career = {
             <div class="driver-hero-info">
                 <h2>${Util.esc(team.name)}</h2>
                 <div class="chip-row">
+                    ${Prestige.chip(Prestige.teamStars(team.id, world), 'Team prestige — sets which drivers will sign for you')}
                     ${team.recruiting !== false ? '<span class="badge badge-green">Recruiting</span>' : '<span class="badge badge-dim">Roster closed</span>'}
                     ${team.headquarters ? `<span class="chip chip-dim">📍 ${Util.esc(team.headquarters)}</span>` : ''}
                 </div>
@@ -768,7 +773,7 @@ const Career = {
             <div class="driver-hero-info">
                 <h2>${Util.esc(mine.name)}</h2>
                 ${mine.bio ? `<p class="muted">${Util.esc(mine.bio)}</p>` : ''}
-                <div class="chip-row"><span class="chip">${info.label}</span><span class="chip chip-dim">🎯 ${challengePoints} challenge pts</span></div>
+                <div class="chip-row">${Prestige.chip(Prestige.stored(mine), 'Your prestige in this role')}<span class="chip">${info.label}</span><span class="chip chip-dim">🎯 ${challengePoints} challenge pts</span></div>
             </div>
         </div>
         ${kpis ? `<div class="stat-strip">${kpis}</div>` : ''}
@@ -802,7 +807,7 @@ const Career = {
                 const data = { name: Util.$('#rp-name').value.trim(), bio: Util.$('#rp-bio').value.trim() };
                 if (!data.name) throw new Error('Name is required.');
                 if (existing) await DB.update('roleProfiles', existing.id, data);
-                else await DB.create('roleProfiles', { ...data, uid: Auth.uid(), role: roleId });
+                else await DB.create('roleProfiles', { ...data, uid: Auth.uid(), role: roleId, prestige: 1 }); // careers start at 1 star
                 Modal.close();
                 Util.notify('Profile saved.');
                 App.go('career');

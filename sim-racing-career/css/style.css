@@ -167,14 +167,24 @@ a:hover { text-decoration: underline; }
    otherwise re-displays the hamburger on desktop where the full nav is visible. */
 .icon-btn.nav-toggle { display: none; }
 
-.header-user { margin-left: auto; display: flex; align-items: center; gap: .6rem; }
-.header-username { font-weight: 600; font-size: .9rem; color: var(--text); }
+.header-user { margin-left: auto; display: flex; align-items: center; gap: .6rem; min-width: 0; }
+.header-username {
+    font-weight: 600; font-size: .9rem; color: var(--text);
+    max-width: 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex-shrink: 1; min-width: 0; /* the name truncates before the badge does */
+}
 
+/* The badge text ("Game Master", "Series Owner ⇄", …) must stay INSIDE the
+   pill: nowrap + ellipsis instead of spilling past the rounded border. */
 .role-badge {
     font-family: var(--font-display); font-size: .68rem; font-weight: 700;
     text-transform: uppercase; letter-spacing: 1px;
-    padding: .28rem .55rem; border-radius: 999px; border: 1px solid var(--hairline);
+    padding: .28rem .65rem; border-radius: 999px; border: 1px solid var(--hairline);
+    display: inline-block; max-width: 10.5rem; line-height: 1.4;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    vertical-align: middle; flex-shrink: 0;
 }
+.role-badge:empty { display: none; }
 .badge-admin { color: var(--gold); border-color: rgba(255,212,77,.4); background: rgba(255,212,77,.08); }
 .badge-player { color: var(--accent-2); border-color: rgba(0,217,255,.4); background: rgba(0,217,255,.08); }
 
@@ -630,6 +640,13 @@ select.input { cursor: pointer; }
 .market-price { color: var(--good); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rating-chip { color: var(--gold); border-color: rgba(255,212,77,.35); background: rgba(255,212,77,.08); font-variant-numeric: tabular-nums; }
 
+/* Prestige stars (1–5 ★) — drivers, teams, staff, sponsors, personas */
+.prestige-chip {
+    color: var(--gold); border-color: rgba(255,212,77,.35); background: rgba(255,212,77,.08);
+    letter-spacing: 2px; font-size: .78rem; white-space: nowrap;
+}
+.prestige-cell { color: var(--gold); letter-spacing: 1px; white-space: nowrap; font-size: .8rem; }
+
 .car-card {
     background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--r-lg);
     padding: 1.1rem; display: flex; flex-direction: column; gap: .45rem; box-shadow: var(--shadow);
@@ -658,6 +675,8 @@ select.input { cursor: pointer; }
 
 @media (max-width: 560px) {
     .view-root { padding: 1rem .8rem 2.5rem; }
+    .header-username { max-width: 6.5rem; }
+    .role-badge { max-width: 7.5rem; }
     .modal-card { padding: 1.1rem; }
     .stat-strip { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
     .driver-hero, .series-hero { flex-direction: column; align-items: flex-start; }
