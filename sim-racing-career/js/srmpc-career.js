@@ -415,6 +415,7 @@ const Career = {
                 <button class="btn btn-secondary btn-sm" onclick="Career.toggleRecruiting('${Util.attr(team.id)}', ${team.recruiting === false})">
                     ${team.recruiting === false ? 'Open recruiting' : 'Close recruiting'}
                 </button>
+                <button class="btn btn-ghost btn-sm" onclick="Career.leaveTeamOwnership('${Util.attr(team.id)}')">🚪 Leave team</button>
             </div>
         </div>
 
@@ -565,6 +566,21 @@ const Career = {
             await Auth.updateProfile({ teamId });
             Modal.close();
             Util.notify('The team is yours. Make it a dynasty. 🏢');
+            App.go('career');
+        } catch (e) { Util.notify(e.message, 'error'); }
+    },
+
+    // A team owner stepping down: the team keeps its roster, staff, and
+    // history, and becomes available for another player to take over.
+    async leaveTeamOwnership(teamId) {
+        const team = await DB.get('teams', teamId);
+        if (!confirm(`Step down as owner of ${team?.name || 'this team'}?\n\n` +
+            `The team keeps its drivers, staff, contracts, and results — it just becomes available for another player to take over. ` +
+            `You can then found a new team or take over a different one.`)) return;
+        try {
+            await DB.update('teams', teamId, { ownerUid: null, isEstablished: true });
+            if (Auth.state.profile?.teamId === teamId) await Auth.updateProfile({ teamId: null });
+            Util.notify('You have stepped down — the team is open for takeover. Pick your next chapter. 🏢');
             App.go('career');
         } catch (e) { Util.notify(e.message, 'error'); }
     },
