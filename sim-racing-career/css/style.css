@@ -657,6 +657,13 @@ select.input { cursor: pointer; }
     overflow: hidden; /* uploaded photos clip to the circle */
 }
 .profile-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.profile-avatar.editable { cursor: pointer; transition: box-shadow .15s, transform .15s; }
+.profile-avatar.editable:hover { box-shadow: 0 0 0 3px var(--accent-2); transform: scale(1.03); }
+.edit-pencil {
+    font-size: .85rem; width: 1.9rem; height: 1.9rem; margin-left: .2rem;
+    vertical-align: middle; color: var(--accent-2);
+}
+.edit-pencil:hover { color: var(--text); }
 .scroll-list { max-height: 380px; overflow-y: auto; }
 .header-username:not(:empty) { cursor: pointer; }
 .header-username:not(:empty):hover { color: var(--accent-2); text-decoration: underline; }

@@ -143,21 +143,35 @@ const Profile = {
         </div>
 
         <div class="driver-hero panel">
-            ${user.avatar
-                ? `<div class="driver-hero-num profile-avatar"><img src="${user.avatar}" alt="${Util.esc(name)}"></div>`
-                : `<div class="driver-hero-num profile-avatar">${Util.esc(initials)}</div>`}
+            ${(() => {
+                const canEdit = isSelf || isAdmin;
+                const avatarInner = user.avatar
+                    ? `<img src="${user.avatar}" alt="${Util.esc(name)}">`
+                    : Util.esc(initials);
+                // Your own hero is click-to-edit: avatar and name open the editor,
+                // the role/difficulty chips open their real switchers.
+                return `<div class="driver-hero-num profile-avatar ${canEdit ? 'editable' : ''}"
+                    ${canEdit ? `onclick="Profile.editModal('${Util.attr(uid)}')" title="Change your photo"` : ''}>${avatarInner}</div>`;
+            })()}
             <div class="driver-hero-info">
-                <h2>${Util.esc(name)} <span class="badge badge-blue">Player</span></h2>
+                <h2>${Util.esc(name)} <span class="badge badge-blue">Player</span>
+                    ${isSelf || isAdmin ? `<button class="icon-btn edit-pencil" onclick="Profile.editModal('${Util.attr(uid)}')" title="Edit name, photo, country, and bio">✎</button>` : ''}
+                </h2>
                 <div class="chip-row">
-                    ${Prestige.chip(stars, 'Career prestige')}
-                    ${activeRole ? `<span class="chip">${activeRole.icon} ${Util.esc(activeRole.label)}</span>` : ''}
+                    ${Prestige.chip(stars, 'Career prestige — earned on track: wins, podiums, poles, and titles raise it')}
+                    ${activeRole ? (isSelf
+                        ? `<button class="chip chip-btn" onclick="Career.showRolePicker()" title="Switch your role">${activeRole.icon} ${Util.esc(activeRole.label)} ⇄</button>`
+                        : `<span class="chip">${activeRole.icon} ${Util.esc(activeRole.label)}</span>`) : ''}
                     ${user.country ? `<span class="chip chip-dim">📍 ${Util.esc(user.country)}</span>` : ''}
-                    ${diff ? `<span class="chip chip-dim">${diff.icon} ${Util.esc(diff.label)}</span>` : ''}
+                    ${diff ? (isSelf
+                        ? `<button class="chip chip-btn" onclick="Economy.difficultyPicker(false)" title="Change difficulty — restarts your career from scratch">${diff.icon} ${Util.esc(diff.label)} ⇄</button>`
+                        : `<span class="chip chip-dim">${diff.icon} ${Util.esc(diff.label)}</span>`) : ''}
                     ${joined ? `<span class="chip chip-dim">📅 Member since ${Util.esc(joined)}</span>` : ''}
-                    ${(isSelf || isAdmin) && user.walletInitialized ? `<span class="chip wallet-chip">💵 ${Economy.fmt(user.balance)}</span>` : ''}
+                    ${(isSelf || isAdmin) && user.walletInitialized ? `<span class="chip wallet-chip" title="Earned through prizes, sponsor payouts, and contracts — spent on signings and buyouts">💵 ${Economy.fmt(user.balance)}</span>` : ''}
                     ${isAdmin ? `<span class="chip chip-dim">✉️ ${Util.esc(user.email || '—')}</span>` : ''}
                 </div>
-                ${user.bio ? `<p class="muted" style="margin-top:.45rem">${Util.esc(user.bio)}</p>` : (isSelf ? `<p class="muted small" style="margin-top:.45rem">Add a bio and photo with ✎ Edit Profile — make this page yours.</p>` : '')}
+                ${user.bio ? `<p class="muted" style="margin-top:.45rem">${Util.esc(user.bio)}</p>`
+                    : (isSelf ? `<p class="muted small" style="margin-top:.45rem">✎ Click your name or photo to set your display name, photo, country, and bio.</p>` : '')}
                 ${driverTitles.length || teamTitles.length ? `<div class="chip-row" style="margin-top:.4rem">
                     ${driverTitles.map(se => `<span class="chip rating-chip" title="Drivers' champion">🏆 ${Util.esc(se.name)}</span>`).join('')}
                     ${teamTitles.map(se => `<span class="chip rating-chip" title="Constructors' champion (team owner)">🛠🏆 ${Util.esc(se.name)}</span>`).join('')}
@@ -296,7 +310,7 @@ const Profile = {
             ${Modal.header('✎ Edit Player Profile', isSelf ? 'How the league sees you — everywhere in the app' : `Editing ${Util.esc(user.displayName || 'player')} as Game Master`)}
             <form id="profile-form" class="form-grid">
                 <label class="field"><span>Display name *</span>
-                    <input id="pf-name" class="input" required maxlength="40" value="${Util.esc(user.displayName || '')}"></label>
+                    <input id="pf-name" class="input" required maxlength="40" autofocus value="${Util.esc(user.displayName || '')}"></label>
                 <label class="field"><span>Country</span>
                     <input id="pf-country" class="input" maxlength="30" placeholder="e.g. USA" value="${Util.esc(user.country || '')}"></label>
                 <label class="field"><span>Bio</span>
