@@ -17,6 +17,7 @@ const App = {
         'stats': (el) => Views.stats(el),
         'challenges': (el) => Views.challenges(el),
         'career': (el) => Views.career(el),
+        'dealership': (el) => Market.dealership(el),
         'admin': (el, tab) => Admin.render(el, tab)
     },
 
@@ -98,6 +99,14 @@ const App = {
         });
 
         document.getElementById('gm-elevate-btn').addEventListener('click', () => this.showGmModal());
+        document.getElementById('player-return-btn').addEventListener('click', () => this.returnToPlayer());
+
+        // The role badge doubles as a switcher: players get the role picker,
+        // an elevated Game Master drops back to their player career.
+        document.getElementById('role-badge').addEventListener('click', () => {
+            if (Auth.isAdmin() && this._canReturnToPlayer()) this.returnToPlayer();
+            else if (Auth.isPlayer()) Career.showRolePicker();
+        });
 
         // Theme toggle (light / dark)
         const themeBtn = document.getElementById('theme-toggle');
@@ -126,27 +135,48 @@ const App = {
     updateHeader() {
         const badge = document.getElementById('role-badge');
         const gmBtn = document.getElementById('gm-elevate-btn');
+        const playerBtn = document.getElementById('player-return-btn');
         const adminNav = document.getElementById('nav-admin');
         const careerNav = document.getElementById('nav-career');
         const userName = document.getElementById('header-username');
 
         if (Auth.isAdmin()) {
             badge.textContent = 'Game Master';
-            badge.className = 'role-badge badge-admin';
+            badge.className = 'role-badge badge-admin' + (this._canReturnToPlayer() ? ' role-badge-btn' : '');
+            badge.title = this._canReturnToPlayer() ? 'Switch back to your player career' : '';
             userName.textContent = Auth.state.profile?.displayName || 'Admin';
         } else if (Auth.isPlayer()) {
             const role = Career.roleInfo(Auth.state.profile?.activeRole);
             badge.textContent = role ? role.label : 'Player';
-            badge.className = 'role-badge badge-player';
+            badge.className = 'role-badge badge-player role-badge-btn';
+            badge.title = 'Switch role';
             userName.textContent = Auth.state.profile?.displayName || Auth.state.user?.email || 'Player';
         } else {
             badge.textContent = '';
+            badge.className = 'role-badge';
+            badge.title = '';
             userName.textContent = '';
         }
 
         gmBtn.classList.toggle('hidden', !Auth.isPlayer());
+        playerBtn.classList.toggle('hidden', !this._canReturnToPlayer());
         adminNav.classList.toggle('hidden', !Auth.isAdmin());
         careerNav.classList.toggle('hidden', !(Auth.isPlayer() || (Auth.isAdmin() && Auth.state.profile)));
+    },
+
+    /* ---------------- Game Master ⇄ Player switching ---------------- */
+    _canReturnToPlayer() {
+        return Auth.isAdmin() && !!Auth.state.user && !Auth.state.user.isAnonymous;
+    },
+
+    async returnToPlayer() {
+        await Auth.dropAdmin();
+        if (Auth.isPlayer()) {
+            Util.notify('Back to your player career. Unlock GM again anytime with the GM button. 🏎');
+            this.go('career');
+        } else {
+            Util.notify('Signed out of Game Master.');
+        }
     },
 
     /* ---------------- Auth gate ---------------- */

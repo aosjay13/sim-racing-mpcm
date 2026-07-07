@@ -90,6 +90,7 @@ const Admin = {
                     <button class="btn btn-secondary" onclick="Admin.driverForm()">🏎 Add Driver</button>
                     <button class="btn btn-secondary" onclick="Admin.generateChallengesForm()">🎯 Generate Challenges</button>
                     <button class="btn btn-secondary" onclick="Admin.challengeForm()">＋ Custom Challenge</button>
+                    <button class="btn btn-secondary" onclick="Admin.generateNPCsForm()">🤖 Generate Free Agents</button>
                 </div>
             </section>
 
@@ -943,7 +944,10 @@ const Admin = {
         el.innerHTML = `
         <section class="panel">
             <div class="panel-head"><h2>🏎 Drivers (${world.drivers.length})</h2>
-                <button class="btn btn-primary btn-sm" onclick="Admin.driverForm()">＋ Add Driver</button></div>
+                <div class="btn-row">
+                    <button class="btn btn-secondary btn-sm" onclick="Admin.generateNPCsForm()">🤖 Generate Free Agents</button>
+                    <button class="btn btn-primary btn-sm" onclick="Admin.driverForm()">＋ Add Driver</button>
+                </div></div>
             ${world.drivers.length ? `<table class="table">
                 <thead><tr><th>Driver</th><th>Team</th><th>Type</th><th></th></tr></thead>
                 <tbody>${world.drivers.map(d => `
@@ -1002,6 +1006,46 @@ const Admin = {
                 Util.notify(driver ? 'Driver updated.' : 'Driver added. 🏎');
                 this.refresh();
             } catch (err) { Util.notify(err.message, 'error'); }
+        });
+    },
+
+    /* ---------------- NPC world generator ---------------- */
+    async generateNPCsForm() {
+        if (!this.guard()) return;
+        Modal.open(`
+            ${Modal.header('🤖 Generate Free Agents & Rivals', 'Fill the league with hireable AI drivers, pit crew, and rival teams')}
+            <form id="npc-form" class="form-grid">
+                <div class="form-row">
+                    <label class="field"><span>Free agent drivers</span><input id="npc-drivers" class="input" type="number" min="0" max="40" value="10"></label>
+                    <label class="field"><span>Free agent pit crew</span><input id="npc-crew" class="input" type="number" min="0" max="40" value="12"></label>
+                    <label class="field"><span>Rival teams</span><input id="npc-teams" class="input" type="number" min="0" max="10" value="4"></label>
+                </div>
+                <p class="muted small">Each rival team gets 2 drivers + a crew chief + a mechanic. Free agents appear in every Team Owner's hire market with a skill rating and an asking salary. Team Owners negotiate the actual pay.</p>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Generate 🤖</button>
+                </div>
+            </form>
+        `);
+        Util.$('#npc-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector('button[type=submit]');
+            btn.disabled = true;
+            btn.textContent = 'Generating…';
+            try {
+                const summary = await generateNPCWorld({
+                    freeDrivers: Number(Util.$('#npc-drivers').value) || 0,
+                    freeCrew: Number(Util.$('#npc-crew').value) || 0,
+                    rivalTeams: Number(Util.$('#npc-teams').value) || 0
+                });
+                Modal.close();
+                Util.notify(`League populated: ${Util.plural(summary.teams, 'rival team')}, ${Util.plural(summary.drivers, 'driver')}, ${Util.plural(summary.staff, 'crew member')}. 🤖`);
+                this.refresh();
+            } catch (err) {
+                Util.notify(err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = 'Generate 🤖';
+            }
         });
     },
 
@@ -1259,7 +1303,7 @@ const Admin = {
 
         Util.$('#export-btn', el).addEventListener('click', async () => {
             try {
-                const collections = ['games', 'series', 'races', 'teams', 'drivers', 'users', 'challenges', 'challengeClaims', 'raceSignups', 'roleProfiles'];
+                const collections = ['games', 'series', 'races', 'teams', 'drivers', 'users', 'challenges', 'challengeClaims', 'raceSignups', 'roleProfiles', 'staff', 'contracts'];
                 const backup = { exportedAt: new Date().toISOString() };
                 for (const c of collections) {
                     try { backup[c] = await DB.list(c, { force: true }); } catch (err) { backup[c] = { error: err.message }; }

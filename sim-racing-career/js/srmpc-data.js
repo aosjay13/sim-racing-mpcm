@@ -143,6 +143,8 @@ const DB = {
     claims(opts) { return this.list('challengeClaims', opts); },
     signups(opts) { return this.list('raceSignups', opts); },
     roleProfiles(opts) { return this.list('roleProfiles', opts); },
+    staff(opts) { return this.list('staff', opts); },
+    contracts(opts) { return this.list('contracts', opts); },
 
     // Everything most views need, in one parallel load.
     async loadWorld(force = false) {

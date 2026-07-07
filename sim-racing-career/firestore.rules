@@ -13,6 +13,8 @@ service cloud.firestore {
     match /teams/{doc}    { allow read: if true; allow write: if isAuthenticated(); }
     match /drivers/{doc}  { allow read: if true; allow write: if isAuthenticated(); }
     match /challenges/{doc} { allow read: if true; allow write: if isAuthenticated(); }
+    match /staff/{doc}      { allow read: if true; allow write: if isAuthenticated(); }
+    match /contracts/{doc}  { allow read: if true; allow write: if isAuthenticated(); }
 
     // ----- Member-only data -----
     match /users/{userId}        { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }

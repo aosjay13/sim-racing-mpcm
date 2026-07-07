@@ -163,7 +163,9 @@ a:hover { text-decoration: underline; }
 }
 .nav-admin { color: var(--gold); }
 
-.nav-toggle { display: none; }
+/* .icon-btn.nav-toggle — must out-specify .icon-btn (defined later), which
+   otherwise re-displays the hamburger on desktop where the full nav is visible. */
+.icon-btn.nav-toggle { display: none; }
 
 .header-user { margin-left: auto; display: flex; align-items: center; gap: .6rem; }
 .header-username { font-weight: 600; font-size: .9rem; color: var(--text); }
@@ -175,6 +177,11 @@ a:hover { text-decoration: underline; }
 }
 .badge-admin { color: var(--gold); border-color: rgba(255,212,77,.4); background: rgba(255,212,77,.08); }
 .badge-player { color: var(--accent-2); border-color: rgba(0,217,255,.4); background: rgba(0,217,255,.08); }
+
+/* Clickable role badge (opens the role switcher / drops GM mode) */
+.role-badge-btn { cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.role-badge-btn:hover { border-color: var(--accent-2); box-shadow: 0 0 10px rgba(0,217,255,.3); }
+.role-badge-btn::after { content: " ⇄"; opacity: .7; }
 
 .footer {
     margin-top: auto; text-align: center; color: var(--text-faint);
@@ -617,11 +624,27 @@ select.input { cursor: pointer; }
 .top3-medal { font-size: 1rem; }
 
 /* ============================================================
+   Market, contracts & dealership
+   ============================================================ */
+.wallet-chip { color: var(--good); border-color: rgba(34,197,94,.35); background: rgba(34,197,94,.08); font-variant-numeric: tabular-nums; }
+.market-price { color: var(--good); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rating-chip { color: var(--gold); border-color: rgba(255,212,77,.35); background: rgba(255,212,77,.08); font-variant-numeric: tabular-nums; }
+
+.car-card {
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--r-lg);
+    padding: 1.1rem; display: flex; flex-direction: column; gap: .45rem; box-shadow: var(--shadow);
+    position: relative; overflow: hidden;
+}
+.car-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent-2); opacity: .7; }
+.car-emoji { font-size: 2.2rem; line-height: 1; }
+.car-card h3 { font-size: 1rem; }
+
+/* ============================================================
    Responsive
    ============================================================ */
 @media (max-width: 900px) {
     .grid-2, .grid-cal { grid-template-columns: 1fr; }
-    .nav-toggle { display: inline-flex; order: 3; margin-left: auto; }
+    .icon-btn.nav-toggle { display: inline-flex; order: 3; margin-left: auto; }
     .header-user { order: 4; }
     .main-nav {
         order: 5; width: 100%; flex-direction: column; align-items: stretch; gap: .1rem;

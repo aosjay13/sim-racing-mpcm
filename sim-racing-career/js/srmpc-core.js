@@ -404,6 +404,22 @@ const Auth = {
         this._emit();
     },
 
+    // Drop Game Master powers without a full sign-out: an elevated player
+    // returns to their player career; a passcode-only (anonymous Firebase)
+    // session has no player account underneath, so it signs out to the gate.
+    async dropAdmin() {
+        localStorage.removeItem(this._ADMIN_SESSION_KEY);
+        const user = fbAuth?.currentUser;
+        if (user && !user.isAnonymous) {
+            this.state.mode = 'player';
+            this.state.adminLocalOnly = false;
+            await this._loadProfile(user);
+            this._emit();
+        } else {
+            await this.signOut();
+        }
+    },
+
     async signOut() {
         localStorage.removeItem(this._ADMIN_SESSION_KEY);
         this.state.mode = 'guest';

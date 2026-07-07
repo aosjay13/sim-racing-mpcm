@@ -39,8 +39,11 @@ const Career = {
     async pickRole(roleId) {
         try {
             await Auth.updateProfile({ activeRole: roleId });
+            let granted = false;
+            try { granted = await Economy.ensureWallet(roleId); } catch (e) { /* re-tried on next career visit */ }
             Modal.close();
             Util.notify(`You are now playing as ${this.roleInfo(roleId)?.label || roleId}.`);
+            if (granted) Util.notify(`Starting budget granted: ${Economy.fmt(Economy.balance())} 💵`, 'info');
             App.go('career');
         } catch (e) {
             Util.notify('Could not save role: ' + e.message, 'error');
@@ -77,6 +80,15 @@ const Career = {
         }
 
         const role = profile.activeRole;
+        // Existing players who picked a role before the economy shipped get
+        // their starting budget on the next career visit.
+        if (!profile.walletInitialized) {
+            try {
+                if (await Economy.ensureWallet(role)) {
+                    Util.notify(`Career funds granted: ${Economy.fmt(Economy.balance())} 💵`, 'info');
+                }
+            } catch (e) { /* non-fatal — retried next visit */ }
+        }
         if (role === 'driver') return this.driverWorkspace(el);
         if (role === 'team-owner') return this.teamOwnerWorkspace(el);
         return this.genericWorkspace(el, role);
@@ -87,6 +99,7 @@ const Career = {
         return `<div class="view-head">
             <div><h1>${info.icon} ${info.label} Career</h1><p class="muted">${Util.esc(Auth.state.profile?.displayName || '')} — ${info.desc}</p></div>
             <div class="btn-row">
+                ${Economy.walletChip()}
                 ${extraBtns}
                 <button class="btn btn-ghost" onclick="Career.showRolePicker()">⇄ Switch Role</button>
             </div>
@@ -370,6 +383,21 @@ const Career = {
             .filter(r => r.results.some(res => roster.some(d => d.id === res.driverId)))
             .sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 8);
 
+        // Staff on payroll + active contracts (salary lookup by person).
+        let staff = [], contracts = [];
+        try {
+            [staff, contracts] = await Promise.all([
+                DB.staff({ force: true }).catch(() => []),
+                DB.contracts({ force: true }).catch(() => [])
+            ]);
+        } catch (e) { /* market not seeded yet */ }
+        const myStaff = staff.filter(s => s.teamId === team.id);
+        const salaryOf = (personId) => {
+            const c = contracts.find(c => c.personId === personId && c.teamId === team.id && c.status === 'active');
+            return c ? c.salary : null;
+        };
+        const payroll = [...roster, ...myStaff].reduce((sum, p) => sum + (salaryOf(p.id) ?? p.salary ?? 0), 0);
+
         el.innerHTML = `
         ${this._workspaceHead('team-owner', `<button class="btn btn-secondary" onclick="Career.teamForm('${Util.attr(team.id)}')">✎ Edit Team</button>`)}
 
@@ -391,30 +419,73 @@ const Career = {
         </div>
 
         <div class="stat-strip">
+            ${C.statChip(Economy.fmt(Economy.balance()), 'Balance')}
+            ${C.statChip(payroll ? Economy.fmt(payroll) : '$0', 'Payroll / race')}
             ${C.statChip(roster.length, 'Drivers')}
+            ${C.statChip(myStaff.length, 'Pit crew')}
             ${C.statChip(teamRow?.points || 0, 'Points')}
             ${C.statChip(teamRow?.wins || 0, 'Wins')}
-            ${C.statChip(teamRow?.podiums || 0, 'Podiums')}
         </div>
 
         <div class="grid-2">
             <section class="panel">
-                <div class="panel-head"><h2>👥 Roster</h2></div>
-                ${roster.length ? roster.map(d => `
+                <div class="panel-head"><h2>👥 Roster</h2>
+                    <button class="btn btn-primary btn-sm" onclick="Market.hireModal('${Util.attr(team.id)}')">🤝 Hire</button></div>
+                ${roster.length ? roster.map(d => {
+                    const sal = salaryOf(d.id) ?? d.salary ?? null;
+                    return `
                     <div class="race-row" onclick="Views.showDriver('${Util.attr(d.id)}')">
                         <div class="driver-hero-num" style="font-size:1.1rem;min-width:3rem">${d.number ? '#' + Util.esc(String(d.number)) : '🏎️'}</div>
                         <div class="race-row-main">
-                            <span class="race-title">${Util.esc(d.name)}</span>
-                            <span class="race-sub">${Util.esc(d.country || '')}</span>
+                            <span class="race-title">${Util.esc(d.name)} ${d.ownerUid ? '<span class="badge badge-blue">Player</span>' : ''}</span>
+                            <span class="race-sub">${Util.esc(d.country || '')}${sal ? ` · ${Economy.fmt(sal)}/race` : ''}</span>
                         </div>
-                    </div>`).join('')
-                    : C.empty('👥', 'No drivers yet', 'Keep recruiting open — drivers can sign with you from their career page. The Game Master can also assign drivers.')}
+                        ${d.ownerUid ? '' : `<button class="btn btn-danger btn-sm" onclick="event.stopPropagation();Market.release('driver','${Util.attr(d.id)}','${Util.attr(team.id)}')">Release</button>`}
+                    </div>`;
+                }).join('')
+                    : C.empty('👥', 'No drivers yet', 'Hire free agents with the Hire button, or keep recruiting open so player drivers can sign with you.')}
+            </section>
+
+            <section class="panel">
+                <div class="panel-head"><h2>🧰 Pit Crew & Staff</h2>
+                    <button class="btn btn-secondary btn-sm" onclick="Market.hireModal('${Util.attr(team.id)}')">🤝 Hire</button></div>
+                ${myStaff.length ? myStaff.map(s => {
+                    const info = staffRoleInfo(s.role);
+                    const sal = salaryOf(s.id) ?? s.salary ?? null;
+                    return `
+                    <div class="race-row">
+                        <div class="driver-hero-num" style="font-size:1.1rem;min-width:3rem">${info.icon}</div>
+                        <div class="race-row-main">
+                            <span class="race-title">${Util.esc(s.name)}</span>
+                            <span class="race-sub">${Util.esc(info.label)}${s.rating ? ` · ⭐ ${s.rating}` : ''}${sal ? ` · ${Economy.fmt(sal)}/race` : ''}</span>
+                        </div>
+                        <button class="btn btn-danger btn-sm" onclick="Market.release('staff','${Util.attr(s.id)}','${Util.attr(team.id)}')">Release</button>
+                    </div>`;
+                }).join('')
+                    : C.empty('🧰', 'No crew hired yet', 'A crew chief, engineer, mechanic, and spotter keep your cars fast and reliable. Hire from the free agent market.')}
             </section>
 
             <section class="panel">
                 <div class="panel-head"><h2>📊 Recent Team Results</h2></div>
                 ${results.length ? results.map(r => C.raceRow(r, world)).join('')
                     : C.empty('📊', 'No results yet', 'Team results appear once your drivers finish races.')}
+            </section>
+
+            <section class="panel">
+                <div class="panel-head"><h2>📜 Contracts</h2></div>
+                ${(() => {
+                    const mine = contracts.filter(c => c.teamId === team.id)
+                        .sort((a, b) => (b.signedAt || '').localeCompare(a.signedAt || ''));
+                    return mine.length ? mine.slice(0, 10).map(c => `
+                        <div class="race-row">
+                            <div class="race-row-main">
+                                <span class="race-title">${Util.esc(c.personName)}</span>
+                                <span class="race-sub">${Util.esc(c.personKind === 'driver' ? 'Driver' : staffRoleInfo(c.role).label)} · ${Economy.fmt(c.salary)}/race · ${Util.esc(String(c.seasonYear || ''))} season</span>
+                            </div>
+                            <span class="badge ${c.status === 'active' ? 'badge-green' : 'badge-dim'}">${Util.esc(c.status)}</span>
+                        </div>`).join('')
+                        : C.empty('📜', 'No contracts yet', 'Every hire signs a season contract — they all show up here.');
+                })()}
             </section>
         </div>`;
     },
