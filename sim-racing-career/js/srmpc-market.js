@@ -8,21 +8,110 @@
 
 /* ---------------- Economy ---------------- */
 const Economy = {
-    // Starting budget granted once, the first time a player picks a role.
-    // A Team Owner starts with enough to buy a car and sign a small crew.
-    STARTING_BUDGETS: { 'team-owner': 50000, 'driver': 10000 },
-    DEFAULT_BUDGET: 5000,
+    // Career difficulty sets the one-time starting budget. Scaled to
+    // real-world racing money: Easy ≈ a sponsored GT program, Medium ≈ a
+    // serious club-racing season, Hard ≈ grassroots with a used car.
+    DIFFICULTIES: {
+        easy: { id: 'easy', icon: '🟢', label: 'Sponsored Start', tagline: 'Easy — a major sponsor bankrolls your debut. Buy cars, hire a full crew, live comfortably.', start: 250000 },
+        medium: { id: 'medium', icon: '🟡', label: 'Semi-Pro', tagline: 'Medium — a solid season budget. Enough for a car and a small crew if you spend wisely.', start: 75000 },
+        hard: { id: 'hard', icon: '🔴', label: 'Grassroots Underdog', tagline: 'Hard — a shoestring budget and a dream. Every dollar hurts.', start: 15000 }
+    },
+    difficultyInfo(id) { return this.DIFFICULTIES[id] || null; },
 
     fmt(n) { return '$' + Math.round(Number(n) || 0).toLocaleString('en-US'); },
-    startingFor(roleId) { return this.STARTING_BUDGETS[roleId] ?? this.DEFAULT_BUDGET; },
     balance() { return Number(Auth.state.profile?.balance) || 0; },
 
-    // One-time wallet grant. Returns true if money was granted just now.
-    async ensureWallet(roleId) {
-        const p = Auth.state.profile;
-        if (!p || p.walletInitialized) return false;
-        await Auth.updateProfile({ balance: this.startingFor(roleId), walletInitialized: true });
-        return true;
+    /* ----- Difficulty picker (first login + change-with-restart) ----- */
+    difficultyPicker(firstTime = true) {
+        const current = Auth.state.profile?.difficulty;
+        Modal.open(`
+            ${Modal.header(firstTime ? '🎮 Choose Your Difficulty' : '🎮 Change Difficulty',
+                firstTime ? 'How hard should your career be? This sets your starting budget.'
+                    : 'Changing difficulty RESTARTS your career from nothing.')}
+            <div class="role-grid">
+                ${Object.values(this.DIFFICULTIES).map(d => `
+                    <button class="role-card ${current === d.id ? 'selected' : ''}"
+                        onclick="Economy.${firstTime ? 'pickDifficulty' : 'confirmRestart'}('${d.id}')">
+                        <span class="role-icon">${d.icon}</span>
+                        <span class="role-name">${d.label}${current === d.id ? ' (current)' : ''}</span>
+                        <span class="role-desc">${d.tagline}</span>
+                        <span class="market-price">${this.fmt(d.start)} starting budget</span>
+                    </button>`).join('')}
+            </div>
+            <p class="muted small" style="margin-top:.8rem">${firstTime
+                ? 'You can change difficulty later — but that restarts your career from scratch.'
+                : '⚠ Restarting releases your team ownership, deletes your driver profile and stats, ends your contracts, clears challenge progress, and sets your balance to the new starting budget.'}</p>
+        `, { wide: true });
+    },
+
+    async pickDifficulty(id) {
+        try {
+            const d = this.DIFFICULTIES[id];
+            if (!d) return;
+            await Auth.updateProfile({ difficulty: id, balance: d.start, walletInitialized: true });
+            Modal.close();
+            Util.notify(`${d.icon} ${d.label} — starting budget ${this.fmt(d.start)}. Good luck out there!`);
+            App.go('career');
+        } catch (e) { Util.notify(e.message, 'error'); }
+    },
+
+    async confirmRestart(id) {
+        const d = this.DIFFICULTIES[id];
+        if (!d) return;
+        if (Auth.state.profile?.difficulty === id) { Util.notify('That is already your difficulty.', 'info'); return; }
+        const typed = prompt(
+            `Restarting on ${d.label} wipes your career:\n\n` +
+            `• Team ownership released (team becomes available for takeover)\n` +
+            `• Your driver profile and stats are deleted\n` +
+            `• Your contracts end and challenge progress clears\n` +
+            `• Balance resets to ${this.fmt(d.start)}\n\n` +
+            `Type RESET to confirm.`);
+        if ((typed || '').trim().toUpperCase() !== 'RESET') { Util.notify('Restart cancelled — career untouched.', 'info'); return; }
+        await this.restartCareer(id);
+    },
+
+    // Full career wipe + fresh start on the chosen difficulty.
+    async restartCareer(diffId) {
+        try {
+            const uid = Auth.uid();
+            const d = this.DIFFICULTIES[diffId];
+            const name = Auth.state.profile?.displayName || 'A player';
+
+            // Release owned teams (kept intact for takeover).
+            const teams = await DB.teams({ force: true });
+            for (const t of teams.filter(t => t.ownerUid === uid)) {
+                await DB.update('teams', t.id, { ownerUid: null, isEstablished: true });
+            }
+            // End contracts tied to my driver(s), then delete the drivers.
+            const drivers = await DB.drivers({ force: true });
+            const myDrivers = drivers.filter(dr => dr.ownerUid === uid);
+            const contracts = await DB.contracts({ force: true }).catch(() => []);
+            for (const c of contracts.filter(c => c.status === 'active' && myDrivers.some(dr => dr.id === c.personId))) {
+                await DB.update('contracts', c.id, { status: 'released', endedAt: Util.todayISO() });
+            }
+            for (const dr of myDrivers) await DB.remove('drivers', dr.id);
+            // Role profiles, challenge claims, race signups — gone.
+            const rps = await DB.roleProfiles({ force: true }).catch(() => []);
+            for (const rp of rps.filter(r => r.uid === uid)) await DB.remove('roleProfiles', rp.id);
+            const claims = await DB.claims({ force: true }).catch(() => []);
+            for (const c of claims.filter(c => c.uid === uid)) await DB.remove('challengeClaims', c.id);
+            const signups = await DB.signups({ force: true }).catch(() => []);
+            for (const s of signups.filter(s => s.uid === uid)) await DB.remove('raceSignups', s.id);
+            // Withdraw anything pending in the recruitment market.
+            const rec = await DB.recruitment({ force: true }).catch(() => []);
+            for (const r of rec.filter(r => r.status === 'pending' && (r.driverUid === uid || r.ownerUid === uid))) {
+                await DB.update('recruitment', r.id, { status: 'withdrawn' });
+            }
+            // Fresh profile.
+            await Auth.updateProfile({
+                activeRole: null, driverId: null, teamId: null,
+                difficulty: diffId, balance: d.start, walletInitialized: true
+            });
+            Modal.close();
+            News.post('🔄', `${name} restarted their career on ${d.icon} ${d.label}`);
+            Util.notify(`Career restarted on ${d.label}. Starting budget: ${this.fmt(d.start)}. 🔄`);
+            App.go('career');
+        } catch (e) { Util.notify(e.message, 'error'); }
     },
 
     async spend(amount, label) {

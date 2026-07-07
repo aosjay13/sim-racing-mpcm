@@ -39,11 +39,8 @@ const Career = {
     async pickRole(roleId) {
         try {
             await Auth.updateProfile({ activeRole: roleId });
-            let granted = false;
-            try { granted = await Economy.ensureWallet(roleId); } catch (e) { /* re-tried on next career visit */ }
             Modal.close();
             Util.notify(`You are now playing as ${this.roleInfo(roleId)?.label || roleId}.`);
-            if (granted) Util.notify(`Starting budget granted: ${Economy.fmt(Economy.balance())} 💵`, 'info');
             App.go('career');
         } catch (e) {
             Util.notify('Could not save role: ' + e.message, 'error');
@@ -65,6 +62,12 @@ const Career = {
                 `<button class="btn btn-primary" onclick="App.go('admin')">Open Admin Console</button>`)}`;
             return;
         }
+        // First login: choose a difficulty (sets the starting budget) before
+        // anything else. The picker floats over whatever renders below.
+        if (Auth.isPlayer() && profile && !profile.difficulty) {
+            Economy.difficultyPicker(true);
+        }
+
         if (!profile?.activeRole) {
             el.innerHTML = `
             <div class="view-head"><div><h1>My Career</h1><p class="muted">Pick a role to unlock your workspace.</p></div></div>
@@ -80,15 +83,6 @@ const Career = {
         }
 
         const role = profile.activeRole;
-        // Existing players who picked a role before the economy shipped get
-        // their starting budget on the next career visit.
-        if (!profile.walletInitialized) {
-            try {
-                if (await Economy.ensureWallet(role)) {
-                    Util.notify(`Career funds granted: ${Economy.fmt(Economy.balance())} 💵`, 'info');
-                }
-            } catch (e) { /* non-fatal — retried next visit */ }
-        }
         if (role === 'driver') return this.driverWorkspace(el);
         if (role === 'team-owner') return this.teamOwnerWorkspace(el);
         return this.genericWorkspace(el, role);
@@ -96,10 +90,12 @@ const Career = {
 
     _workspaceHead(roleId, extraBtns = '') {
         const info = this.roleInfo(roleId);
+        const diff = Economy.difficultyInfo(Auth.state.profile?.difficulty);
         return `<div class="view-head">
             <div><h1>${info.icon} ${info.label} Career</h1><p class="muted">${Util.esc(Auth.state.profile?.displayName || '')} — ${info.desc}</p></div>
             <div class="btn-row">
                 ${Economy.walletChip()}
+                ${diff ? `<button class="chip chip-btn" title="Change difficulty — restarts your career from scratch" onclick="Economy.difficultyPicker(false)">${diff.icon} ${Util.esc(diff.label)}</button>` : ''}
                 ${extraBtns}
                 <button class="btn btn-ghost" onclick="Career.showRolePicker()">⇄ Switch Role</button>
             </div>
