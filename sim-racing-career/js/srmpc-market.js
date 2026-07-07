@@ -232,7 +232,10 @@ const Market = {
     /* ----- Salary negotiation ----- */
     async negotiate(kind, personId, teamId) {
         const collection = kind === 'driver' ? 'drivers' : 'staff';
-        const person = await DB.get(collection, personId);
+        const [person, team] = await Promise.all([
+            DB.get(collection, personId),
+            DB.get('teams', teamId).catch(() => null)
+        ]);
         if (!person) { Util.notify('That free agent is no longer available.', 'error'); return; }
         if (person.teamId) { Util.notify(`${person.name} already signed elsewhere.`, 'info'); return; }
         const asking = this.askingFor(person, kind);
@@ -276,6 +279,7 @@ const Market = {
                 await DB.update(collection, personId, { teamId, salary: offer });
                 await DB.create('contracts', {
                     teamId,
+                    teamName: team?.name || '',
                     ownerUid: Auth.uid(),
                     personId,
                     personKind: kind,
@@ -286,6 +290,7 @@ const Market = {
                     status: 'active',
                     signedAt: Util.todayISO()
                 });
+                News.post('🤝', `${team?.name || 'A team'} signed ${person.name} (${kind === 'driver' ? 'driver' : staffRoleInfo(person.role).label}, ${Economy.fmt(offer)}/race)`);
                 Modal.close();
                 Util.notify(`${person.name} signed for ${Economy.fmt(offer)}/race! 🤝`);
                 App.go('career');
@@ -296,16 +301,25 @@ const Market = {
         });
     },
 
-    /* ----- Releasing a hire ----- */
+    /* ----- Releasing a hire (owner's call — always free for them) ----- */
     async release(kind, personId, teamId) {
         const collection = kind === 'driver' ? 'drivers' : 'staff';
-        const person = await DB.get(collection, personId);
+        const [person, team] = await Promise.all([
+            DB.get(collection, personId),
+            DB.get('teams', teamId).catch(() => null)
+        ]);
         if (!confirm(`Release ${person?.name || 'this person'} from your team? They return to the free agent market.`)) return;
         try {
             await DB.update(collection, personId, { teamId: null });
+            // A released PLAYER driver also gets their account unlinked.
+            if (kind === 'driver' && person?.ownerUid) {
+                if (person.ownerUid === Auth.uid()) await Auth.updateProfile({ teamId: null });
+                else await DB.update('users', person.ownerUid, { teamId: null }).catch(() => {});
+            }
             const contracts = await DB.contracts({ force: true }).catch(() => []);
             const active = contracts.filter(c => c.personId === personId && c.teamId === teamId && c.status === 'active');
             for (const c of active) await DB.update('contracts', c.id, { status: 'released', endedAt: Util.todayISO() });
+            News.post('👋', `${team?.name || 'A team'} released ${person?.name || 'a team member'}`);
             Util.notify(`${person?.name || 'They'} released. Contract ended.`);
             App.go('career');
         } catch (e) { Util.notify(e.message, 'error'); }

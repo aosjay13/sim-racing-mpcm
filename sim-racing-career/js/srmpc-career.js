@@ -162,6 +162,11 @@ const Career = {
         } catch (e) { /* fine */ }
         const approvedClaims = myClaims.filter(c => c.status === 'approved').length;
 
+        let myContract = null;
+        try {
+            myContract = (await DB.contracts()).find(c => c.personId === driver.id && c.status === 'active') || null;
+        } catch (e) { /* contracts optional */ }
+
         el.innerHTML = `
         ${this._workspaceHead('driver', `<button class="btn btn-secondary" onclick="Career.editDriverModal()">✎ Edit Profile</button>`)}
 
@@ -172,6 +177,7 @@ const Career = {
                 <div class="chip-row">
                     ${team ? `<button class="chip chip-btn" onclick="Views.showTeam('${Util.attr(team.id)}')"><span class="team-dot" style="background:${Util.esc(team.color || '#666')}"></span>${Util.esc(team.name)}</button>` : '<span class="chip chip-dim">Free agent</span>'}
                     ${driver.country ? `<span class="chip chip-dim">${Util.esc(driver.country)}</span>` : ''}
+                    ${myContract ? `<span class="chip chip-dim" title="Your active contract">📜 ${Economy.fmt(myContract.salary)}/race${Number(myContract.buyout) ? ` · buyout ${Economy.fmt(myContract.buyout)}` : ''}</span>` : ''}
                 </div>
             </div>
             <div class="btn-col">
@@ -265,6 +271,18 @@ const Career = {
                     status: 'approved'
                 });
                 await Auth.updateProfile({ driverId, teamId: teamId || null });
+                if (teamId) {
+                    const team = await DB.get('teams', teamId);
+                    await DB.create('contracts', {
+                        teamId, teamName: team?.name || '', ownerUid: team?.ownerUid || null,
+                        personId: driverId, personKind: 'driver', personName: name, role: 'driver',
+                        salary: Hub.STANDARD_SALARY, buyout: Hub.buyoutFor(Hub.STANDARD_SALARY),
+                        seasonYear: new Date().getFullYear(), status: 'active', signedAt: Util.todayISO()
+                    });
+                    News.post('🌱', `Rookie ${name} joins the league with ${team?.name || 'a team'}`);
+                } else {
+                    News.post('🌱', `Rookie ${name} joins the league as a free agent`);
+                }
                 Modal.close();
                 Util.notify('Welcome to the grid! Your career starts now. 🏁');
                 App.go('career');
@@ -314,7 +332,7 @@ const Career = {
         const teams = (await DB.teams({ force: true })).filter(t => t.recruiting !== false);
         if (!teams.length) { Util.notify('No teams are recruiting right now.', 'info'); return; }
         Modal.open(`
-            ${Modal.header('Join a Team', 'Teams currently recruiting drivers')}
+            ${Modal.header('Join a Team', `Joining signs a standard contract: ${Economy.fmt(Hub.STANDARD_SALARY)}/race with a ${Economy.fmt(Hub.buyoutFor(Hub.STANDARD_SALARY))} buyout clause`)}
             <div class="stack">${teams.map(t => `
                 <div class="race-row" onclick="Career.joinTeam('${Util.attr(t.id)}')">
                     ${C.logoBox(t)}
@@ -332,24 +350,16 @@ const Career = {
         try {
             const driverId = Auth.state.profile?.driverId;
             if (!driverId) throw new Error('Create your driver profile first.');
-            await DB.update('drivers', driverId, { teamId });
-            await Auth.updateProfile({ teamId });
+            await Hub.signPlayerDriver({ driverId, driverUid: Auth.uid(), teamId, salary: Hub.STANDARD_SALARY });
             Modal.close();
             Util.notify('You have signed with the team! 🤝');
             App.go('career');
         } catch (e) { Util.notify(e.message, 'error'); }
     },
 
-    async leaveTeam() {
-        if (!confirm('Leave your current team and become a free agent?')) return;
-        try {
-            const driverId = Auth.state.profile?.driverId;
-            await DB.update('drivers', driverId, { teamId: null });
-            await Auth.updateProfile({ teamId: null });
-            Util.notify('You are now a free agent.');
-            App.go('career');
-        } catch (e) { Util.notify(e.message, 'error'); }
-    },
+    // Contract-aware: with an active buyout clause this walks through
+    // pay-the-buyout / request-release; otherwise it's a free exit.
+    leaveTeam() { return Hub.leaveTeamFlow(); },
 
     /* ---------------- Team owner workspace ---------------- */
     async teamOwnerWorkspace(el) {
@@ -441,7 +451,7 @@ const Career = {
                             <span class="race-title">${Util.esc(d.name)} ${d.ownerUid ? '<span class="badge badge-blue">Player</span>' : ''}</span>
                             <span class="race-sub">${Util.esc(d.country || '')}${sal ? ` · ${Economy.fmt(sal)}/race` : ''}</span>
                         </div>
-                        ${d.ownerUid ? '' : `<button class="btn btn-danger btn-sm" onclick="event.stopPropagation();Market.release('driver','${Util.attr(d.id)}','${Util.attr(team.id)}')">Release</button>`}
+                        <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();Market.release('driver','${Util.attr(d.id)}','${Util.attr(team.id)}')">Release</button>
                     </div>`;
                 }).join('')
                     : C.empty('👥', 'No drivers yet', 'Hire free agents with the Hire button, or keep recruiting open so player drivers can sign with you.')}
@@ -481,8 +491,9 @@ const Career = {
                         <div class="race-row">
                             <div class="race-row-main">
                                 <span class="race-title">${Util.esc(c.personName)}</span>
-                                <span class="race-sub">${Util.esc(c.personKind === 'driver' ? 'Driver' : staffRoleInfo(c.role).label)} · ${Economy.fmt(c.salary)}/race · ${Util.esc(String(c.seasonYear || ''))} season</span>
+                                <span class="race-sub">${Util.esc(c.personKind === 'driver' ? 'Driver' : staffRoleInfo(c.role).label)} · ${Economy.fmt(c.salary)}/race${Number(c.buyout) ? ` · buyout ${Economy.fmt(c.buyout)}` : ''} · ${Util.esc(String(c.seasonYear || ''))} season</span>
                             </div>
+                            ${c.status === 'active' && Number(c.buyout) > 0 ? `<button class="btn btn-ghost btn-sm" onclick="Hub.waiveBuyout('${Util.attr(c.id)}')">Waive buyout</button>` : ''}
                             <span class="badge ${c.status === 'active' ? 'badge-green' : 'badge-dim'}">${Util.esc(c.status)}</span>
                         </div>`).join('')
                         : C.empty('📜', 'No contracts yet', 'Every hire signs a season contract — they all show up here.');
@@ -531,6 +542,7 @@ const Career = {
                 } else {
                     const id = await DB.create('teams', { ...data, ownerUid: Auth.uid(), isEstablished: false, status: 'approved' });
                     await Auth.updateProfile({ teamId: id });
+                    News.post('🏢', `${data.name} founded by ${Auth.state.profile?.displayName || 'a new owner'} — a new team enters the league`);
                     Util.notify('Team founded! Time to build a legacy. 🏢');
                 }
                 Modal.close();
@@ -564,6 +576,8 @@ const Career = {
         try {
             await DB.update('teams', teamId, { ownerUid: Auth.uid(), isEstablished: true });
             await Auth.updateProfile({ teamId });
+            const team = await DB.get('teams', teamId);
+            News.post('🏢', `${team?.name || 'A team'} has a new owner: ${Auth.state.profile?.displayName || 'a player'}`);
             Modal.close();
             Util.notify('The team is yours. Make it a dynasty. 🏢');
             App.go('career');
@@ -580,6 +594,7 @@ const Career = {
         try {
             await DB.update('teams', teamId, { ownerUid: null, isEstablished: true });
             if (Auth.state.profile?.teamId === teamId) await Auth.updateProfile({ teamId: null });
+            News.post('🚪', `${Auth.state.profile?.displayName || 'The owner'} stepped down from ${team?.name || 'a team'} — the team is open for takeover`);
             Util.notify('You have stepped down — the team is open for takeover. Pick your next chapter. 🏢');
             App.go('career');
         } catch (e) { Util.notify(e.message, 'error'); }

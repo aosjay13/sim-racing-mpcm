@@ -145,6 +145,8 @@ const DB = {
     roleProfiles(opts) { return this.list('roleProfiles', opts); },
     staff(opts) { return this.list('staff', opts); },
     contracts(opts) { return this.list('contracts', opts); },
+    news(opts) { return this.list('news', opts); },
+    recruitment(opts) { return this.list('recruitment', opts); },
 
     // Everything most views need, in one parallel load.
     async loadWorld(force = false) {

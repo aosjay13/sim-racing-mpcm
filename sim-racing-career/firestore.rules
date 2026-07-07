@@ -15,6 +15,8 @@ service cloud.firestore {
     match /challenges/{doc} { allow read: if true; allow write: if isAuthenticated(); }
     match /staff/{doc}      { allow read: if true; allow write: if isAuthenticated(); }
     match /contracts/{doc}  { allow read: if true; allow write: if isAuthenticated(); }
+    match /news/{doc}       { allow read: if true; allow write: if isAuthenticated(); }
+    match /recruitment/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
 
     // ----- Member-only data -----
     match /users/{userId}        { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }

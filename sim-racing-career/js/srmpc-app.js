@@ -18,6 +18,7 @@ const App = {
         'challenges': (el) => Views.challenges(el),
         'career': (el) => Views.career(el),
         'dealership': (el) => Market.dealership(el),
+        'hub': (el, tab) => Hub.render(el, tab),
         'admin': (el, tab) => Admin.render(el, tab)
     },
 

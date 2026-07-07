@@ -840,6 +840,9 @@ const Admin = {
 
                 if (!results.length) throw new Error('Enter at least one finishing position or DNF.');
                 await DB.update('races', raceId, { status: 'completed', results });
+                const winner = results.find(r => Number(r.position) === 1 && !r.dnf);
+                const winnerName = winner ? world.driversById[winner.driverId]?.name : null;
+                if (winnerName) News.post('🏆', `${winnerName} wins ${race.name || race.track || 'a league race'}!`);
                 Modal.close();
                 Util.notify('Results saved — standings and stats updated everywhere. 🏆');
                 this.refresh();
