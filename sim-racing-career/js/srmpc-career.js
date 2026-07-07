@@ -97,6 +97,7 @@ const Career = {
                 ${Economy.walletChip()}
                 ${diff ? `<button class="chip chip-btn" title="Change difficulty — restarts your career from scratch" onclick="Economy.difficultyPicker(false)">${diff.icon} ${Util.esc(diff.label)}</button>` : ''}
                 ${extraBtns}
+                <button class="btn btn-ghost" onclick="App.go('profile')" title="Your full career record">👤 My Profile</button>
                 <button class="btn btn-ghost" onclick="Career.showRolePicker()">⇄ Switch Role</button>
             </div>
         </div>`;

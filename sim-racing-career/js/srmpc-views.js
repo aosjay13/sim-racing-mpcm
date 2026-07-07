@@ -802,11 +802,13 @@ const Views = {
         const team = world.teamsById[driver.teamId];
         const rows = Stats.driverTable(world.races, world);
         const career = rows.find(r => r.driverId === driverId);
-        const history = Stats.driverHistory(driverId, world.races, world).slice(0, 10);
-        // Career points progression (oldest→newest across all completed races).
-        const prog = Stats.pointsProgression(world.races, world, {}, [driverId]);
         const stars = Prestige.driverStars(driverId, world, rows);
         const worth = Prestige.driverWorth(driver, stars);
+        const isPlayerDriver = !!driver.ownerUid;
+        // Players get the works (chart + deep history + a link to their full
+        // profile page); AI carries only what a hiring decision needs.
+        const history = Stats.driverHistory(driverId, world.races, world).slice(0, isPlayerDriver ? 10 : 5);
+        const prog = isPlayerDriver ? Stats.pointsProgression(world.races, world, {}, [driverId]) : { labels: [], series: [] };
 
         Modal.open(`
             ${Modal.header(`${driver.number ? '#' + driver.number + ' ' : ''}${driver.name}`, `${team?.name || 'Free agent'}${driver.country ? ' · ' + driver.country : ''}`)}
@@ -814,7 +816,7 @@ const Views = {
                 ${Prestige.chip(stars)}
                 <span class="chip chip-dim" title="Market worth per race — grows with prestige">💵 worth ${Economy.fmt(worth)}/race</span>
                 ${driver.rating ? `<span class="chip rating-chip" title="Skill rating">⭐ ${driver.rating}</span>` : ''}
-                ${driver.ownerUid ? '<span class="badge badge-blue">Player</span>' : '<span class="badge badge-dim">AI</span>'}
+                ${isPlayerDriver ? '<span class="badge badge-blue">Player</span>' : '<span class="badge badge-dim">AI</span>'}
             </div>
             ${driver.bio ? `<p class="muted" style="margin-bottom:1rem">${Util.esc(driver.bio)}</p>` : ''}
             <div class="stat-strip">
@@ -828,7 +830,7 @@ const Views = {
             ${prog.labels.length >= 2 ? `<h3 class="section-label">Career points progression</h3>
                 ${C.lineChart(prog.series.map(s => ({ ...s, labels: prog.labels })), prog.labels, { height: 170 })}` : ''}
             ${history.length ? `
-                <h3 class="section-label">Recent races</h3>
+                <h3 class="section-label">${isPlayerDriver ? 'Recent races' : 'Recent form (last 5)'}</h3>
                 <table class="table table-tight">
                     <thead><tr><th></th><th>Race</th><th>Game</th><th class="num">Pts</th></tr></thead>
                     <tbody>${history.map(h => `
@@ -839,9 +841,10 @@ const Views = {
                             <td class="num strong">${h.points}</td>
                         </tr>`).join('')}</tbody>
                 </table>` : '<p class="muted">No races completed yet.</p>'}
-            ${Auth.isAdmin() ? `<div class="modal-actions">
-                <button class="btn btn-secondary" onclick="Admin.driverForm('${Util.attr(driverId)}')">✎ Edit Driver</button>
-                <button class="btn btn-danger" onclick="Admin.deleteDriver('${Util.attr(driverId)}')">Delete</button>
+            ${isPlayerDriver || Auth.isAdmin() ? `<div class="modal-actions">
+                ${isPlayerDriver ? `<button class="btn btn-primary" onclick="Modal.close();App.go('profile','${Util.attr(driver.ownerUid)}')">👤 Full Player Profile</button>` : ''}
+                ${Auth.isAdmin() ? `<button class="btn btn-secondary" onclick="Admin.driverForm('${Util.attr(driverId)}')">✎ Edit Driver</button>
+                <button class="btn btn-danger" onclick="Admin.deleteDriver('${Util.attr(driverId)}')">Delete</button>` : ''}
             </div>` : ''}
         `);
     },

@@ -56,6 +56,7 @@ const Hub = {
         const tabs = [
             ['news', '📣 News'],
             ['achievements', '🏅 Achievements'],
+            ['players', '👥 Players'],
             ['recruitment', `🤝 Recruitment${inboxCount ? ` (${inboxCount})` : ''}`]
         ];
         el.innerHTML = `
@@ -154,6 +155,9 @@ const Hub = {
             </section>
         </div>`;
     },
+
+    /* ---------------- Players tab (directory of real players) ---------------- */
+    tab_players(el) { return Profile.directory(el); },
 
     /* ---------------- Recruitment tab ---------------- */
     // Everything pending that needs MY decision.

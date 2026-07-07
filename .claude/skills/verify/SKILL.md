@@ -43,3 +43,8 @@ node drive.js
 - Script order in app.html matters: `srmpc-market.js` and `srmpc-sim.js` define
   globals (`makeNpcDriver`, `Prestige`, `Sim`, `REAL_WORLD_PACK`) used by later files.
 - Bump the `?v=` cache-buster in app.html on every change.
+- Asserting on `innerText`: panel headings/buttons render UPPERCASE via CSS
+  `text-transform`, and `innerText` reflects it — use case-insensitive regexes.
+- After sign-out the gate keeps its last sign-in/register mode — check
+  `#gate-name-field.hidden` before clicking `#gate-mode-toggle`.
+- `harness/profile-drive.js` covers the player-profile flows (v3.6.0).

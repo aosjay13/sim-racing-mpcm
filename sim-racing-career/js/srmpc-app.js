@@ -19,6 +19,7 @@ const App = {
         'career': (el) => Views.career(el),
         'dealership': (el) => Market.dealership(el),
         'hub': (el, tab) => Hub.render(el, tab),
+        'profile': (el, uid) => Profile.render(el, uid),
         'admin': (el, tab) => Admin.render(el, tab)
     },
 
@@ -111,6 +112,11 @@ const App = {
         document.getElementById('role-badge').addEventListener('click', () => {
             if (Auth.isAdmin() && this._canReturnToPlayer()) this.returnToPlayer();
             else if (Auth.isPlayer()) Career.showRolePicker();
+        });
+
+        // The username opens the player's own full profile page.
+        document.getElementById('header-username').addEventListener('click', () => {
+            if (Auth.uid() && Auth.state.profile) this.go('profile', Auth.uid());
         });
 
         // Theme toggle (light / dark)

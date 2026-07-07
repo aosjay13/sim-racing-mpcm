@@ -1414,6 +1414,7 @@ const Admin = {
                         <td>${role ? `${role.icon} ${role.label}` : '<span class="muted">No role yet</span>'}</td>
                         <td class="muted">${Util.esc(world.driversById[u.driverId]?.name || '—')}</td>
                         <td class="row-actions">
+                            <button class="btn btn-ghost btn-sm" onclick="App.go('profile','${Util.attr(u.id)}')">View profile</button>
                             <button class="btn btn-ghost btn-sm" onclick="Admin.resetPlayerRole('${Util.attr(u.id)}')">Reset role</button>
                         </td>
                     </tr>`;

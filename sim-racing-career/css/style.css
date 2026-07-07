@@ -171,8 +171,10 @@ a:hover { text-decoration: underline; }
 .header-username {
     font-weight: 600; font-size: .9rem; color: var(--text);
     max-width: 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    flex-shrink: 1; min-width: 0; /* the name truncates before the badge does */
+    /* Truncates before the badge does, but never collapses to invisible. */
+    flex-shrink: 1; min-width: 4.5rem;
 }
+.header-username:empty { min-width: 0; }
 
 /* The badge text ("Game Master", "Series Owner ⇄", …) must stay INSIDE the
    pill: nowrap + ellipsis instead of spilling past the rounded border. */
@@ -647,6 +649,16 @@ select.input { cursor: pointer; }
 }
 .prestige-cell { color: var(--gold); letter-spacing: 1px; white-space: nowrap; font-size: .8rem; }
 
+/* Player profile page */
+.profile-avatar {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #0b0e13; border-radius: 50%; font-weight: 800;
+    display: inline-flex; align-items: center; justify-content: center;
+}
+.scroll-list { max-height: 380px; overflow-y: auto; }
+.header-username:not(:empty) { cursor: pointer; }
+.header-username:not(:empty):hover { color: var(--accent-2); text-decoration: underline; }
+
 .car-card {
     background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--r-lg);
     padding: 1.1rem; display: flex; flex-direction: column; gap: .45rem; box-shadow: var(--shadow);
@@ -659,6 +671,12 @@ select.input { cursor: pointer; }
 /* ============================================================
    Responsive
    ============================================================ */
+/* Mid widths: the full nav + user cluster can overflow one row — wrap
+   instead of clipping the sign-out button off-screen. */
+@media (max-width: 1340px) {
+    .header-inner { flex-wrap: wrap; height: auto; padding: .55rem 1.25rem; }
+}
+
 @media (max-width: 900px) {
     .grid-2, .grid-cal { grid-template-columns: 1fr; }
     .icon-btn.nav-toggle { display: inline-flex; order: 3; margin-left: auto; }
