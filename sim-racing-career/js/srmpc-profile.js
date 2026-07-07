@@ -136,23 +136,28 @@ const Profile = {
         <div class="view-head">
             <div><h1>👤 Player Profile</h1><p class="muted">The complete career record — every race, team, and title since day one.</p></div>
             <div class="btn-row">
+                ${isSelf || isAdmin ? `<button class="btn btn-secondary" onclick="Profile.editModal('${Util.attr(uid)}')">✎ Edit Profile</button>` : ''}
                 ${isSelf ? `<button class="btn btn-ghost" onclick="App.go('career')">🏎 My Career</button>` : ''}
                 ${isAdmin && !isSelf ? `<button class="btn btn-ghost" onclick="App.go('admin','players')">👥 All Players</button>` : ''}
             </div>
         </div>
 
         <div class="driver-hero panel">
-            <div class="driver-hero-num profile-avatar">${Util.esc(initials)}</div>
+            ${user.avatar
+                ? `<div class="driver-hero-num profile-avatar"><img src="${user.avatar}" alt="${Util.esc(name)}"></div>`
+                : `<div class="driver-hero-num profile-avatar">${Util.esc(initials)}</div>`}
             <div class="driver-hero-info">
                 <h2>${Util.esc(name)} <span class="badge badge-blue">Player</span></h2>
                 <div class="chip-row">
                     ${Prestige.chip(stars, 'Career prestige')}
                     ${activeRole ? `<span class="chip">${activeRole.icon} ${Util.esc(activeRole.label)}</span>` : ''}
+                    ${user.country ? `<span class="chip chip-dim">📍 ${Util.esc(user.country)}</span>` : ''}
                     ${diff ? `<span class="chip chip-dim">${diff.icon} ${Util.esc(diff.label)}</span>` : ''}
                     ${joined ? `<span class="chip chip-dim">📅 Member since ${Util.esc(joined)}</span>` : ''}
                     ${(isSelf || isAdmin) && user.walletInitialized ? `<span class="chip wallet-chip">💵 ${Economy.fmt(user.balance)}</span>` : ''}
                     ${isAdmin ? `<span class="chip chip-dim">✉️ ${Util.esc(user.email || '—')}</span>` : ''}
                 </div>
+                ${user.bio ? `<p class="muted" style="margin-top:.45rem">${Util.esc(user.bio)}</p>` : (isSelf ? `<p class="muted small" style="margin-top:.45rem">Add a bio and photo with ✎ Edit Profile — make this page yours.</p>` : '')}
                 ${driverTitles.length || teamTitles.length ? `<div class="chip-row" style="margin-top:.4rem">
                     ${driverTitles.map(se => `<span class="chip rating-chip" title="Drivers' champion">🏆 ${Util.esc(se.name)}</span>`).join('')}
                     ${teamTitles.map(se => `<span class="chip rating-chip" title="Constructors' champion (team owner)">🛠🏆 ${Util.esc(se.name)}</span>`).join('')}
@@ -279,6 +284,69 @@ const Profile = {
         </div>`;
     },
 
+    /* ---------------- Edit profile (self, or GM on anyone) ---------------- */
+    async editModal(uid) {
+        uid = uid || Auth.uid();
+        const isSelf = uid === Auth.uid();
+        if (!isSelf && !Auth.isAdmin()) { Util.notify('You can only edit your own profile.', 'error'); return; }
+        const user = await DB.get('users', uid);
+        if (!user) { Util.notify('Player not found.', 'error'); return; }
+
+        Modal.open(`
+            ${Modal.header('✎ Edit Player Profile', isSelf ? 'How the league sees you — everywhere in the app' : `Editing ${Util.esc(user.displayName || 'player')} as Game Master`)}
+            <form id="profile-form" class="form-grid">
+                <label class="field"><span>Display name *</span>
+                    <input id="pf-name" class="input" required maxlength="40" value="${Util.esc(user.displayName || '')}"></label>
+                <label class="field"><span>Country</span>
+                    <input id="pf-country" class="input" maxlength="30" placeholder="e.g. USA" value="${Util.esc(user.country || '')}"></label>
+                <label class="field"><span>Bio</span>
+                    <textarea id="pf-bio" class="input" rows="3" maxlength="300" placeholder="Your story in the league — rivals, wins, ambitions…">${Util.esc(user.bio || '')}</textarea></label>
+                <label class="field"><span>Profile photo ${user.avatar ? '(current photo kept unless you choose a new one)' : '(optional — initials otherwise)'}</span>
+                    <input id="pf-avatar" class="input" type="file" accept="image/*"></label>
+                <div class="modal-actions">
+                    ${user.avatar ? `<button type="button" class="btn btn-ghost" id="pf-remove-avatar">Remove photo</button>` : ''}
+                    <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Profile</button>
+                </div>
+            </form>
+        `);
+
+        let removeAvatar = false;
+        Util.$('#pf-remove-avatar')?.addEventListener('click', (e) => {
+            removeAvatar = true;
+            e.target.textContent = 'Photo will be removed';
+            e.target.disabled = true;
+        });
+
+        Util.$('#profile-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector('button[type=submit]');
+            btn.disabled = true;
+            try {
+                const patch = {
+                    displayName: Util.$('#pf-name').value.trim(),
+                    country: Util.$('#pf-country').value.trim(),
+                    bio: Util.$('#pf-bio').value.trim()
+                };
+                if (!patch.displayName) throw new Error('Display name is required.');
+                const file = Util.$('#pf-avatar').files[0];
+                if (file) patch.avatar = await Util.compressImage(file, 256);
+                else if (removeAvatar) patch.avatar = null;
+
+                if (isSelf) await Auth.updateProfile(patch); // refreshes the header too
+                else await DB.update('users', uid, patch);
+                DB.invalidate('users');
+                Modal.close();
+                if (isSelf) App.updateHeader();
+                Util.notify('Profile saved. Looking sharp. ✨');
+                App.go('profile', uid);
+            } catch (err) {
+                Util.notify(err.message, 'error');
+                btn.disabled = false;
+            }
+        });
+    },
+
     /* ---------------- Players directory (League Hub tab) ---------------- */
     async directory(el) {
         const [users, world, claims, challenges] = await Promise.all([
@@ -314,7 +382,9 @@ const Profile = {
                 <span class="chip chip-dim">Real people only — AI stays in the hire market</span></div>
             ${cards.map(({ u, role, career, stars, cPts, team, driver }) => `
                 <div class="race-row" onclick="App.go('profile','${Util.attr(u.id)}')">
-                    <div class="driver-hero-num profile-avatar" style="font-size:.95rem;min-width:2.8rem;height:2.8rem">${Util.esc((u.displayName || '?').split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase())}</div>
+                    <div class="driver-hero-num profile-avatar" style="font-size:.95rem;min-width:2.8rem;height:2.8rem">${u.avatar
+                        ? `<img src="${u.avatar}" alt="">`
+                        : Util.esc((u.displayName || '?').split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase())}</div>
                     <div class="race-row-main">
                         <span class="race-title">${Util.esc(u.displayName || 'Player')} ${Prestige.chip(stars)}</span>
                         <span class="race-sub">${role ? `${role.icon} ${role.label}` : 'No role yet'}${driver ? ` · 🏎 ${Util.esc(driver.name)}` : ''}${team ? ` · 🏢 ${Util.esc(team.name)}` : ''}</span>
