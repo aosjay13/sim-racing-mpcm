@@ -528,7 +528,8 @@ const Career = {
                     await DB.update('teams', team.id, data);
                     Util.notify('Team updated.');
                 } else {
-                    await DB.create('teams', { ...data, ownerUid: Auth.uid(), isEstablished: false, status: 'approved' });
+                    const id = await DB.create('teams', { ...data, ownerUid: Auth.uid(), isEstablished: false, status: 'approved' });
+                    await Auth.updateProfile({ teamId: id });
                     Util.notify('Team founded! Time to build a legacy. 🏢');
                 }
                 Modal.close();

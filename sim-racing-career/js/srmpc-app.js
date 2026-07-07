@@ -31,6 +31,10 @@ const App = {
         const navKey = view === 'series-detail' ? 'series' : view;
         Util.$$('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === navKey));
 
+        // Keep the header identity fresh (e.g. after founding a team or
+        // creating a driver, which navigate here without an auth change).
+        this.updateHeader();
+
         const el = document.getElementById('view-root');
         el.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading…</div>';
         window.scrollTo({ top: 0 });
@@ -140,17 +144,23 @@ const App = {
         const careerNav = document.getElementById('nav-career');
         const userName = document.getElementById('header-username');
 
+        // Fallback while the role identity (driver/team name) loads.
+        const fallbackName = Auth.state.profile?.displayName
+            || (Auth.state.user?.email || '').split('@')[0] || 'Player';
+
         if (Auth.isAdmin()) {
             badge.textContent = 'Game Master';
             badge.className = 'role-badge badge-admin' + (this._canReturnToPlayer() ? ' role-badge-btn' : '');
             badge.title = this._canReturnToPlayer() ? 'Switch back to your player career' : '';
-            userName.textContent = Auth.state.profile?.displayName || 'Admin';
+            userName.textContent = Auth.state.profile ? fallbackName : 'Admin';
+            if (Auth.state.profile) this._refreshHeaderIdentity(userName);
         } else if (Auth.isPlayer()) {
             const role = Career.roleInfo(Auth.state.profile?.activeRole);
             badge.textContent = role ? role.label : 'Player';
             badge.className = 'role-badge badge-player role-badge-btn';
             badge.title = 'Switch role';
-            userName.textContent = Auth.state.profile?.displayName || Auth.state.user?.email || 'Player';
+            userName.textContent = fallbackName;
+            this._refreshHeaderIdentity(userName);
         } else {
             badge.textContent = '';
             badge.className = 'role-badge';
@@ -162,6 +172,42 @@ const App = {
         playerBtn.classList.toggle('hidden', !this._canReturnToPlayer());
         adminNav.classList.toggle('hidden', !Auth.isAdmin());
         careerNav.classList.toggle('hidden', !(Auth.isPlayer() || (Auth.isAdmin() && Auth.state.profile)));
+    },
+
+    /* ---------------- Header identity ---------------- */
+    // Shows who you ARE in the league, not your login: a Driver's driver
+    // name, a Team Owner's team name, other roles' profile name.
+    _identitySeq: 0,
+
+    async _refreshHeaderIdentity(el) {
+        const seq = ++this._identitySeq;
+        try {
+            const name = await this._identityName();
+            // A newer header update may have run while we fetched — don't clobber it.
+            if (name && seq === this._identitySeq) el.textContent = name;
+        } catch (e) { /* keep the fallback name */ }
+    },
+
+    async _identityName() {
+        const p = Auth.state.profile;
+        if (!p) return null;
+        const role = p.activeRole;
+
+        if (role === 'driver' && p.driverId) {
+            const d = await DB.get('drivers', p.driverId);
+            if (d?.name) return d.name;
+        }
+        if (role === 'team-owner') {
+            const teams = await DB.teams();
+            const t = teams.find(t => t.ownerUid === Auth.uid());
+            if (t?.name) return t.name;
+        }
+        if (role && role !== 'driver' && role !== 'team-owner') {
+            const profiles = await DB.roleProfiles().catch(() => []);
+            const mine = profiles.find(rp => rp.uid === Auth.uid() && rp.role === role);
+            if (mine?.name) return mine.name;
+        }
+        return null;
     },
 
     /* ---------------- Game Master ⇄ Player switching ---------------- */
