@@ -48,3 +48,4 @@ node drive.js
 - After sign-out the gate keeps its last sign-in/register mode — check
   `#gate-name-field.hidden` before clicking `#gate-mode-toggle`.
 - `harness/profile-drive.js` covers the player-profile flows (v3.6.0).
+- `harness/persona-drive.js` covers the GM persona/role-profile + sponsor flows (v3.10.0).

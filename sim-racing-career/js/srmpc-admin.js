@@ -1138,9 +1138,37 @@ const Admin = {
             DB.roleProfiles({ force: true }).catch(() => []),
             DB.loadWorld(true)
         ]);
-        const personas = profiles.filter(p => p.isNPC || !p.uid);
+        // Every role profile — AI personas first, then player careers. The GM
+        // can open and edit any of them through the same form.
+        const isAI = (p) => !p.uid;
+        const personas = profiles.slice().sort((a, b) =>
+            (isAI(a) === isAI(b)) ? (a.name || '').localeCompare(b.name || '') : (isAI(a) ? -1 : 1));
         const teamName = (id) => world.teamsById[id]?.name || '—';
         const roleLabel = (id) => Career.roleInfo(id)?.label || staffRoleInfo(id).label;
+        const personaDetail = (p) => {
+            const few = (names) => names.slice(0, 2).join(', ') + (names.length > 2 ? ` +${names.length - 2}` : '');
+            if (p.role === 'series-owner') {
+                const names = (p.seriesIds || []).map(id => world.seriesById[id]?.name).filter(Boolean);
+                return names.length ? `runs ${few(names)}` : 'no series assigned';
+            }
+            if (p.role === 'track-owner') {
+                const n = (p.tracks || []).length;
+                return n ? `${Util.plural(n, 'venue')} — ${few(p.tracks)}` : 'no venues yet';
+            }
+            if (p.role === 'agent' || p.role === 'crew-chief') {
+                const names = (p.clientDriverIds || []).map(id => world.driversById[id]?.name).filter(Boolean);
+                const team = p.role === 'crew-chief' && p.teamId ? `${teamName(p.teamId)} · ` : '';
+                return team + (names.length ? `${Util.plural(names.length, 'client')} — ${few(names)}` : 'no clients yet');
+            }
+            if (p.role === 'mechanic') return p.teamId ? `wrenching for ${teamName(p.teamId)}` : 'free agent';
+            if (p.role === 'sponsor') {
+                const deals = [];
+                if (p.sponsoredTeamId) deals.push(`backs ${teamName(p.sponsoredTeamId)}`);
+                if (p.sponsoredDriverId) deals.push(`backs ${world.driversById[p.sponsoredDriverId]?.name || 'a driver'}`);
+                return deals.join(' · ') || 'no sponsorship deals yet';
+            }
+            return '';
+        };
 
         const gameFilter = this._trackGame || '';
         const shownTracks = tracks.filter(t =>
@@ -1225,21 +1253,22 @@ const Admin = {
             </section>
 
             <section class="panel">
-                <div class="panel-head"><h2>🤖 AI Personas (${personas.length})</h2>
+                <div class="panel-head"><h2>🤖 Personas & Role Profiles (${personas.length})</h2>
                     <button class="btn btn-primary btn-sm" onclick="Admin.personaForm()">＋ Add Persona</button></div>
-                <p class="muted small">AI characters filling the league's non-driving roles — agents, series owners, track owners, and more.</p>
+                <p class="muted small">AI characters and player careers filling the league's non-driving roles — agents, sponsors, series owners,
+                    track owners, crew chiefs, mechanics. As Game Master you can edit any of them, including players' profiles.</p>
                 ${personas.length ? personas.map(p => `
                     <div class="race-row">
                         <div class="race-row-main">
-                            <span class="race-title">${Util.esc(p.name)} ${Prestige.chip(Prestige.stored(p))}</span>
-                            <span class="race-sub">${Util.esc(roleLabel(p.role))}${p.bio ? ` · ${Util.esc(p.bio)}` : ''}${(p.tracks || []).length ? ` · ${Util.plural(p.tracks.length, 'venue')}` : ''}${(p.clientDriverIds || []).length ? ` · ${Util.plural(p.clientDriverIds.length, 'client')}` : ''}</span>
+                            <span class="race-title">${Util.esc(p.name)} ${Prestige.chip(Prestige.stored(p))} ${p.uid ? '<span class="badge badge-blue">👤 Player</span>' : '<span class="badge badge-dim">🤖 AI</span>'}</span>
+                            <span class="race-sub" ${p.bio ? `title="${Util.attr(p.bio)}"` : ''}>${Util.esc(roleLabel(p.role))}${personaDetail(p) ? ` · ${Util.esc(personaDetail(p))}` : ''}</span>
                         </div>
                         <div class="row-actions">
                             <button class="btn btn-ghost btn-sm" onclick="Admin.personaForm('${Util.attr(p.id)}')">Edit</button>
-                            <button class="btn btn-danger btn-sm" onclick="Admin.deleteWorldDoc('roleProfiles','${Util.attr(p.id)}','persona')">Del</button>
+                            <button class="btn btn-danger btn-sm" onclick="Admin.deleteWorldDoc('roleProfiles','${Util.attr(p.id)}','${p.uid ? "player role profile — their career progress in this role" : "persona"}')">Del</button>
                         </div>
                     </div>`).join('')
-                : C.empty('🤖', 'No AI personas yet', 'The Real-World Pack creates agents, promoters, and venue owners automatically.')}
+                : C.empty('🤖', 'No personas yet', 'Add AI agents, sponsors, promoters, and venue owners — or install the Real-World Pack to create them automatically.')}
             </section>
         </div>`;
 
@@ -1455,12 +1484,46 @@ const Admin = {
         });
     },
 
+    // Role-aware persona editor. Each role gets the assignment fields the
+    // prestige/XP engine reads: agents & crew chiefs → client drivers,
+    // crew chiefs & mechanics → team, series owners → their series,
+    // track owners → venues, sponsors → sponsored team/driver.
+    // Opens AI personas and players' role profiles alike (GM can edit any).
     async personaForm(profileId = null) {
         if (!this.guard()) return;
-        const persona = profileId ? await DB.get('roleProfiles', profileId) : null;
-        const roles = ROLES.filter(r => r.id !== 'driver' && r.id !== 'team-owner');
+        const [persona, world, trackLib] = await Promise.all([
+            profileId ? DB.get('roleProfiles', profileId) : null,
+            DB.loadWorld(true),
+            DB.tracks({ force: true }).catch(() => [])
+        ]);
+        let roles = ROLES.filter(r => r.id !== 'driver' && r.id !== 'team-owner');
+        if (persona?.role && !roles.some(r => r.id === persona.role)) {
+            const info = Career.roleInfo(persona.role);
+            if (info) roles = [info, ...roles];
+        }
+        const byName = (a, b) => (a.name || '').localeCompare(b.name || '');
+        const teams = world.teams.slice().sort(byName);
+        const drivers = world.drivers.slice().sort(byName);
+        const seriesList = world.series.slice().sort(byName);
+        // Track library names (deduped) + any custom venues already on the persona.
+        const libNames = [...new Map(trackLib.map(t => [(t.name || '').toLowerCase(), t.name]))
+            .values()].filter(Boolean).sort((a, b) => a.localeCompare(b));
+        const owned = new Set((persona?.tracks || []).map(t => t.toLowerCase()));
+        const customVenues = (persona?.tracks || []).filter(t => !libNames.some(n => n.toLowerCase() === t.toLowerCase()));
+
+        const checkList = (id, items, isChecked) => `
+            <div class="stack" id="${id}" style="max-height:180px;overflow-y:auto;gap:.15rem">
+                ${items.length ? items.map(it => `
+                    <label class="check"><input type="checkbox" value="${Util.esc(it.value)}" ${isChecked(it) ? 'checked' : ''}> ${Util.esc(it.label)}</label>`).join('')
+                : '<p class="muted small">Nothing to pick from yet.</p>'}
+            </div>`;
+        const teamOptions = (selectedId) => `
+            <option value="">— None —</option>
+            ${teams.map(t => `<option value="${Util.attr(t.id)}" ${selectedId === t.id ? 'selected' : ''}>${Util.esc(t.name)}</option>`).join('')}`;
+
         Modal.open(`
-            ${Modal.header(persona ? 'Edit AI Persona' : 'Add AI Persona', 'An AI character filling a league role')}
+            ${Modal.header(persona ? (persona.uid ? 'Edit Role Profile' : 'Edit AI Persona') : 'Add AI Persona',
+                persona?.uid ? "A player's career profile — changes apply to their career" : 'An AI character filling a league role')}
             <form id="persona-form" class="form-grid">
                 <label class="field"><span>Name *</span><input id="pe-name" class="input" required value="${Util.esc(persona?.name || '')}" maxlength="50"></label>
                 <div class="form-row">
@@ -1471,22 +1534,75 @@ const Admin = {
                     <label class="field"><span>Prestige floor (1–5 ★)</span><input id="pe-prestige" class="input" type="number" min="1" max="5" value="${Prestige.clamp(persona?.prestige)}" title="Minimum star level. Personas also earn prestige XP from the races they're part of — currently ${persona ? Prestige.storedScore(persona) + ' XP (' + Prestige.levelName(Prestige.stored(persona)) + ')' : '0 XP'}."></label>
                 </div>
                 <label class="field"><span>Bio</span><textarea id="pe-bio" class="input" rows="2" maxlength="300">${Util.esc(persona?.bio || '')}</textarea></label>
-                <label class="field"><span>Venues (track owners — one per line)</span><textarea id="pe-tracks" class="input" rows="3">${Util.esc((persona?.tracks || []).join('\n'))}</textarea></label>
+
+                <div class="field pe-only" data-roles="agent,crew-chief" hidden>
+                    <span>💼 Client drivers <span class="muted">(they earn a cut of these drivers' race XP)</span></span>
+                    ${checkList('pe-clients', drivers.map(d => ({ value: d.id, label: d.name })),
+                        (it) => (persona?.clientDriverIds || []).includes(it.value))}
+                </div>
+                <label class="field pe-only" data-roles="crew-chief,mechanic" hidden><span>🔧 Team</span>
+                    <select id="pe-team" class="input">${teamOptions(persona?.teamId)}</select></label>
+                <div class="field pe-only" data-roles="series-owner" hidden>
+                    <span>🏆 Series they run <span class="muted">(hosting XP every time one of these races completes)</span></span>
+                    ${checkList('pe-series', seriesList.map(s => ({ value: s.id, label: s.name })),
+                        (it) => (persona?.seriesIds || []).includes(it.value))}
+                </div>
+                <div class="field pe-only" data-roles="track-owner" hidden>
+                    <span>🛣️ Venues they own <span class="muted">(venue XP for every league race hosted there)</span></span>
+                    ${checkList('pe-venues', libNames.map(n => ({ value: n, label: n })), (it) => owned.has(it.value.toLowerCase()))}
+                    <textarea id="pe-tracks-custom" class="input" rows="2" placeholder="Custom venues not in the track library — one per line">${Util.esc(customVenues.join('\n'))}</textarea>
+                </div>
+                <div class="form-row pe-only" data-roles="sponsor" hidden>
+                    <label class="field"><span>💰 Sponsored team</span>
+                        <select id="pe-spon-team" class="input">${teamOptions(persona?.sponsoredTeamId)}</select></label>
+                    <label class="field"><span>💰 Sponsored driver</span>
+                        <select id="pe-spon-driver" class="input">
+                            <option value="">— None —</option>
+                            ${drivers.map(d => `<option value="${Util.attr(d.id)}" ${persona?.sponsoredDriverId === d.id ? 'selected' : ''}>${Util.esc(d.name)}</option>`).join('')}
+                        </select></label>
+                </div>
+
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
                     <button type="submit" class="btn btn-primary">${persona ? 'Save' : 'Add Persona'}</button>
                 </div>
             </form>
         `);
+
+        const syncRoleFields = () => {
+            const role = Util.$('#pe-role').value;
+            Util.$$('#persona-form .pe-only').forEach(sec => {
+                sec.hidden = !sec.dataset.roles.split(',').includes(role);
+            });
+        };
+        Util.$('#pe-role').addEventListener('change', syncRoleFields);
+        syncRoleFields();
+
         Util.$('#persona-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             try {
+                const role = Util.$('#pe-role').value;
+                const checked = (sel) => Util.$$(sel + ' input:checked').map(i => i.value);
+                let tracks = [];
+                if (role === 'track-owner') {
+                    tracks = [...checked('#pe-venues'),
+                        ...Util.$('#pe-tracks-custom').value.split('\n').map(t => t.trim()).filter(Boolean)];
+                    const seen = new Set();
+                    tracks = tracks.filter(t => !seen.has(t.toLowerCase()) && seen.add(t.toLowerCase()));
+                }
+                // Fields for the chosen role are saved; the rest are cleared so
+                // switching a persona's role never leaves stale assignments.
                 const data = {
                     name: Util.$('#pe-name').value.trim(),
-                    role: Util.$('#pe-role').value,
+                    role,
                     prestige: Prestige.clamp(Util.$('#pe-prestige').value),
                     bio: Util.$('#pe-bio').value.trim(),
-                    tracks: Util.$('#pe-tracks').value.split('\n').map(t => t.trim()).filter(Boolean)
+                    clientDriverIds: (role === 'agent' || role === 'crew-chief') ? checked('#pe-clients') : [],
+                    teamId: (role === 'crew-chief' || role === 'mechanic') ? (Util.$('#pe-team').value || null) : null,
+                    seriesIds: role === 'series-owner' ? checked('#pe-series') : [],
+                    tracks,
+                    sponsoredTeamId: role === 'sponsor' ? (Util.$('#pe-spon-team').value || null) : null,
+                    sponsoredDriverId: role === 'sponsor' ? (Util.$('#pe-spon-driver').value || null) : null
                 };
                 if (!data.name) throw new Error('Name is required.');
                 if (persona) await DB.update('roleProfiles', persona.id, data);
