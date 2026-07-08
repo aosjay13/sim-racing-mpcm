@@ -449,6 +449,12 @@ select.input { cursor: pointer; }
 .chip-row { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
 .chip-btn { cursor: pointer; }
 .chip-btn:hover { color: var(--text); border-color: var(--accent-2); }
+/* Scrollable chip pool (e.g. the schedule builder's track library) */
+.chip-cloud {
+    display: flex; flex-wrap: wrap; gap: .35rem;
+    max-height: 130px; overflow-y: auto; padding: .45rem;
+    border: 1px solid var(--hairline); border-radius: 10px; background: var(--bg-2);
+}
 
 /* ============================================================
    Race rows

@@ -76,6 +76,8 @@ const log = (mark, msg) => { steps.push(`${mark} ${msg}`); console.log(`${mark} 
     await page.evaluate(() => App.go('admin', 'world'));
     await page.waitForSelector('#admin-body .panel');
     await page.click('#admin-body button:has-text("Install Real-World Pack")');
+    await page.waitForSelector('#rwp-form'); // install is now a modal with a game choice
+    await page.click('#rwp-form button[type=submit]');
     const packToast = await toast(/Pack installed|failed/);
     log(/Pack installed: 3 series/.test(packToast) ? '✅' : '❌', 'Real-World Pack: ' + packToast);
 
@@ -88,6 +90,8 @@ const log = (mark, msg) => { steps.push(`${mark} ${msg}`); console.log(`${mark} 
 
     // Probe: re-run the installer — must skip existing, not duplicate.
     await page.click('#admin-body button:has-text("Install Real-World Pack")');
+    await page.waitForSelector('#rwp-form');
+    await page.click('#rwp-form button[type=submit]');
     const rerun = await toast(/Pack installed|failed/);
     const seriesCount = await page.evaluate(async () => (await DB.series({ force: true })).length);
     log(seriesCount === 3 ? '🔍' : '❌', `Pack re-run is idempotent: still ${seriesCount} series (${rerun})`);

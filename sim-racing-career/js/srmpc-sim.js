@@ -273,6 +273,231 @@ const REAL_TRACKS = [
     { name: 'Fuji Speedway', country: 'Japan', type: 'Road', length: '4.56 km' }
 ];
 
+/* ============================================================
+   Track Packs — per-game track libraries. Installing one creates
+   (or matches by name) the game and seeds its tracks tagged with
+   that game's id, so the library, schedule builder, and race form
+   can offer tracks for whatever game the league is playing.
+   ============================================================ */
+const TRACK_PACKS = {
+    gt7: {
+        game: { name: 'Gran Turismo 7', platform: 'PS5 / PS4', color: '#0070d1' },
+        tracks: [
+            { name: 'Suzuka Circuit', country: 'Japan', type: 'Road', length: '5.81 km' },
+            { name: 'Fuji Speedway', country: 'Japan', type: 'Road', length: '4.56 km' },
+            { name: 'Autodromo Nazionale Monza', country: 'Italy', type: 'Road', length: '5.79 km' },
+            { name: 'Circuit de Spa-Francorchamps', country: 'Belgium', type: 'Road', length: '7.00 km' },
+            { name: 'Nürburgring Nordschleife', country: 'Germany', type: 'Road', length: '20.83 km' },
+            { name: 'Circuit de la Sarthe (Le Mans)', country: 'France', type: 'Road', length: '13.63 km' },
+            { name: 'Autódromo José Carlos Pace (Interlagos)', country: 'Brazil', type: 'Road', length: '4.31 km' },
+            { name: 'Mount Panorama Circuit (Bathurst)', country: 'Australia', type: 'Road', length: '6.21 km' },
+            { name: 'WeatherTech Raceway Laguna Seca', country: 'USA', type: 'Road', length: '3.60 km' },
+            { name: 'Daytona International Speedway', country: 'USA', type: 'Oval', length: '4.02 km' },
+            { name: 'Watkins Glen International', country: 'USA', type: 'Road', length: '5.43 km' },
+            { name: 'Willow Springs Raceway', country: 'USA', type: 'Road', length: '4.02 km' },
+            { name: 'Tsukuba Circuit', country: 'Japan', type: 'Road', length: '2.05 km' },
+            { name: 'Brands Hatch', country: 'UK', type: 'Road', length: '3.91 km' },
+            { name: 'Circuit de Barcelona-Catalunya', country: 'Spain', type: 'Road', length: '4.66 km' },
+            { name: 'Red Bull Ring', country: 'Austria', type: 'Road', length: '4.32 km' },
+            { name: 'Autodrome Lago Maggiore', country: 'GT Original', type: 'Road', length: '5.81 km' },
+            { name: 'Dragon Trail — Seaside', country: 'GT Original', type: 'Road', length: '5.21 km' },
+            { name: 'Trial Mountain Circuit', country: 'GT Original', type: 'Road', length: '5.99 km' },
+            { name: 'Deep Forest Raceway', country: 'GT Original', type: 'Road', length: '4.55 km' },
+            { name: 'High Speed Ring', country: 'GT Original', type: 'Road', length: '4.10 km' },
+            { name: 'Grand Valley Highway 1', country: 'GT Original', type: 'Road', length: '5.20 km' },
+            { name: 'Tokyo Expressway — East', country: 'Japan', type: 'Street', length: '7.29 km' },
+            { name: 'Special Stage Route X', country: 'GT Original', type: 'Oval', length: '30.28 km' },
+            { name: 'Alsace — Village', country: 'GT Original', type: 'Road', length: '5.42 km' },
+            { name: 'Kyoto Driving Park — Yamagiwa', country: 'GT Original', type: 'Road', length: '4.91 km' },
+            { name: 'Sardegna — Road Track A', country: 'GT Original', type: 'Road', length: '5.11 km' },
+            { name: "Fisherman's Ranch", country: 'GT Original', type: 'Rally', length: '6.65 km' },
+            { name: 'Colorado Springs — Lake', country: 'GT Original', type: 'Rally', length: '4.05 km' }
+        ]
+    },
+    wreckfest: {
+        game: { name: 'Wreckfest', platform: 'PC / PS / Xbox', color: '#c8641e' },
+        tracks: [
+            { name: 'Big Valley Speedway', country: 'USA', type: 'Oval', length: '' },
+            { name: 'Bloomfield Speedway', country: 'USA', type: 'Dirt', length: '' },
+            { name: 'Bonebreaker Valley', country: 'USA', type: 'Road', length: '' },
+            { name: 'Crash Canyon', country: 'USA', type: 'Road', length: '' },
+            { name: 'Deathloop', country: 'USA', type: 'Road', length: '' },
+            { name: 'Drytown Desert Circuit', country: 'USA', type: 'Dirt', length: '' },
+            { name: 'Eagles Peak Motorpark', country: 'USA', type: 'Road', length: '' },
+            { name: 'Espedalen Raceway', country: 'Finland', type: 'Dirt', length: '' },
+            { name: 'Fire Rock Raceway', country: 'USA', type: 'Oval', length: '' },
+            { name: 'Firwood Motocenter', country: 'Finland', type: 'Road', length: '' },
+            { name: 'Hillstreet Circuit', country: 'USA', type: 'Street', length: '' },
+            { name: 'Kingston Raceway', country: 'USA', type: 'Road', length: '' },
+            { name: 'Madman Stadium', country: 'USA', type: 'Oval', length: '' },
+            { name: 'Motorcity Circuit', country: 'USA', type: 'Road', length: '' },
+            { name: 'Northland Raceway', country: 'Finland', type: 'Road', length: '' },
+            { name: 'Pinehills Raceway', country: 'USA', type: 'Road', length: '' },
+            { name: 'Rattlesnake Racepark', country: 'USA', type: 'Road', length: '' },
+            { name: 'Rockfield Roughspot', country: 'UK', type: 'Dirt', length: '' },
+            { name: 'Sandstone Raceway', country: 'USA', type: 'Road', length: '' },
+            { name: 'Savolax Sandpit', country: 'Finland', type: 'Dirt', length: '' },
+            { name: 'Speedbowl', country: 'USA', type: 'Oval', length: '' },
+            { name: 'Vale Falls Circuit', country: 'USA', type: 'Road', length: '' }
+        ]
+    },
+    forza: {
+        game: { name: 'Forza Motorsport', platform: 'Xbox / PC', color: '#e6b31e' },
+        tracks: [
+            { name: 'Maple Valley Raceway', country: 'Forza Original', type: 'Road', length: '4.20 km' },
+            { name: 'Grand Oak Raceway', country: 'Forza Original', type: 'Road', length: '4.30 km' },
+            { name: 'Hakone Circuit', country: 'Forza Original', type: 'Road', length: '5.10 km' },
+            { name: 'Eaglerock Speedway', country: 'Forza Original', type: 'Oval', length: '1.61 km' },
+            { name: 'Circuit de Spa-Francorchamps', country: 'Belgium', type: 'Road', length: '7.00 km' },
+            { name: 'Silverstone Circuit', country: 'UK', type: 'Road', length: '5.89 km' },
+            { name: 'Suzuka Circuit', country: 'Japan', type: 'Road', length: '5.81 km' },
+            { name: 'WeatherTech Raceway Laguna Seca', country: 'USA', type: 'Road', length: '3.60 km' },
+            { name: 'Road America', country: 'USA', type: 'Road', length: '6.51 km' },
+            { name: 'Watkins Glen International', country: 'USA', type: 'Road', length: '5.43 km' },
+            { name: 'Circuit de la Sarthe (Le Mans)', country: 'France', type: 'Road', length: '13.63 km' },
+            { name: 'Nürburgring GP', country: 'Germany', type: 'Road', length: '5.15 km' },
+            { name: 'Nürburgring Nordschleife', country: 'Germany', type: 'Road', length: '20.83 km' },
+            { name: 'Kyalami Grand Prix Circuit', country: 'South Africa', type: 'Road', length: '4.52 km' },
+            { name: 'Road Atlanta', country: 'USA', type: 'Road', length: '4.09 km' },
+            { name: 'Mid-Ohio Sports Car Course', country: 'USA', type: 'Road', length: '3.86 km' },
+            { name: 'Virginia International Raceway', country: 'USA', type: 'Road', length: '5.26 km' },
+            { name: 'Lime Rock Park', country: 'USA', type: 'Road', length: '2.45 km' },
+            { name: 'Hockenheimring', country: 'Germany', type: 'Road', length: '4.57 km' },
+            { name: 'Circuit de Barcelona-Catalunya', country: 'Spain', type: 'Road', length: '4.66 km' },
+            { name: 'Yas Marina Circuit', country: 'UAE', type: 'Road', length: '5.28 km' },
+            { name: 'Mugello Circuit', country: 'Italy', type: 'Road', length: '5.25 km' },
+            { name: 'Daytona International Speedway', country: 'USA', type: 'Oval', length: '4.02 km' },
+            { name: 'Homestead-Miami Speedway', country: 'USA', type: 'Oval', length: '2.41 km' },
+            { name: 'Indianapolis Motor Speedway', country: 'USA', type: 'Oval', length: '4.02 km' }
+        ]
+    },
+    iracing: {
+        game: { name: 'iRacing', platform: 'PC', color: '#0090d4' },
+        tracks: [
+            { name: 'Daytona International Speedway', country: 'USA', type: 'Oval', length: '4.02 km' },
+            { name: 'Talladega Superspeedway', country: 'USA', type: 'Oval', length: '4.28 km' },
+            { name: 'Charlotte Motor Speedway', country: 'USA', type: 'Oval', length: '2.41 km' },
+            { name: 'Bristol Motor Speedway', country: 'USA', type: 'Oval', length: '0.86 km' },
+            { name: 'Martinsville Speedway', country: 'USA', type: 'Oval', length: '0.85 km' },
+            { name: 'Richmond Raceway', country: 'USA', type: 'Oval', length: '1.21 km' },
+            { name: 'Darlington Raceway', country: 'USA', type: 'Oval', length: '2.20 km' },
+            { name: 'Phoenix Raceway', country: 'USA', type: 'Oval', length: '1.61 km' },
+            { name: 'Iowa Speedway', country: 'USA', type: 'Oval', length: '1.41 km' },
+            { name: 'Watkins Glen International', country: 'USA', type: 'Road', length: '5.43 km' },
+            { name: 'Road America', country: 'USA', type: 'Road', length: '6.51 km' },
+            { name: 'WeatherTech Raceway Laguna Seca', country: 'USA', type: 'Road', length: '3.60 km' },
+            { name: 'Sebring International Raceway', country: 'USA', type: 'Road', length: '6.02 km' },
+            { name: 'Circuit de Spa-Francorchamps', country: 'Belgium', type: 'Road', length: '7.00 km' },
+            { name: 'Autodromo Nazionale Monza', country: 'Italy', type: 'Road', length: '5.79 km' },
+            { name: 'Silverstone Circuit', country: 'UK', type: 'Road', length: '5.89 km' },
+            { name: 'Suzuka Circuit', country: 'Japan', type: 'Road', length: '5.81 km' },
+            { name: 'Nürburgring Nordschleife', country: 'Germany', type: 'Road', length: '20.83 km' },
+            { name: 'Mount Panorama Circuit (Bathurst)', country: 'Australia', type: 'Road', length: '6.21 km' },
+            { name: 'Autodromo Enzo e Dino Ferrari (Imola)', country: 'Italy', type: 'Road', length: '4.91 km' },
+            { name: 'Circuit of the Americas', country: 'USA', type: 'Road', length: '5.51 km' },
+            { name: 'Long Beach Street Circuit', country: 'USA', type: 'Street', length: '3.17 km' },
+            { name: 'Brands Hatch', country: 'UK', type: 'Road', length: '3.91 km' },
+            { name: 'Donington Park', country: 'UK', type: 'Road', length: '4.02 km' },
+            { name: 'Okayama International Circuit', country: 'Japan', type: 'Road', length: '3.70 km' },
+            { name: 'Lime Rock Park', country: 'USA', type: 'Road', length: '2.45 km' },
+            { name: 'Oulton Park', country: 'UK', type: 'Road', length: '4.33 km' }
+        ]
+    },
+    ams2: {
+        game: { name: 'Automobilista 2', platform: 'PC', color: '#ffcc00' },
+        tracks: [
+            { name: 'Autódromo José Carlos Pace (Interlagos)', country: 'Brazil', type: 'Road', length: '4.31 km' },
+            { name: 'Autódromo Internacional de Goiânia', country: 'Brazil', type: 'Road', length: '3.84 km' },
+            { name: 'Autódromo Internacional de Curitiba', country: 'Brazil', type: 'Road', length: '3.70 km' },
+            { name: 'Autódromo Ayrton Senna (Londrina)', country: 'Brazil', type: 'Road', length: '3.15 km' },
+            { name: 'Autódromo Zilmar Beux (Cascavel)', country: 'Brazil', type: 'Road', length: '3.30 km' },
+            { name: 'Velopark', country: 'Brazil', type: 'Road', length: '2.27 km' },
+            { name: 'Autódromo Internacional de Campo Grande', country: 'Brazil', type: 'Road', length: '3.43 km' },
+            { name: 'Autódromo Internacional de Santa Cruz do Sul', country: 'Brazil', type: 'Road', length: '3.53 km' },
+            { name: 'Autódromo Internacional de Tarumã', country: 'Brazil', type: 'Road', length: '3.07 km' },
+            { name: 'Autódromo Internacional Nelson Piquet (Jacarepaguá)', country: 'Brazil', type: 'Road', length: '5.03 km' },
+            { name: 'Autódromo de Brasília', country: 'Brazil', type: 'Road', length: '5.48 km' },
+            { name: 'Circuit de Spa-Francorchamps', country: 'Belgium', type: 'Road', length: '7.00 km' },
+            { name: 'Silverstone Circuit', country: 'UK', type: 'Road', length: '5.89 km' },
+            { name: 'Brands Hatch', country: 'UK', type: 'Road', length: '3.91 km' },
+            { name: 'Donington Park', country: 'UK', type: 'Road', length: '4.02 km' },
+            { name: 'Oulton Park', country: 'UK', type: 'Road', length: '4.33 km' },
+            { name: 'Cadwell Park', country: 'UK', type: 'Road', length: '3.50 km' },
+            { name: 'Snetterton Circuit', country: 'UK', type: 'Road', length: '4.78 km' },
+            { name: 'Autodromo Enzo e Dino Ferrari (Imola)', country: 'Italy', type: 'Road', length: '4.91 km' },
+            { name: 'Autodromo Nazionale Monza', country: 'Italy', type: 'Road', length: '5.79 km' },
+            { name: 'Nürburgring GP', country: 'Germany', type: 'Road', length: '5.15 km' },
+            { name: 'Hockenheimring', country: 'Germany', type: 'Road', length: '4.57 km' },
+            { name: 'Red Bull Ring (Spielberg)', country: 'Austria', type: 'Road', length: '4.32 km' },
+            { name: 'Circuito de Jerez', country: 'Spain', type: 'Road', length: '4.42 km' },
+            { name: 'Circuito do Estoril', country: 'Portugal', type: 'Road', length: '4.18 km' },
+            { name: 'Kyalami Grand Prix Circuit', country: 'South Africa', type: 'Road', length: '4.52 km' },
+            { name: 'WeatherTech Raceway Laguna Seca', country: 'USA', type: 'Road', length: '3.60 km' },
+            { name: 'Road America', country: 'USA', type: 'Road', length: '6.51 km' },
+            { name: 'Watkins Glen International', country: 'USA', type: 'Road', length: '5.43 km' },
+            { name: 'Daytona International Speedway', country: 'USA', type: 'Oval', length: '4.02 km' },
+            { name: 'Sebring International Raceway', country: 'USA', type: 'Road', length: '6.02 km' },
+            { name: 'Long Beach Street Circuit', country: 'USA', type: 'Street', length: '3.17 km' },
+            { name: 'Azure Circuit', country: 'Monaco', type: 'Street', length: '3.34 km' }
+        ]
+    },
+    nr2003: {
+        game: { name: 'NASCAR Racing 2003 Season', platform: 'PC', color: '#bb2222' },
+        tracks: [
+            { name: 'Atlanta Motor Speedway', country: 'USA', type: 'Oval', length: '2.48 km' },
+            { name: 'Bristol Motor Speedway', country: 'USA', type: 'Oval', length: '0.86 km' },
+            { name: 'California Speedway', country: 'USA', type: 'Oval', length: '3.22 km' },
+            { name: 'Charlotte (Lowe’s) Motor Speedway', country: 'USA', type: 'Oval', length: '2.41 km' },
+            { name: 'Chicagoland Speedway', country: 'USA', type: 'Oval', length: '2.41 km' },
+            { name: 'Darlington Raceway', country: 'USA', type: 'Oval', length: '2.20 km' },
+            { name: 'Daytona International Speedway', country: 'USA', type: 'Oval', length: '4.02 km' },
+            { name: 'Dover International Speedway', country: 'USA', type: 'Oval', length: '1.61 km' },
+            { name: 'Homestead-Miami Speedway', country: 'USA', type: 'Oval', length: '2.41 km' },
+            { name: 'Indianapolis Motor Speedway', country: 'USA', type: 'Oval', length: '4.02 km' },
+            { name: 'Kansas Speedway', country: 'USA', type: 'Oval', length: '2.41 km' },
+            { name: 'Las Vegas Motor Speedway', country: 'USA', type: 'Oval', length: '2.41 km' },
+            { name: 'Martinsville Speedway', country: 'USA', type: 'Oval', length: '0.85 km' },
+            { name: 'Michigan International Speedway', country: 'USA', type: 'Oval', length: '3.22 km' },
+            { name: 'New Hampshire International Speedway', country: 'USA', type: 'Oval', length: '1.70 km' },
+            { name: 'North Carolina Speedway (Rockingham)', country: 'USA', type: 'Oval', length: '1.63 km' },
+            { name: 'Phoenix International Raceway', country: 'USA', type: 'Oval', length: '1.61 km' },
+            { name: 'Pocono Raceway', country: 'USA', type: 'Oval', length: '4.02 km' },
+            { name: 'Richmond International Raceway', country: 'USA', type: 'Oval', length: '1.21 km' },
+            { name: 'Talladega Superspeedway', country: 'USA', type: 'Oval', length: '4.28 km' },
+            { name: 'Texas Motor Speedway', country: 'USA', type: 'Oval', length: '2.41 km' },
+            { name: 'Infineon Raceway (Sears Point)', country: 'USA', type: 'Road', length: '3.22 km' },
+            { name: 'Watkins Glen International', country: 'USA', type: 'Road', length: '3.94 km' }
+        ]
+    }
+};
+window.TRACK_PACKS = TRACK_PACKS;
+
+// Install one game's track pack: create (or match by name) the game doc,
+// then seed its tracks tagged with that gameId. A track is skipped only if
+// the SAME game already has it — the same circuit in two different games is
+// two library entries on purpose.
+async function installTrackPack(packKey, gameId = null) {
+    const pack = TRACK_PACKS[packKey];
+    if (!pack) throw new Error('Unknown track pack.');
+
+    const games = await DB.games({ force: true });
+    if (!gameId) {
+        const existing = games.find(g => (g.name || '').toLowerCase() === pack.game.name.toLowerCase());
+        gameId = existing ? existing.id
+            : await DB.create('games', { ...pack.game, active: true });
+    }
+    const game = (await DB.games({ force: true })).find(g => g.id === gameId);
+
+    const existingTracks = await DB.tracks({ force: true }).catch(() => []);
+    const mine = new Set(existingTracks.filter(t => (t.gameId || null) === gameId)
+        .map(t => (t.name || '').toLowerCase()));
+    const fresh = pack.tracks.filter(t => !mine.has(t.name.toLowerCase()));
+    if (fresh.length) await DB.batchCreate('tracks', fresh.map(t => ({ ...t, gameId, isNPC: true })));
+
+    return { game, gameId, created: fresh.length, skipped: pack.tracks.length - fresh.length };
+}
+window.installTrackPack = installTrackPack;
+
 const REAL_WORLD_PACK = [
     {
         name: 'Formula World Championship',
@@ -339,8 +564,9 @@ const SPONSOR_BRANDS = [
 ];
 
 // Seeds the whole real-world universe. Skips anything that already exists
-// (matched by name) so re-running never duplicates.
-async function installRealWorldPack() {
+// (matched by name) so re-running never duplicates. Pass a gameId to tag
+// every track, series, season, and race it creates with that game.
+async function installRealWorldPack(gameId = null) {
     const summary = { tracks: 0, series: 0, seasons: 0, races: 0, teams: 0, drivers: 0, staff: 0, sponsors: 0, personas: 0 };
     const year = new Date().getFullYear();
 
@@ -358,9 +584,11 @@ async function installRealWorldPack() {
     const usedNames = new Set([...existingDrivers, ...existingStaff, ...existingProfiles].map(x => x.name));
 
     // ---- Tracks (with AI track-owner personas, ~4 venues each) ----
-    const newTracks = REAL_TRACKS.filter(t => !has(existingTracks, t.name));
+    // Skip only tracks the SAME game already has (or untagged ones, pre-pack).
+    const mineTracks = existingTracks.filter(t => (t.gameId || null) === (gameId || null) || !t.gameId);
+    const newTracks = REAL_TRACKS.filter(t => !has(mineTracks, t.name));
     if (newTracks.length) {
-        await DB.batchCreate('tracks', newTracks.map(t => ({ ...t, isNPC: true })));
+        await DB.batchCreate('tracks', newTracks.map(t => ({ ...t, gameId: gameId || null, isNPC: true })));
         summary.tracks = newTracks.length;
         for (let i = 0; i < newTracks.length; i += 4) {
             await DB.create('roleProfiles', {
@@ -377,7 +605,7 @@ async function installRealWorldPack() {
         if (has(existingSeries, pack.name)) continue;
 
         const seriesId = await DB.create('series', {
-            name: pack.name, description: pack.description, gameId: null,
+            name: pack.name, description: pack.description, gameId: gameId || null,
             season: year, pointsSystem: pack.pointsSystem, status: 'active',
             ownerUid: null, isNPC: true
         });
@@ -391,7 +619,7 @@ async function installRealWorldPack() {
         summary.personas++;
 
         const seasonId = await DB.create('seasons', {
-            seriesId, gameId: null, name: `${pack.name} ${year}`, year,
+            seriesId, gameId: gameId || null, name: `${pack.name} ${year}`, year,
             status: 'active', startDate: Util.todayISO(), endDate: null,
             ownerUid: null, championDriverId: null, championTeamId: null
         });
@@ -401,7 +629,7 @@ async function installRealWorldPack() {
         const start = new Date();
         start.setDate(start.getDate() + ((6 - start.getDay() + 7) % 7 || 7));
         const races = generateScheduleRaces({
-            series: { id: seriesId, name: pack.name, gameId: null },
+            series: { id: seriesId, name: pack.name, gameId: gameId || null },
             seasonId,
             cadence: 'weekly',
             startDate: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`,

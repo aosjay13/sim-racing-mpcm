@@ -92,6 +92,7 @@ const Admin = {
                     <button class="btn btn-secondary" onclick="Admin.generateChallengesForm()">🎯 Generate Challenges</button>
                     <button class="btn btn-secondary" onclick="Admin.challengeForm()">＋ Custom Challenge</button>
                     <button class="btn btn-secondary" onclick="Admin.generateNPCsForm()">🤖 Generate Free Agents</button>
+                    <button class="btn btn-secondary" onclick="Admin.trackPackForm()">🛣 Load Track Pack</button>
                     <button class="btn btn-secondary" onclick="Admin.installPack()">🌍 Install Real-World Pack</button>
                 </div>
             </section>
@@ -479,7 +480,10 @@ const Admin = {
     /* ---------------- Schedule builder ---------------- */
     async scheduleBuilder(seriesId = null) {
         if (!this.guard()) return;
-        const [series, seasons] = await Promise.all([DB.series(), DB.seasons({ force: true })]);
+        const [series, seasons, allTracks, games] = await Promise.all([
+            DB.series(), DB.seasons({ force: true }),
+            DB.tracks({ force: true }).catch(() => []), DB.games()
+        ]);
         const editable = series.filter(s => (s.status || 'active') === 'active');
         if (!editable.length) {
             Util.notify('Create a series first — the builder generates its schedule.', 'info');
@@ -520,6 +524,8 @@ const Admin = {
                 </div>
                 <label class="field"><span>Tracks — one per line, in order *</span>
                     <textarea id="sb-tracks" class="input" rows="8" placeholder="Silverstone&#10;Spa-Francorchamps&#10;Monza&#10;Suzuka&#10;Interlagos" required></textarea></label>
+                <div class="field"><span id="sb-lib-label">Track library — click to add</span>
+                    <div id="sb-lib" class="chip-cloud"></div></div>
                 <p class="muted small" id="sb-preview">Each line becomes a round, spaced by your cadence.</p>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
@@ -536,9 +542,34 @@ const Admin = {
         };
         ['sb-tracks', 'sb-start', 'sb-cadence'].forEach(id => Util.$('#' + id).addEventListener('input', preview));
 
-        // Keep the season dropdown in sync with the chosen series.
+        // Track library: the chosen series' game decides which tracks to offer.
+        const renderLib = (sid) => {
+            const s = series.find(x => x.id === sid);
+            const game = games.find(g => g.id === s?.gameId) || null;
+            const pool = (game ? allTracks.filter(t => t.gameId === game.id) : allTracks)
+                .slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            Util.$('#sb-lib-label').textContent = game
+                ? `Track library — ${game.name} — click to add`
+                : 'Track library — all games — click to add';
+            Util.$('#sb-lib').innerHTML = pool.length
+                ? pool.map(t => `<button type="button" class="chip chip-btn" data-track="${Util.esc(t.name)}">${Util.esc(t.name)}</button>`).join('')
+                : `<span class="muted small">${game
+                    ? `No tracks loaded for ${Util.esc(game.name)} yet — load its Track Pack in Admin → World, or just type track names above.`
+                    : 'No tracks in the library yet — load a Track Pack in Admin → World, or just type track names above.'}</span>`;
+        };
+        Util.$('#sb-lib').addEventListener('click', (e) => {
+            const name = e.target.closest('[data-track]')?.dataset.track;
+            if (!name) return;
+            const ta = Util.$('#sb-tracks');
+            ta.value = (ta.value.trimEnd() ? ta.value.trimEnd() + '\n' : '') + name;
+            preview();
+        });
+        renderLib(initialSid);
+
+        // Keep the season dropdown and track library in sync with the chosen series.
         Util.$('#sb-series').addEventListener('change', (e) => {
             Util.$('#sb-season').innerHTML = seasonOptions(e.target.value);
+            renderLib(e.target.value);
         });
 
         Util.$('#sched-form').addEventListener('submit', async (e) => {
@@ -636,8 +667,9 @@ const Admin = {
 
     async raceForm(raceId = null, presetSeriesId = null) {
         if (!this.guard()) return;
-        const [race, series, games, allRaces, seasons] = await Promise.all([
-            raceId ? DB.get('races', raceId) : null, DB.series(), DB.games(), DB.races(), DB.seasons()
+        const [race, series, games, allRaces, seasons, allTracks] = await Promise.all([
+            raceId ? DB.get('races', raceId) : null, DB.series(), DB.games(), DB.races(), DB.seasons(),
+            DB.tracks({ force: true }).catch(() => [])
         ]);
         const seasonOptionsFor = (sid, selId) => {
             const list = seasons.filter(se => se.seriesId === sid);
@@ -649,7 +681,7 @@ const Admin = {
             <form id="race-form" class="form-grid">
                 <label class="field"><span>Race name</span><input id="rf-name" class="input" value="${Util.esc(race?.name || '')}" maxlength="80" placeholder="Leave blank to use the track name"></label>
                 <div class="form-row">
-                    <label class="field"><span>Track *</span><input id="rf-track" class="input" required value="${Util.esc(race?.track || '')}" maxlength="60" placeholder="e.g. Watkins Glen"></label>
+                    <label class="field"><span>Track *</span><input id="rf-track" class="input" required list="rf-track-dl" value="${Util.esc(race?.track || '')}" maxlength="60" placeholder="e.g. Watkins Glen"><datalist id="rf-track-dl"></datalist></label>
                     <label class="field"><span>Laps</span><input id="rf-laps" class="input" type="number" min="1" value="${race?.laps || ''}"></label>
                 </div>
                 <div class="form-row">
@@ -677,9 +709,22 @@ const Admin = {
                 </div>
             </form>
         `);
-        // Repopulate seasons when the series changes.
+        // Track suggestions follow the chosen game (or the series' game).
+        const fillTrackList = () => {
+            const gameId = Util.$('#rf-game').value ||
+                series.find(s => s.id === Util.$('#rf-series').value)?.gameId || '';
+            const pool = gameId ? allTracks.filter(t => t.gameId === gameId) : allTracks;
+            Util.$('#rf-track-dl').innerHTML = pool
+                .slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                .map(t => `<option value="${Util.attr(t.name)}"></option>`).join('');
+        };
+        fillTrackList();
+        Util.$('#rf-game').addEventListener('change', fillTrackList);
+
+        // Repopulate seasons (and track suggestions) when the series changes.
         Util.$('#rf-series').addEventListener('change', (e) => {
             Util.$('#rf-season').innerHTML = seasonOptionsFor(e.target.value, null);
+            fillTrackList();
         });
         Util.$('#race-form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -1097,35 +1142,52 @@ const Admin = {
         const teamName = (id) => world.teamsById[id]?.name || '—';
         const roleLabel = (id) => Career.roleInfo(id)?.label || staffRoleInfo(id).label;
 
+        const gameFilter = this._trackGame || '';
+        const shownTracks = tracks.filter(t =>
+            !gameFilter || (gameFilter === '__none__' ? !t.gameId : t.gameId === gameFilter));
+
         el.innerHTML = `
         <div class="panel" style="margin-bottom:1.1rem">
             <div class="panel-head"><h2>🌍 League World</h2>
                 <div class="btn-row">
-                    <button class="btn btn-primary btn-sm" onclick="Admin.installPack()">🌍 Install Real-World Pack</button>
+                    <button class="btn btn-primary btn-sm" onclick="Admin.trackPackForm()">🛣 Load Track Pack</button>
+                    <button class="btn btn-secondary btn-sm" onclick="Admin.installPack()">🌍 Install Real-World Pack</button>
                     <button class="btn btn-secondary btn-sm" onclick="Admin.generateNPCsForm()">🤖 Generate Free Agents</button>
                 </div></div>
-            <p class="muted small">The Real-World Pack seeds ${REAL_TRACKS.length} real tracks and ${REAL_WORLD_PACK.length} championships
-                (${REAL_WORLD_PACK.map(p => p.name).join(' · ')}) with full AI grids — teams, drivers, crew, sponsors, agents, and
-                series/track owner personas. Simulate their races from Admin → Races or any series page. Re-running skips anything that already exists.</p>
+            <p class="muted small">Track Packs load a game's circuits — ${Object.values(TRACK_PACKS).map(p => p.game.name).join(', ')} —
+                creating the game automatically and tagging every track with it, so the schedule builder and race form offer the right
+                venues for whatever you're playing. You can also add custom tracks (with their own logos) per game. The Real-World Pack
+                seeds ${REAL_WORLD_PACK.length} full championships (${REAL_WORLD_PACK.map(p => p.name).join(' · ')}) with AI grids and can
+                be tied to a game when you install it. Re-running any pack skips what already exists.</p>
         </div>
 
         <div class="grid-2">
             <section class="panel">
-                <div class="panel-head"><h2>🛣 Tracks (${tracks.length})</h2>
-                    <button class="btn btn-primary btn-sm" onclick="Admin.trackForm()">＋ Add Track</button></div>
-                ${tracks.length ? `<table class="table table-tight">
-                    <thead><tr><th>Track</th><th>Country</th><th>Type</th><th></th></tr></thead>
-                    <tbody>${tracks.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(t => `
+                <div class="panel-head"><h2>🛣 Tracks (${shownTracks.length}${gameFilter ? ' of ' + tracks.length : ''})</h2>
+                    <div class="btn-row">
+                        <select id="track-game-filter" class="input">
+                            <option value="">All games</option>
+                            ${world.games.map(g => `<option value="${Util.attr(g.id)}" ${gameFilter === g.id ? 'selected' : ''}>${Util.esc(g.name)}</option>`).join('')}
+                            <option value="__none__" ${gameFilter === '__none__' ? 'selected' : ''}>No game</option>
+                        </select>
+                        <button class="btn btn-secondary btn-sm" onclick="Admin.trackPackForm()">🛣 Load Pack</button>
+                        <button class="btn btn-primary btn-sm" onclick="Admin.trackForm()">＋ Add Track</button>
+                    </div></div>
+                ${shownTracks.length ? `<table class="table table-tight">
+                    <thead><tr><th>Track</th><th>Game</th><th>Type</th><th></th></tr></thead>
+                    <tbody>${shownTracks.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(t => `
                         <tr>
-                            <td class="strong">${Util.esc(t.name)}</td>
-                            <td class="muted">${Util.esc(t.country || '—')}</td>
+                            <td><div class="cell-flex">${C.logoBox(t)}<span class="strong">${Util.esc(t.name)}</span>${t.country ? `<span class="muted"> · ${Util.esc(t.country)}</span>` : ''}</div></td>
+                            <td>${C.gameChip(world.gamesById[t.gameId])}</td>
                             <td class="muted">${Util.esc(t.type || '—')}${t.length ? ` · ${Util.esc(t.length)}` : ''}</td>
                             <td class="row-actions">
                                 <button class="btn btn-ghost btn-sm" onclick="Admin.trackForm('${Util.attr(t.id)}')">Edit</button>
                                 <button class="btn btn-danger btn-sm" onclick="Admin.deleteWorldDoc('tracks','${Util.attr(t.id)}','track')">Del</button>
                             </td>
                         </tr>`).join('')}</tbody></table>`
-                : C.empty('🛣', 'No tracks yet', 'Install the Real-World Pack for 26 real circuits, or add your own venues.')}
+                : C.empty('🛣', gameFilter ? 'No tracks for this game yet' : 'No tracks yet',
+                    'Load a Track Pack for the game you\'re playing — Gran Turismo 7, Wreckfest, Forza, iRacing, AMS2, NR2003 — or add custom venues with their own logos.',
+                    `<button class="btn btn-primary" onclick="Admin.trackPackForm()">Load a Track Pack</button>`)}
             </section>
 
             <section class="panel">
@@ -1180,45 +1242,125 @@ const Admin = {
                 : C.empty('🤖', 'No AI personas yet', 'The Real-World Pack creates agents, promoters, and venue owners automatically.')}
             </section>
         </div>`;
+
+        Util.$('#track-game-filter', el)?.addEventListener('change', (e) => {
+            this._trackGame = e.target.value;
+            this.refresh();
+        });
+    },
+
+    /* ---------------- Track Packs (per-game track libraries) ---------------- */
+    async trackPackForm() {
+        if (!this.guard()) return;
+        const games = await DB.games({ force: true });
+        const packs = Object.entries(TRACK_PACKS);
+        const packInfo = (key) => {
+            const p = TRACK_PACKS[key];
+            return `${p.tracks.length} tracks · game "${p.game.name}" is created automatically if you don't pick one below.`;
+        };
+        Modal.open(`
+            ${Modal.header('🛣 Load Track Pack', "Load the track list for whatever game you're playing")}
+            <form id="track-pack-form" class="form-grid">
+                <label class="field"><span>Track pack *</span>
+                    <select id="tp-pack" class="input">
+                        ${packs.map(([key, p]) => `<option value="${key}">${Util.esc(p.game.name)} — ${p.tracks.length} tracks</option>`).join('')}
+                    </select></label>
+                <label class="field"><span>Attach to game</span>
+                    <select id="tp-game" class="input">
+                        <option value="">＋ Create / match the pack's game automatically</option>
+                        ${games.map(g => `<option value="${Util.attr(g.id)}">${Util.esc(g.name)}</option>`).join('')}
+                    </select></label>
+                <p class="muted small" id="tp-info">${packInfo(packs[0][0])}</p>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Load Tracks 🛣</button>
+                </div>
+            </form>
+        `);
+        Util.$('#tp-pack').addEventListener('change', (e) => {
+            Util.$('#tp-info').textContent = packInfo(e.target.value);
+        });
+        Util.$('#track-pack-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector('button[type=submit]');
+            btn.disabled = true;
+            btn.textContent = 'Loading…';
+            try {
+                const s = await installTrackPack(Util.$('#tp-pack').value, Util.$('#tp-game').value || null);
+                Modal.close();
+                Util.notify(`${s.game?.name || 'Game'} track pack loaded: ${Util.plural(s.created, 'track')} added${s.skipped ? `, ${s.skipped} already in your library` : ''}. 🛣`);
+                this._trackGame = s.gameId;
+                this.refresh();
+            } catch (err) {
+                Util.notify(err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = 'Load Tracks 🛣';
+            }
+        });
     },
 
     async trackForm(trackId = null) {
         if (!this.guard()) return;
-        const track = trackId ? await DB.get('tracks', trackId) : null;
+        const [track, games] = await Promise.all([trackId ? DB.get('tracks', trackId) : null, DB.games()]);
         Modal.open(`
-            ${Modal.header(track ? 'Edit Track' : 'Add Track')}
+            ${Modal.header(track ? 'Edit Track' : 'Add Track', 'Custom tracks welcome — pick the game it belongs to and give it a logo')}
             <form id="track-form" class="form-grid">
                 <label class="field"><span>Track name *</span><input id="tk-name" class="input" required value="${Util.esc(track?.name || '')}" maxlength="80"></label>
                 <div class="form-row">
+                    <label class="field"><span>Game</span>
+                        <select id="tk-game" class="input">
+                            <option value="">— No game —</option>
+                            ${games.map(g => `<option value="${Util.attr(g.id)}" ${(track?.gameId || this._trackGame) === g.id ? 'selected' : ''}>${Util.esc(g.name)}</option>`).join('')}
+                        </select></label>
                     <label class="field"><span>Country</span><input id="tk-country" class="input" value="${Util.esc(track?.country || '')}" maxlength="40"></label>
+                </div>
+                <div class="form-row">
                     <label class="field"><span>Type</span>
                         <select id="tk-type" class="input">
-                            ${['Road', 'Oval', 'Street', 'Rally', 'Kart'].map(t => `<option ${track?.type === t ? 'selected' : ''}>${t}</option>`).join('')}
+                            ${['Road', 'Oval', 'Street', 'Dirt', 'Rally', 'Kart'].map(t => `<option ${track?.type === t ? 'selected' : ''}>${t}</option>`).join('')}
                         </select></label>
                     <label class="field"><span>Length</span><input id="tk-length" class="input" value="${Util.esc(track?.length || '')}" maxlength="20" placeholder="e.g. 5.89 km"></label>
                 </div>
+                <label class="field"><span>Track logo ${track?.logo ? '(current logo kept unless you choose a new one)' : '(optional)'}</span>
+                    <input id="tk-logo" class="input" type="file" accept="image/*"></label>
                 <div class="modal-actions">
+                    ${track?.logo ? `<button type="button" class="btn btn-ghost" id="tk-remove-logo">Remove logo</button>` : ''}
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
                     <button type="submit" class="btn btn-primary">${track ? 'Save' : 'Add Track'}</button>
                 </div>
             </form>
         `);
+        let removeLogo = false;
+        Util.$('#tk-remove-logo')?.addEventListener('click', (e) => {
+            removeLogo = true;
+            e.target.textContent = 'Logo will be removed';
+            e.target.disabled = true;
+        });
         Util.$('#track-form').addEventListener('submit', async (e) => {
             e.preventDefault();
+            const btn = e.target.querySelector('button[type=submit]');
+            btn.disabled = true;
             try {
                 const data = {
                     name: Util.$('#tk-name').value.trim(),
+                    gameId: Util.$('#tk-game').value || null,
                     country: Util.$('#tk-country').value.trim(),
                     type: Util.$('#tk-type').value,
                     length: Util.$('#tk-length').value.trim()
                 };
                 if (!data.name) throw new Error('Track name is required.');
+                const file = Util.$('#tk-logo').files[0];
+                if (file) data.logo = await Util.compressImage(file);
+                else if (removeLogo) data.logo = null;
                 if (track) await DB.update('tracks', track.id, data);
                 else await DB.create('tracks', data);
                 Modal.close();
                 Util.notify(track ? 'Track updated.' : 'Track added. 🛣');
                 this.refresh();
-            } catch (err) { Util.notify(err.message, 'error'); }
+            } catch (err) {
+                Util.notify(err.message, 'error');
+                btn.disabled = false;
+            }
         });
     },
 
@@ -1369,17 +1511,41 @@ const Admin = {
     /* ---------------- Real-World Pack & simulation ---------------- */
     async installPack() {
         if (!this.guard()) return;
-        if (!confirm(`Install the Real-World Racing Pack?\n\n` +
-            `• ${REAL_TRACKS.length} real tracks\n` +
-            `• ${REAL_WORLD_PACK.length} championships with full schedules & active seasons\n` +
-            `• AI teams, drivers, crew, sponsors, agents, and owner personas\n\n` +
-            `Anything that already exists (matched by name) is skipped.`)) return;
-        Util.notify('Installing the Real-World Pack — this takes a few seconds…', 'info');
-        try {
-            const s = await installRealWorldPack();
-            Util.notify(`Pack installed: ${s.series} series, ${s.races} races, ${s.teams} teams, ${s.drivers} drivers, ${s.tracks} tracks, ${s.sponsors} sponsors, ${s.personas} AI personas. 🌍`);
-            this.refresh();
-        } catch (e) { Util.notify('Pack install failed: ' + e.message, 'error'); }
+        const games = await DB.games({ force: true });
+        Modal.open(`
+            ${Modal.header('🌍 Install Real-World Pack', 'Championships with full AI grids, ready to race')}
+            <form id="rwp-form" class="form-grid">
+                <p class="muted small">Installs ${REAL_TRACKS.length} real tracks and ${REAL_WORLD_PACK.length} championships
+                    (${REAL_WORLD_PACK.map(p => p.name).join(' · ')}) with full schedules, active seasons, AI teams, drivers,
+                    crew, sponsors, agents, and owner personas. Anything that already exists (matched by name) is skipped.</p>
+                <label class="field"><span>Which game does this content run in?</span>
+                    <select id="rwp-game" class="input">
+                        <option value="">— Not tied to a game —</option>
+                        ${games.map(g => `<option value="${Util.attr(g.id)}">${Util.esc(g.name)}</option>`).join('')}
+                    </select></label>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Install Pack 🌍</button>
+                </div>
+            </form>
+        `);
+        Util.$('#rwp-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector('button[type=submit]');
+            btn.disabled = true;
+            btn.textContent = 'Installing…';
+            Util.notify('Installing the Real-World Pack — this takes a few seconds…', 'info');
+            try {
+                const s = await installRealWorldPack(Util.$('#rwp-game').value || null);
+                Modal.close();
+                Util.notify(`Pack installed: ${s.series} series, ${s.races} races, ${s.teams} teams, ${s.drivers} drivers, ${s.tracks} tracks, ${s.sponsors} sponsors, ${s.personas} AI personas. 🌍`);
+                this.refresh();
+            } catch (err) {
+                Util.notify('Pack install failed: ' + err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = 'Install Pack 🌍';
+            }
+        });
     },
 
     async simRace(raceId) {
