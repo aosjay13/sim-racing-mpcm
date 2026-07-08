@@ -1,8 +1,9 @@
 /* ============================================================
    Phoenix SRMPC — Prestige, AI World & Simulation
-   • Prestige (1–5 ★): drivers/teams computed live from results +
-     championships; staff/sponsors carry a stored, GM-editable level.
-     Everyone starts their career at 1 star.
+   • Prestige (1–5 ★): a leveling ladder from Rookie to Legend.
+     Everyone starts at 1 star. Drivers/teams compute XP live from
+     results + championships; staff/sponsors/personas bank
+     prestigeXP as the races they're part of complete.
    • Real-World Pack: real tracks + real-style championships seeded
      with full AI grids (teams, drivers, crew, sponsors, agents,
      series & track owner personas).
@@ -13,27 +14,62 @@
 'use strict';
 
 /* ============================================================
-   Prestige
-   Score = points + wins·15 + podiums·6 + poles·3 + titles·150.
-   Stars: 1 <50 · 2 <150 · 3 <400 · 4 <900 · 5 ≥900.
+   Prestige — the career ladder. Everyone starts at 1 ★ Rookie
+   and climbs to 5 ★ Legend on prestige XP.
+   XP = points + wins·15 + podiums·6 + poles·3 + titles·250.
+   Drivers/teams compute XP live from results; staff, sponsors,
+   and role personas bank prestigeXP as the races they're part
+   of complete (their team scores, their series runs, their
+   clients deliver).
    ============================================================ */
 const Prestige = {
-    THRESHOLDS: [0, 50, 150, 400, 900],
+    LEVELS: [
+        { stars: 1, floor: 0,    name: 'Rookie' },
+        { stars: 2, floor: 200,  name: 'Contender' },
+        { stars: 3, floor: 600,  name: 'Front Runner' },
+        { stars: 4, floor: 1500, name: 'Elite' },
+        { stars: 5, floor: 3200, name: 'Legend' }
+    ],
+    TITLE_XP: 250,
     // Worth multiplier per star — the higher the prestige, the more money you're worth.
     MULTIPLIER: { 1: 1, 2: 1.5, 3: 2.25, 4: 3.5, 5: 5 },
 
     starsFromScore(score) {
         let stars = 1;
-        for (let i = 1; i < this.THRESHOLDS.length; i++) {
-            if (score >= this.THRESHOLDS[i]) stars = i + 1;
+        for (const lvl of this.LEVELS) {
+            if (score >= lvl.floor) stars = lvl.stars;
         }
         return stars;
     },
 
+    levelName(stars) { return this.LEVELS[this.clamp(stars) - 1].name; },
+
+    // Everything a progress UI needs for one XP total.
+    progress(score) {
+        score = Math.max(0, Math.round(Number(score) || 0));
+        const stars = this.starsFromScore(score);
+        const lvl = this.LEVELS[stars - 1];
+        const next = this.LEVELS[stars] || null;
+        return {
+            score, stars,
+            name: lvl.name,
+            next,
+            toNext: next ? next.floor - score : 0,
+            pct: next ? Math.round((score - lvl.floor) / (next.floor - lvl.floor) * 100) : 100
+        };
+    },
+
     clamp(n) { return Math.min(5, Math.max(1, Math.round(Number(n) || 1))); },
 
-    // Stored prestige for staff / sponsors / role profiles (default 1 ★ rookie).
-    stored(entity) { return this.clamp(entity?.prestige); },
+    // Stored prestige XP for staff / sponsors / role personas. A GM-set star
+    // level acts as a floor (its XP equivalent), so hand-promoted careers
+    // never fall below it — but everyone keeps earning past it.
+    storedScore(entity) {
+        const floor = this.LEVELS[this.clamp(entity?.prestige) - 1].floor;
+        return Math.max(Math.round(Number(entity?.prestigeXP) || 0), floor);
+    },
+
+    stored(entity) { return this.starsFromScore(this.storedScore(entity)); },
 
     multiplier(stars) { return this.MULTIPLIER[this.clamp(stars)] || 1; },
 
@@ -49,23 +85,35 @@ const Prestige = {
     },
 
     driverScore(row, titles = 0) {
-        if (!row) return titles * 150;
-        return Math.round(row.points + row.wins * 15 + row.podiums * 6 + (row.poles || 0) * 3 + titles * 150);
+        if (!row) return titles * this.TITLE_XP;
+        return Math.round(row.points + row.wins * 15 + row.podiums * 6 + (row.poles || 0) * 3 + titles * this.TITLE_XP);
     },
 
     // Stars for one driver. Pass precomputed rows (Stats.driverTable) when
     // rendering lists so the table isn't rebuilt per driver.
     driverStars(driverId, world, rows = null) {
+        return this.driverProgress(driverId, world, rows).stars;
+    },
+
+    driverProgress(driverId, world, rows = null) {
         const row = (rows || Stats.driverTable(world.races, world)).find(r => r.driverId === driverId);
         const titles = this._titleCounts(world, 'championDriverId')[driverId] || 0;
-        return this.starsFromScore(this.driverScore(row, titles));
+        return this.progress(this.driverScore(row, titles));
+    },
+
+    teamScore(row, titles = 0) {
+        if (!row) return titles * this.TITLE_XP;
+        return Math.round(row.points + row.wins * 15 + row.podiums * 6 + titles * this.TITLE_XP);
     },
 
     teamStars(teamId, world, teamRows = null) {
+        return this.teamProgress(teamId, world, teamRows).stars;
+    },
+
+    teamProgress(teamId, world, teamRows = null) {
         const row = (teamRows || Stats.teamTable(world.races, world)).find(t => t.teamId === teamId);
         const titles = this._titleCounts(world, 'championTeamId')[teamId] || 0;
-        const score = row ? Math.round(row.points + row.wins * 15 + row.podiums * 6 + titles * 150) : titles * 150;
-        return this.starsFromScore(score);
+        return this.progress(this.teamScore(row, titles));
     },
 
     // A driver's market worth per race: base rating salary × prestige multiplier.
@@ -78,7 +126,109 @@ const Prestige = {
 
     chip(n, label = 'Prestige') {
         n = this.clamp(n);
-        return `<span class="chip prestige-chip" title="${Util.esc(label)}: ${n}/5 — worth ×${this.multiplier(n)}">${this.stars(n)}</span>`;
+        return `<span class="chip prestige-chip" title="${Util.esc(label)}: ${n}/5 ${this.levelName(n)} — worth ×${this.multiplier(n)}">${this.stars(n)}</span>`;
+    },
+
+    // Star ladder with an XP bar: "★★☆☆☆ Contender · 360 XP to Front Runner".
+    progressBar(prog, label = 'Prestige') {
+        const sub = prog.next
+            ? `${prog.score} XP · ${prog.toNext} to ${prog.next.name}`
+            : `${prog.score} XP · max prestige`;
+        return `<div class="prestige-progress" title="${Util.esc(label)}: ${prog.stars}/5 ${prog.name} — worth ×${this.multiplier(prog.stars)}">
+            <div class="prestige-progress-top">
+                <span class="prestige-stars">${this.stars(prog.stars)}</span>
+                <span class="prestige-level">${prog.name}</span>
+                <span class="prestige-next">${sub}</span>
+            </div>
+            <div class="progress"><div class="progress-fill prestige-fill" style="width:${prog.pct}%"></div></div>
+        </div>`;
+    },
+
+    /* ----- XP accrual for stored-prestige careers -----
+       Runs once per race completion (sim + manual results). Team results
+       feed the team's staff and sponsors; series owners earn hosting XP,
+       track owners earn venue XP, agents earn a cut of client XP. */
+    XP_SHARE: { staff: 1, sponsor: 1, agent: 0.5 },
+    HOST_XP: 5,        // series owner: 5 + 1 per entrant, per race run
+    VENUE_XP: 25,      // track owner: per league race hosted at their venue
+
+    // Same XP currency as driverScore, for one race result.
+    _resultXP(res, series) {
+        let xp = pointsForResult(res, series);
+        const pos = Number(res.position);
+        if (!res.dnf && pos === 1) xp += 15;
+        if (!res.dnf && pos && pos <= 3) xp += 6;
+        if (res.pole) xp += 3;
+        return xp;
+    },
+
+    async awardRaceXP(race, world) {
+        try {
+            const series = world.seriesById[race.seriesId] || null;
+            const teamXP = {};   // teamId -> XP earned this race
+            const driverXP = {}; // driverId -> XP earned this race
+            for (const res of race.results || []) {
+                const d = world.driversById[res.driverId];
+                if (!d) continue;
+                const xp = this._resultXP(res, series);
+                driverXP[d.id] = xp;
+                if (d.teamId) teamXP[d.teamId] = (teamXP[d.teamId] || 0) + xp;
+            }
+
+            const [staff, sponsors, personas] = await Promise.all([
+                DB.staff().catch(() => []),
+                DB.sponsors().catch(() => []),
+                DB.roleProfiles().catch(() => [])
+            ]);
+
+            const bump = (list, entity, xp) => {
+                xp = Math.round(xp);
+                if (xp > 0) list.push({ id: entity.id, patch: { prestigeXP: Math.round(Number(entity.prestigeXP) || 0) + xp } });
+            };
+
+            const staffUpd = [], sponsorUpd = [], personaUpd = [];
+            staff.filter(s => teamXP[s.teamId]).forEach(s => bump(staffUpd, s, teamXP[s.teamId] * this.XP_SHARE.staff));
+            sponsors.filter(s => teamXP[s.teamId]).forEach(s => bump(sponsorUpd, s, teamXP[s.teamId] * this.XP_SHARE.sponsor));
+            personas.forEach(p => {
+                if (p.role === 'series-owner' && (p.seriesIds || []).includes(race.seriesId)) {
+                    bump(personaUpd, p, this.HOST_XP + (race.results || []).length);
+                } else if (p.role === 'track-owner' && race.track &&
+                    (p.tracks || []).some(t => t.toLowerCase() === race.track.toLowerCase())) {
+                    bump(personaUpd, p, this.VENUE_XP);
+                } else if (p.role === 'agent' || p.role === 'crew-chief') {
+                    const clientXP = (p.clientDriverIds || []).reduce((s, id) => s + (driverXP[id] || 0), 0);
+                    bump(personaUpd, p, clientXP * this.XP_SHARE.agent);
+                }
+            });
+
+            if (staffUpd.length) await DB.batchUpdate('staff', staffUpd);
+            if (sponsorUpd.length) await DB.batchUpdate('sponsors', sponsorUpd);
+            if (personaUpd.length) await DB.batchUpdate('roleProfiles', personaUpd);
+        } catch (e) { console.warn('Prestige XP award failed:', e); }
+    },
+
+    // Championship bonus when a season closes: the champion team's staff and
+    // sponsors bank title XP, and the series' promoter earns a cut.
+    async awardTitleXP(snapshot, seriesId) {
+        try {
+            const [staff, sponsors, personas] = await Promise.all([
+                DB.staff().catch(() => []),
+                DB.sponsors().catch(() => []),
+                DB.roleProfiles().catch(() => [])
+            ]);
+            const upd = (entity, xp) => ({ id: entity.id, patch: { prestigeXP: Math.round(Number(entity.prestigeXP) || 0) + xp } });
+
+            if (snapshot.championTeamId) {
+                const staffUpd = staff.filter(s => s.teamId === snapshot.championTeamId).map(s => upd(s, this.TITLE_XP));
+                const sponsorUpd = sponsors.filter(s => s.teamId === snapshot.championTeamId).map(s => upd(s, this.TITLE_XP));
+                if (staffUpd.length) await DB.batchUpdate('staff', staffUpd);
+                if (sponsorUpd.length) await DB.batchUpdate('sponsors', sponsorUpd);
+            }
+            const promoUpd = personas
+                .filter(p => p.role === 'series-owner' && (p.seriesIds || []).includes(seriesId))
+                .map(p => upd(p, Math.round(this.TITLE_XP / 2)));
+            if (promoUpd.length) await DB.batchUpdate('roleProfiles', promoUpd);
+        } catch (e) { console.warn('Prestige title XP failed:', e); }
     }
 };
 window.Prestige = Prestige;
@@ -206,7 +356,7 @@ async function installRealWorldPack() {
         summary.tracks = newTracks.length;
         for (let i = 0; i < newTracks.length; i += 4) {
             await DB.create('roleProfiles', {
-                name: makeNpcName(usedNames), role: 'track-owner', uid: null, isNPC: true, prestige: _randInt(1, 3),
+                name: makeNpcName(usedNames), role: 'track-owner', uid: null, isNPC: true, prestige: 1, // every career starts at 1 ★
                 bio: 'AI venue group managing world-class circuits.',
                 tracks: newTracks.slice(i, i + 4).map(t => t.name)
             });
@@ -227,7 +377,7 @@ async function installRealWorldPack() {
 
         // AI series-owner persona fronting the championship.
         await DB.create('roleProfiles', {
-            name: makeNpcName(usedNames), role: 'series-owner', uid: null, isNPC: true, prestige: _randInt(2, 4),
+            name: makeNpcName(usedNames), role: 'series-owner', uid: null, isNPC: true, prestige: 1,
             bio: `AI promoter running the ${pack.name}.`, seriesIds: [seriesId]
         });
         summary.personas++;
@@ -276,7 +426,7 @@ async function installRealWorldPack() {
             const brand = sponsorPool.shift();
             if (brand) {
                 await DB.create('sponsors', {
-                    ...brand, isNPC: true, prestige: _randInt(1, 4),
+                    ...brand, isNPC: true, prestige: 1,
                     teamId, payoutPerRace: _randInt(20, 60) * 10
                 });
                 summary.sponsors++;
@@ -286,7 +436,7 @@ async function installRealWorldPack() {
         // One AI agent per championship with a book of that grid's drivers.
         const gridDrivers = (await DB.drivers({ force: true })).filter(d => d.seriesId === seriesId);
         await DB.create('roleProfiles', {
-            name: makeNpcName(usedNames), role: 'agent', uid: null, isNPC: true, prestige: _randInt(1, 3),
+            name: makeNpcName(usedNames), role: 'agent', uid: null, isNPC: true, prestige: 1,
             bio: `AI super-agent representing ${pack.name} talent.`,
             clientDriverIds: gridDrivers.slice(0, 4).map(d => d.id)
         });
@@ -376,6 +526,7 @@ const Sim = {
         News.post('🏁', `${winner?.name || 'An AI driver'} wins the simulated ${race.name || race.track || 'race'}${winner?.teamId ? ` for ${world.teamsById[winner.teamId]?.name || 'their team'}` : ''}!`);
 
         await this.payoutRace({ ...race, results }, world);
+        await Prestige.awardRaceXP({ ...race, results }, world);
         await this._maybeShakeup(world);
 
         if (!quiet) Util.notify(`Simulated: ${winner?.name || '—'} wins ${race.name || race.track}. 🏁`);

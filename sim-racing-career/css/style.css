@@ -649,6 +649,17 @@ select.input { cursor: pointer; }
 }
 .prestige-cell { color: var(--gold); letter-spacing: 1px; white-space: nowrap; font-size: .8rem; }
 
+/* Prestige level ladder: stars + level name + XP bar to the next star */
+.prestige-progress { margin-top: .5rem; max-width: 380px; }
+.prestige-progress-top {
+    display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap;
+    margin-bottom: .3rem; font-size: .8rem;
+}
+.prestige-stars { color: var(--gold); letter-spacing: 2px; white-space: nowrap; }
+.prestige-level { font-weight: 700; color: var(--text); }
+.prestige-next { color: var(--text-dim); font-variant-numeric: tabular-nums; margin-left: auto; white-space: nowrap; }
+.prestige-fill { background: linear-gradient(90deg, rgba(255,212,77,.55), var(--gold)); }
+
 /* Player profile page */
 .profile-avatar {
     background: linear-gradient(135deg, var(--accent), var(--accent-2));

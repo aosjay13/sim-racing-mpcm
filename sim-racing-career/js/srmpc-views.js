@@ -802,7 +802,8 @@ const Views = {
         const team = world.teamsById[driver.teamId];
         const rows = Stats.driverTable(world.races, world);
         const career = rows.find(r => r.driverId === driverId);
-        const stars = Prestige.driverStars(driverId, world, rows);
+        const prestigeProg = Prestige.driverProgress(driverId, world, rows);
+        const stars = prestigeProg.stars;
         const worth = Prestige.driverWorth(driver, stars);
         const isPlayerDriver = !!driver.ownerUid;
         // Players get the works (chart + deep history + a link to their full
@@ -813,11 +814,11 @@ const Views = {
         Modal.open(`
             ${Modal.header(`${driver.number ? '#' + driver.number + ' ' : ''}${driver.name}`, `${team?.name || 'Free agent'}${driver.country ? ' · ' + driver.country : ''}`)}
             <div class="chip-row" style="margin-bottom:.6rem">
-                ${Prestige.chip(stars)}
                 <span class="chip chip-dim" title="Market worth per race — grows with prestige">💵 worth ${Economy.fmt(worth)}/race</span>
                 ${driver.rating ? `<span class="chip rating-chip" title="Skill rating">⭐ ${driver.rating}</span>` : ''}
                 ${isPlayerDriver ? '<span class="badge badge-blue">Player</span>' : '<span class="badge badge-dim">AI</span>'}
             </div>
+            ${Prestige.progressBar(prestigeProg, 'Career prestige')}
             ${driver.bio ? `<p class="muted" style="margin-bottom:1rem">${Util.esc(driver.bio)}</p>` : ''}
             <div class="stat-strip">
                 ${C.statChip(career?.starts || 0, 'Starts')}

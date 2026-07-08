@@ -335,6 +335,8 @@ const Admin = {
                 if (!confirm('No completed races are assigned to this season yet, so there is no champion to crown. Close it anyway?')) return;
             }
             await DB.update('seasons', seasonId, { ...snapshot, status: 'completed' });
+            // Title prestige: champion team's staff & sponsors + the promoter bank XP.
+            await Prestige.awardTitleXP(snapshot, seriesId);
             const champ = snapshot.championDriverId ? (world.driversById[snapshot.championDriverId]?.name || 'Champion') : null;
             Util.notify(champ ? `Season closed — 🏆 ${champ} is your champion!` : 'Season closed.');
             this.seasonsModal(seriesId);
@@ -847,9 +849,12 @@ const Admin = {
                 const winner = results.find(r => Number(r.position) === 1 && !r.dnf);
                 const winnerName = winner ? world.driversById[winner.driverId]?.name : null;
                 if (winnerName) News.post('🏆', `${winnerName} wins ${race.name || race.track || 'a league race'}!`);
-                // Prize money + sponsor payouts — only on first completion, so
-                // editing results never double-pays.
-                if (!wasCompleted) await Sim.payoutRace({ ...race, results }, world);
+                // Prize money + sponsor payouts + prestige XP — only on first
+                // completion, so editing results never double-pays.
+                if (!wasCompleted) {
+                    await Sim.payoutRace({ ...race, results }, world);
+                    await Prestige.awardRaceXP({ ...race, results }, world);
+                }
                 Modal.close();
                 Util.notify('Results saved — standings, stats, and race earnings updated. 🏆');
                 this.refresh();
@@ -1226,7 +1231,7 @@ const Admin = {
                 <label class="field"><span>Brand name *</span><input id="sp-name" class="input" required value="${Util.esc(sponsor?.name || '')}" maxlength="60"></label>
                 <div class="form-row">
                     <label class="field"><span>Industry</span><input id="sp-industry" class="input" value="${Util.esc(sponsor?.industry || '')}" maxlength="40"></label>
-                    <label class="field"><span>Prestige (1–5 ★)</span><input id="sp-prestige" class="input" type="number" min="1" max="5" value="${Prestige.stored(sponsor)}"></label>
+                    <label class="field"><span>Prestige floor (1–5 ★)</span><input id="sp-prestige" class="input" type="number" min="1" max="5" value="${Prestige.clamp(sponsor?.prestige)}" title="Minimum star level. They also earn prestige XP from their team's results — currently ${sponsor ? Prestige.storedScore(sponsor) + ' XP (' + Prestige.levelName(Prestige.stored(sponsor)) + ')' : '0 XP'}."></label>
                     <label class="field"><span>Payout per race</span><input id="sp-payout" class="input" type="number" min="0" step="10" value="${sponsor?.payoutPerRace ?? 300}"></label>
                 </div>
                 <label class="field"><span>Sponsored team</span>
@@ -1273,7 +1278,7 @@ const Admin = {
                             ${STAFF_ROLES.map(r => `<option value="${r.id}" ${person?.role === r.id ? 'selected' : ''}>${r.icon} ${r.label}</option>`).join('')}
                         </select></label>
                     <label class="field"><span>Skill rating (50–99)</span><input id="st-rating" class="input" type="number" min="50" max="99" value="${person?.rating ?? 70}"></label>
-                    <label class="field"><span>Prestige (1–5 ★)</span><input id="st-prestige" class="input" type="number" min="1" max="5" value="${Prestige.stored(person)}"></label>
+                    <label class="field"><span>Prestige floor (1–5 ★)</span><input id="st-prestige" class="input" type="number" min="1" max="5" value="${Prestige.clamp(person?.prestige)}" title="Minimum star level. They also earn prestige XP from their team's results — currently ${person ? Prestige.storedScore(person) + ' XP (' + Prestige.levelName(Prestige.stored(person)) + ')' : '0 XP'}."></label>
                 </div>
                 <label class="field"><span>Team</span>
                     <select id="st-team" class="input">
@@ -1321,7 +1326,7 @@ const Admin = {
                         <select id="pe-role" class="input">
                             ${roles.map(r => `<option value="${r.id}" ${persona?.role === r.id ? 'selected' : ''}>${r.icon} ${r.label}</option>`).join('')}
                         </select></label>
-                    <label class="field"><span>Prestige (1–5 ★)</span><input id="pe-prestige" class="input" type="number" min="1" max="5" value="${Prestige.stored(persona)}"></label>
+                    <label class="field"><span>Prestige floor (1–5 ★)</span><input id="pe-prestige" class="input" type="number" min="1" max="5" value="${Prestige.clamp(persona?.prestige)}" title="Minimum star level. Personas also earn prestige XP from the races they're part of — currently ${persona ? Prestige.storedScore(persona) + ' XP (' + Prestige.levelName(Prestige.stored(persona)) + ')' : '0 XP'}."></label>
                 </div>
                 <label class="field"><span>Bio</span><textarea id="pe-bio" class="input" rows="2" maxlength="300">${Util.esc(persona?.bio || '')}</textarea></label>
                 <label class="field"><span>Venues (track owners — one per line)</span><textarea id="pe-tracks" class="input" rows="3">${Util.esc((persona?.tracks || []).join('\n'))}</textarea></label>

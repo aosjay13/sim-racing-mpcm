@@ -46,6 +46,8 @@
             const ops = [];
             return {
                 set(ref, data) { ops.push(() => ref.set(data)); },
+                update(ref, patch) { ops.push(() => ref.update(patch)); },
+                delete(ref) { ops.push(() => ref.delete()); },
                 async commit() { for (const op of ops) await op(); }
             };
         }

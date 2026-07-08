@@ -116,6 +116,21 @@ const DB = {
         this.invalidate(collection);
     },
 
+    // Patch many docs in one write batch (used for prestige XP payouts).
+    async batchUpdate(collection, updates) {
+        if (!updates.length) return;
+        const fs = this._fs();
+        const batch = fs.batch();
+        updates.forEach(({ id, patch }) => {
+            batch.update(fs.collection(collection).doc(id), {
+                ...patch,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        });
+        await batch.commit();
+        this.invalidate(collection);
+    },
+
     async batchCreate(collection, items) {
         const fs = this._fs();
         const batch = fs.batch();

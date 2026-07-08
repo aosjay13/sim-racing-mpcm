@@ -164,6 +164,8 @@ const Career = {
             myContract = (await DB.contracts()).find(c => c.personId === driver.id && c.status === 'active') || null;
         } catch (e) { /* contracts optional */ }
 
+        const prestigeProg = Prestige.driverProgress(driver.id, world);
+
         el.innerHTML = `
         ${this._workspaceHead('driver', `<button class="btn btn-secondary" onclick="Career.editDriverModal()">✎ Edit Profile</button>`)}
 
@@ -172,11 +174,11 @@ const Career = {
             <div class="driver-hero-info">
                 <h2>${Util.esc(driver.name)}</h2>
                 <div class="chip-row">
-                    ${Prestige.chip(Prestige.driverStars(driver.id, world), 'Your prestige — win races and titles to climb the star ladder')}
                     ${team ? `<button class="chip chip-btn" onclick="Views.showTeam('${Util.attr(team.id)}')"><span class="team-dot" style="background:${Util.esc(team.color || '#666')}"></span>${Util.esc(team.name)}</button>` : '<span class="chip chip-dim">Free agent</span>'}
                     ${driver.country ? `<span class="chip chip-dim">${Util.esc(driver.country)}</span>` : ''}
                     ${myContract ? `<span class="chip chip-dim" title="Your active contract">📜 ${Economy.fmt(myContract.salary)}/race${Number(myContract.buyout) ? ` · buyout ${Economy.fmt(myContract.buyout)}` : ''}</span>` : ''}
                 </div>
+                ${Prestige.progressBar(prestigeProg, 'Your prestige — points, wins, poles, and titles earn XP')}
             </div>
             <div class="btn-col">
                 ${team
@@ -244,8 +246,8 @@ const Career = {
                 </div>
                 ${teamsHtml}
                 <label class="field"><span>Bio (optional)</span><textarea id="ob-bio" class="input" rows="2" maxlength="300" placeholder="Tell the league who you are…"></textarea></label>
-                <p class="muted small">⭐ Every career begins at <strong>1-star prestige</strong> (${Prestige.stars(1)}). Wins, podiums, poles, and championships
-                    raise your stars — and the higher your prestige, the more money you're worth.</p>
+                <p class="muted small">⭐ Every career begins at <strong>1 ★ ${Prestige.levelName(1)}</strong> (${Prestige.stars(1)}). Points, wins, poles, and championships
+                    earn prestige XP that climbs the ladder — ${Prestige.LEVELS.map(l => l.name).join(' → ')} — and the higher your prestige, the more money you're worth.</p>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
                     <button type="submit" class="btn btn-primary">Start Career 🏁</button>
@@ -417,10 +419,10 @@ const Career = {
             <div class="driver-hero-info">
                 <h2>${Util.esc(team.name)}</h2>
                 <div class="chip-row">
-                    ${Prestige.chip(Prestige.teamStars(team.id, world), 'Team prestige — sets which drivers will sign for you')}
                     ${team.recruiting !== false ? '<span class="badge badge-green">Recruiting</span>' : '<span class="badge badge-dim">Roster closed</span>'}
                     ${team.headquarters ? `<span class="chip chip-dim">📍 ${Util.esc(team.headquarters)}</span>` : ''}
                 </div>
+                ${Prestige.progressBar(Prestige.teamProgress(team.id, world), 'Team prestige — sets which drivers will sign for you')}
                 ${team.description ? `<p class="muted">${Util.esc(team.description)}</p>` : ''}
             </div>
             <div class="btn-col">
@@ -774,7 +776,8 @@ const Career = {
             <div class="driver-hero-info">
                 <h2>${Util.esc(mine.name)}</h2>
                 ${mine.bio ? `<p class="muted">${Util.esc(mine.bio)}</p>` : ''}
-                <div class="chip-row">${Prestige.chip(Prestige.stored(mine), 'Your prestige in this role')}<span class="chip">${info.label}</span><span class="chip chip-dim">🎯 ${challengePoints} challenge pts</span></div>
+                <div class="chip-row"><span class="chip">${info.label}</span><span class="chip chip-dim">🎯 ${challengePoints} challenge pts</span></div>
+                ${Prestige.progressBar(Prestige.progress(Prestige.storedScore(mine)), 'Your prestige in this role — earn XP as the races you\'re part of complete')}
             </div>
         </div>
         ${kpis ? `<div class="stat-strip">${kpis}</div>` : ''}

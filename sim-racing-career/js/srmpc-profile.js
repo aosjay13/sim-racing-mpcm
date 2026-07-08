@@ -80,7 +80,8 @@ const Profile = {
         const teamTitles = completedSeasons.filter(se => ownedTeamIds.has(se.championTeamId));
 
         // Prestige from the combined career + titles.
-        const stars = Prestige.starsFromScore(Prestige.driverScore(career, driverTitles.length));
+        const prestigeProg = Prestige.progress(Prestige.driverScore(career, driverTitles.length));
+        const stars = prestigeProg.stars;
 
         // Achievements against the combined career line.
         const earned = ACHIEVEMENTS.filter(a => a.check(career));
@@ -158,7 +159,6 @@ const Profile = {
                     ${isSelf || isAdmin ? `<button class="icon-btn edit-pencil" onclick="Profile.editModal('${Util.attr(uid)}')" title="Edit name, photo, country, and bio">✎</button>` : ''}
                 </h2>
                 <div class="chip-row">
-                    ${Prestige.chip(stars, 'Career prestige — earned on track: wins, podiums, poles, and titles raise it')}
                     ${activeRole ? (isSelf
                         ? `<button class="chip chip-btn" onclick="Career.showRolePicker()" title="Switch your role">${activeRole.icon} ${Util.esc(activeRole.label)} ⇄</button>`
                         : `<span class="chip">${activeRole.icon} ${Util.esc(activeRole.label)}</span>`) : ''}
@@ -170,6 +170,7 @@ const Profile = {
                     ${(isSelf || isAdmin) && user.walletInitialized ? `<span class="chip wallet-chip" title="Earned through prizes, sponsor payouts, and contracts — spent on signings and buyouts">💵 ${Economy.fmt(user.balance)}</span>` : ''}
                     ${isAdmin ? `<span class="chip chip-dim">✉️ ${Util.esc(user.email || '—')}</span>` : ''}
                 </div>
+                ${Prestige.progressBar(prestigeProg, 'Career prestige — earned on track: points, wins, poles, and titles')}
                 ${user.bio ? `<p class="muted" style="margin-top:.45rem">${Util.esc(user.bio)}</p>`
                     : (isSelf ? `<p class="muted small" style="margin-top:.45rem">✎ Click your name or photo to set your display name, photo, country, and bio.</p>` : '')}
                 ${driverTitles.length || teamTitles.length ? `<div class="chip-row" style="margin-top:.4rem">

@@ -120,26 +120,66 @@ const log = (mark, msg) => { steps.push(`${mark} ${msg}`); console.log(`${mark} 
     log('✅', 'Standings ★ column live: ' + JSON.stringify(starSample));
     await shot('03-standings-prestige');
 
-    /* ---- 7. Driver modal: prestige + worth ---- */
+    /* ---- 6b. Prestige leveling: stars spread (nobody at 5★ after one season),
+       staff/sponsors/promoters bank prestigeXP from the simulated races ---- */
+    const lvl = await page.evaluate(async () => {
+        const world = await DB.loadWorld(true);
+        const rows = Stats.driverTable(world.races, world);
+        const dist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        rows.forEach(r => { dist[Prestige.driverStars(r.driverId, world, rows)]++; });
+        const staff = await DB.staff({ force: true });
+        const sponsors = await DB.sponsors({ force: true });
+        const personas = await DB.roleProfiles({ force: true });
+        const withXP = (list) => list.filter(x => (Number(x.prestigeXP) || 0) > 0).length;
+        return {
+            dist, drivers: rows.length,
+            staffXP: withXP(staff), staffTot: staff.length,
+            sponsorXP: withXP(sponsors), sponsorTot: sponsors.length,
+            promoterXP: withXP(personas.filter(p => p.role === 'series-owner')),
+            maxStaffStars: Math.max(...staff.map(s => Prestige.stored(s)), 1)
+        };
+    });
+    log(lvl.dist[5] < lvl.drivers && lvl.dist[1] + lvl.dist[2] > 0 ? '✅' : '❌',
+        `Driver stars spread after one season (not everyone 5★): ${JSON.stringify(lvl.dist)} of ${lvl.drivers} drivers`);
+    log(lvl.staffXP > 0 && lvl.sponsorXP > 0 ? '✅' : '❌',
+        `Race XP banked: staff ${lvl.staffXP}/${lvl.staffTot}, sponsors ${lvl.sponsorXP}/${lvl.sponsorTot} have prestigeXP (top staff level ${lvl.maxStaffStars}★)`);
+    log(lvl.promoterXP > 0 ? '✅' : '❌', `Series promoters earned hosting XP (${lvl.promoterXP} personas)`);
+
+    /* ---- 7. Driver modal: prestige ladder + worth ---- */
     await page.click('.panel table tbody tr');
-    await page.waitForSelector('.modal-card .prestige-chip');
+    await page.waitForSelector('.modal-card .prestige-progress');
     const modalChips = await page.evaluate(() =>
         Array.from(document.querySelectorAll('.modal-card .chip-row')[0].querySelectorAll('.chip,.badge')).map(c => c.textContent.trim()));
+    const modalLadder = await page.evaluate(() =>
+        document.querySelector('.modal-card .prestige-progress').innerText.replace(/\s*\n\s*/g, ' · '));
     log('✅', 'Driver modal chips: ' + modalChips.join(' | '));
+    log(/XP/.test(modalLadder) ? '✅' : '❌', 'Driver modal prestige ladder: ' + modalLadder);
     await shot('04-driver-modal');
     await page.evaluate(() => Modal.close());
 
     /* ---- 8. Free agency: release an AI driver, then player tries to sign ---- */
     // Force a shakeup so a star hits the market.
-    const releasedName = await page.evaluate(async () => {
+    const released = await page.evaluate(async () => {
         const world = await DB.loadWorld(true);
         const rows = Stats.driverTable(world.races, world);
         rows.sort((a, b) => b.points - a.points);
         const star = world.driversById[rows[0].driverId];
         await DB.update('drivers', star.id, { teamId: null });
-        return star.name;
+        // Back-fill a title-laden past: one season no longer mints a high
+        // star (that's the point of the ladder), so crown them champion of
+        // three closed legacy seasons to push them to 3★+.
+        for (const y of [2023, 2024, 2025]) {
+            await DB.create('seasons', {
+                seriesId: star.seriesId || null, name: `Legacy Championship ${y}`, year: y,
+                status: 'completed', championDriverId: star.id, championTeamId: null
+            });
+        }
+        const w2 = await DB.loadWorld(true);
+        return { name: star.name, stars: Prestige.driverStars(star.id, w2) };
     });
-    log('✅', `Champion-tier AI driver released to free agency: ${releasedName}`);
+    const releasedName = released.name;
+    log(released.stars >= 3 ? '✅' : '❌',
+        `Champion-tier AI driver (${released.stars}★ after 3 legacy titles) released to free agency: ${releasedName}`);
 
     /* ---- 9. Player career: register, 1★ rookie onboarding, found team, prestige-gated hiring ---- */
     await page.click('#signout-btn');
@@ -162,7 +202,8 @@ const log = (mark, msg) => { steps.push(`${mark} ${msg}`); console.log(`${mark} 
     // Check the driver onboarding note exists for driver role too (probe the modal text via Career).
     await page.evaluate(() => Career.driverOnboarding('scratch'));
     const rookieNote = await page.evaluate(() => document.querySelector('.modal-card .muted.small')?.textContent || '');
-    log(/1-star prestige/.test(rookieNote) ? '🔍' : '❌', 'Driver onboarding shows the 1★ rookie start note');
+    log(/1 ★ Rookie/.test(rookieNote) && /Legend/.test(rookieNote) ? '🔍' : '❌',
+        'Driver onboarding shows the 1★ Rookie start + level ladder note');
     await shot('05-rookie-onboarding');
     await page.evaluate(() => Modal.close());
 
@@ -172,6 +213,13 @@ const log = (mark, msg) => { steps.push(`${mark} ${msg}`); console.log(`${mark} 
     await page.fill('#tf-name', 'Tester Racing');
     await page.click('#team-form button[type=submit]');
     log('✅', 'Team founded: ' + (await toast(/founded/i)));
+
+    // New team's workspace shows the 1★ Rookie prestige ladder at 0 XP.
+    await page.waitForSelector('.prestige-progress');
+    const teamLadder = await page.evaluate(() =>
+        document.querySelector('.prestige-progress').innerText.replace(/\s*\n\s*/g, ' · '));
+    log(/Rookie/.test(teamLadder) && /0 XP/.test(teamLadder) ? '✅' : '❌',
+        'New team starts as 1★ Rookie with 0 XP: ' + teamLadder);
 
     // Open the hire market — the released 5★-tier driver should be locked.
     await page.waitForSelector('button:has-text("🤝 Hire")');
