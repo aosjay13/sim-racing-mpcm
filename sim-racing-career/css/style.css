@@ -685,6 +685,29 @@ select.input { cursor: pointer; }
 .prestige-fill { background: linear-gradient(90deg, rgba(255,212,77,.55), var(--gold)); }
 
 /* Player profile page */
+/* Career roles: one card per role with its prestige ladder + stats */
+.role-stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: .9rem; }
+.role-stat-card {
+    background: var(--bg-2); border: 1px solid var(--panel-border); border-radius: var(--r-md);
+    padding: .9rem 1rem 1rem; position: relative; overflow: hidden;
+    transition: transform .18s ease, border-color .18s, box-shadow .2s;
+}
+.role-stat-card::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--accent-2); opacity: .55;
+}
+.role-stat-card:hover { transform: translateY(-2px); border-color: rgba(0,217,255,.3); box-shadow: 0 8px 22px rgba(0,0,0,.35); }
+.role-stat-card.role-active { border-color: rgba(0,217,255,.4); box-shadow: 0 0 14px rgba(0,217,255,.15); }
+.role-stat-card.role-active::before { opacity: 1; }
+.role-stat-head { display: flex; align-items: center; gap: .5rem; }
+.role-stat-head h3 { flex: 1; font-size: .95rem; text-transform: uppercase; letter-spacing: .5px; }
+.role-stat-icon { font-size: 1.3rem; line-height: 1; }
+.role-stat-card .prestige-progress { max-width: none; }
+.mini-stats { display: flex; flex-wrap: wrap; gap: .5rem 1.1rem; margin-top: .65rem; }
+.mini-stat { display: flex; flex-direction: column; min-width: 3rem; }
+.mini-value { font-family: var(--font-display); font-weight: 700; font-size: .98rem; font-variant-numeric: tabular-nums; }
+.mini-label { font-size: .62rem; text-transform: uppercase; letter-spacing: .8px; color: var(--text-faint); }
+
 .profile-avatar {
     background: linear-gradient(135deg, var(--accent), var(--accent-2));
     color: #0b0e13; border-radius: 50%; font-weight: 800;
@@ -791,6 +814,11 @@ select.input { cursor: pointer; }
 .view-anim .grid-2 > *:nth-child(n+4) { animation: riseFade .45s cubic-bezier(.2,.75,.25,1) .26s backwards; }
 
 /* ---- Menus & pickers pop ---- */
+.role-stats-grid .role-stat-card { animation: riseFade .4s cubic-bezier(.2,.75,.25,1) backwards; }
+.role-stats-grid .role-stat-card:nth-child(2) { animation-delay: .06s; }
+.role-stats-grid .role-stat-card:nth-child(3) { animation-delay: .12s; }
+.role-stats-grid .role-stat-card:nth-child(4) { animation-delay: .18s; }
+.role-stats-grid .role-stat-card:nth-child(n+5) { animation-delay: .22s; }
 .role-grid .role-card { animation: riseFade .4s cubic-bezier(.2,.75,.25,1) backwards; }
 .role-grid .role-card:nth-child(2) { animation-delay: .05s; }
 .role-grid .role-card:nth-child(3) { animation-delay: .10s; }

@@ -122,6 +122,99 @@ const Profile = {
         const initials = name.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
         const teamStandings = Stats.teamTable(world.races, world);
 
+        /* ---- Career roles: one card per role with its own prestige + stats ---- */
+        const mini = (v, l) => `<div class="mini-stat"><span class="mini-value">${v}</span><span class="mini-label">${Util.esc(l)}</span></div>`;
+        const roleCard = (roleId, prog, stats, { note = '' } = {}) => {
+            const info = Career.roleInfo(roleId);
+            const isActive = user.activeRole === roleId;
+            return `<div class="role-stat-card ${isActive ? 'role-active' : ''}">
+                <div class="role-stat-head">
+                    <span class="role-stat-icon">${info?.icon || '🎭'}</span>
+                    <h3>${Util.esc(info?.label || roleId)}</h3>
+                    ${isActive ? '<span class="badge badge-blue">Active</span>' : ''}
+                </div>
+                ${Prestige.progressBar(prog, `${info?.label || roleId} prestige`)}
+                <div class="mini-stats">${stats.map(([v, l]) => mini(v, l)).join('')}</div>
+                ${note ? `<p class="muted small" style="margin-top:.45rem">${note}</p>` : ''}
+            </div>`;
+        };
+
+        const roleCards = [];
+        if (driverIds.size || career.starts) {
+            roleCards.push(roleCard('driver', prestigeProg, [
+                [career.starts, 'Starts'], [career.wins, 'Wins'], [career.podiums, 'Podiums'],
+                [career.poles, 'Poles'], [career.points, 'Points'], [driverTitles.length, 'Titles']
+            ]));
+        }
+        if (ownedTeams.length) {
+            const teamProgs = ownedTeams.map(t => Prestige.teamProgress(t.id, world, teamStandings));
+            const bestProg = teamProgs.reduce((a, b) => (b.score > a.score ? b : a), teamProgs[0]);
+            const rows = ownedTeams.map(t => teamStandings.find(x => x.teamId === t.id)).filter(Boolean);
+            const bestRank = rows.length ? Math.min(...rows.map(r => r.rank)) : null;
+            roleCards.push(roleCard('team-owner', bestProg, [
+                [ownedTeams.length, ownedTeams.length === 1 ? 'Team' : 'Teams'],
+                [bestRank ? '#' + bestRank : '—', 'Best rank'],
+                [rows.reduce((s, r) => s + r.points, 0), 'Points'],
+                [rows.reduce((s, r) => s + r.wins, 0), 'Wins'],
+                [teamTitles.length, 'Titles']
+            ]));
+        }
+        for (const p of myRoleProfiles) {
+            const prog = Prestige.progress(Prestige.storedScore(p));
+            if (p.role === 'agent' || p.role === 'crew-chief') {
+                const rows = (p.clientDriverIds || []).map(id => allRows.find(r => r.driverId === id)).filter(Boolean);
+                roleCards.push(roleCard(p.role, prog, [
+                    [(p.clientDriverIds || []).length, p.role === 'agent' ? 'Clients' : 'Drivers'],
+                    [rows.reduce((s, r) => s + r.wins, 0), 'Client wins'],
+                    [rows.reduce((s, r) => s + r.podiums, 0), 'Podiums'],
+                    [rows.length ? '#' + Math.min(...rows.map(r => r.rank)) : '—', 'Best ranked']
+                ]));
+            } else if (p.role === 'mechanic') {
+                const roster = p.teamId ? world.drivers.filter(d => d.teamId === p.teamId) : [];
+                const rows = roster.map(d => allRows.find(r => r.driverId === d.id)).filter(Boolean);
+                const starts = rows.reduce((s, r) => s + r.starts, 0);
+                const dnfs = rows.reduce((s, r) => s + r.dnfs, 0);
+                const teamRank = p.teamId ? teamStandings.find(t => t.teamId === p.teamId)?.rank : null;
+                roleCards.push(roleCard(p.role, prog, [
+                    [teamRank ? '#' + teamRank : '—', 'Team rank'],
+                    [roster.length, 'Cars'],
+                    [starts ? Math.round((1 - dnfs / starts) * 100) + '%' : '—', 'Reliability'],
+                    [dnfs, 'DNFs']
+                ], { note: p.teamId ? '' : 'No garage chosen yet.' }));
+            } else if (p.role === 'sponsor') {
+                const tRow = teamStandings.find(t => t.teamId === p.sponsoredTeamId);
+                const dRow = allRows.find(r => r.driverId === p.sponsoredDriverId);
+                roleCards.push(roleCard(p.role, prog, [
+                    [(tRow?.points || 0) + (dRow?.points || 0), 'Exposure pts'],
+                    [(tRow?.wins || 0) + (dRow?.wins || 0), 'Wins backed'],
+                    [(tRow?.podiums || 0) + (dRow?.podiums || 0), 'Podiums backed'],
+                    [(p.sponsoredTeamId ? 1 : 0) + (p.sponsoredDriverId ? 1 : 0), 'Deals']
+                ], { note: p.sponsoredTeamId || p.sponsoredDriverId ? '' : 'Nothing sponsored yet.' }));
+            } else if (p.role === 'series-owner') {
+                const mySeries = world.series.filter(s => s.ownerUid === uid);
+                const ids = new Set(mySeries.map(s => s.id));
+                const myRaces = world.races.filter(r => ids.has(r.seriesId));
+                roleCards.push(roleCard(p.role, prog, [
+                    [mySeries.length, 'Series'],
+                    [myRaces.length, 'Races'],
+                    [myRaces.filter(r => r.status === 'completed').length, 'Run'],
+                    [(world.seasons || []).filter(se => ids.has(se.seriesId)).length, 'Seasons']
+                ]));
+            } else if (p.role === 'track-owner') {
+                const trackStats = Stats.trackTable(world.races, world);
+                const myTracks = p.tracks || [];
+                const hosted = myTracks.reduce((s, name) =>
+                    s + (trackStats.find(t => t.track.toLowerCase() === name.toLowerCase())?.races || 0), 0);
+                roleCards.push(roleCard(p.role, prog, [
+                    [myTracks.length, 'Venues'],
+                    [hosted, 'Races hosted'],
+                    [myTracks.filter(n => trackStats.find(t => t.track.toLowerCase() === n.toLowerCase())?.kingOfTrack).length, 'Track kings']
+                ]));
+            } else if (p.role !== 'driver' && p.role !== 'team-owner') {
+                roleCards.push(roleCard(p.role, prog, []));
+            }
+        }
+
         const posOf = (h) => h.result.dnf ? 'DNF' : (h.result.position ? 'P' + h.result.position : '—');
         const contractRow = (c, showTeamSide) => `
             <div class="race-row">
@@ -191,6 +284,12 @@ const Profile = {
             ${C.statChip(challengePoints, 'Challenge pts')}
         </div>
 
+        ${roleCards.length ? `<section class="panel" style="margin-bottom:1.1rem">
+            <div class="panel-head"><h2>🎭 Career Roles (${roleCards.length})</h2>
+                ${isSelf ? `<button class="btn btn-ghost btn-sm" onclick="Career.showRolePicker()">⇄ Switch role</button>` : ''}</div>
+            <div class="role-stats-grid">${roleCards.join('')}</div>
+        </section>` : ''}
+
         ${prog.labels.length >= 2 ? `<section class="panel" style="margin-bottom:1.1rem">
             <div class="panel-head"><h2>📈 Career Points Progression</h2></div>
             ${C.lineChart(prog.series, prog.labels, { height: 190 })}
@@ -202,11 +301,6 @@ const Profile = {
                 ${earned.length ? `<div class="chip-row">${earned.map(a =>
                     `<span class="chip rating-chip" title="${Util.esc(a.desc)}">${a.icon} ${Util.esc(a.label)}</span>`).join('')}</div>`
                     : '<p class="muted">No achievements yet — the first race start unlocks the first one.</p>'}
-                ${myRoleProfiles.length ? `<h3 class="section-label" style="margin-top:1rem">🎭 Roles Played</h3>
-                    <div class="chip-row">${myRoleProfiles.map(p => {
-                        const info = Career.roleInfo(p.role);
-                        return `<span class="chip" title="${Util.esc(p.bio || '')}">${info?.icon || '🎭'} ${Util.esc(info?.label || p.role)} · ${Prestige.stars(Prestige.stored(p))}</span>`;
-                    }).join('')}</div>` : ''}
             </section>
 
             <section class="panel">

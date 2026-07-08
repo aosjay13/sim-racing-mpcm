@@ -192,7 +192,8 @@ const Prestige = {
             staff.filter(s => teamXP[s.teamId]).forEach(s => bump(staffUpd, s, teamXP[s.teamId] * this.XP_SHARE.staff));
             sponsors.filter(s => teamXP[s.teamId]).forEach(s => bump(sponsorUpd, s, teamXP[s.teamId] * this.XP_SHARE.sponsor));
             personas.forEach(p => {
-                if (p.role === 'series-owner' && (p.seriesIds || []).includes(race.seriesId)) {
+                if (p.role === 'series-owner' && ((p.seriesIds || []).includes(race.seriesId)
+                    || (p.uid && series?.ownerUid === p.uid))) {
                     bump(personaUpd, p, this.HOST_XP + (race.results || []).length);
                 } else if (p.role === 'track-owner' && race.track &&
                     (p.tracks || []).some(t => t.toLowerCase() === race.track.toLowerCase())) {
@@ -200,6 +201,11 @@ const Prestige = {
                 } else if (p.role === 'agent' || p.role === 'crew-chief') {
                     const clientXP = (p.clientDriverIds || []).reduce((s, id) => s + (driverXP[id] || 0), 0);
                     bump(personaUpd, p, clientXP * this.XP_SHARE.agent);
+                } else if (p.role === 'mechanic' && teamXP[p.teamId]) {
+                    bump(personaUpd, p, teamXP[p.teamId] * this.XP_SHARE.staff);
+                } else if (p.role === 'sponsor') {
+                    const xp = (teamXP[p.sponsoredTeamId] || 0) + (driverXP[p.sponsoredDriverId] || 0);
+                    bump(personaUpd, p, xp * this.XP_SHARE.sponsor);
                 }
             });
 

@@ -280,6 +280,30 @@ const log = (mark, msg) => { steps.push(`${mark} ${msg}`); console.log(`${mark} 
     log(payout.after > payout.before ? '✅' : '❌',
         `Prize money flows to player wallet: finished ${payout.pos}, balance ${payout.before} → ${payout.after}`);
 
+    /* ---- 10b. Profile: one career card per role, each with prestige + stats ---- */
+    await page.evaluate(async () => {
+        // Give the tester a second role with data: agent with one client.
+        const drivers = await DB.drivers({ force: true });
+        const client = drivers.find(d => d.name === 'Tester Driver');
+        await DB.create('roleProfiles', {
+            name: 'Phoenix Tester', uid: Auth.uid(), role: 'agent', prestige: 1,
+            clientDriverIds: client ? [client.id] : []
+        });
+        App.go('profile', Auth.uid());
+    });
+    await page.waitForSelector('.role-stat-card');
+    const roleCards = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('.role-stat-card')).map(c => ({
+            role: c.querySelector('h3').textContent,
+            active: c.classList.contains('role-active'),
+            ladder: !!c.querySelector('.prestige-progress'),
+            stats: Array.from(c.querySelectorAll('.mini-stat')).map(m => m.innerText.replace(/\s*\n\s*/g, ' '))
+        })));
+    log(roleCards.length >= 3 && roleCards.every(c => c.ladder && c.stats.length) ? '✅' : '❌',
+        'Profile role cards: ' + roleCards.map(c => `${c.role}${c.active ? ' (active)' : ''} [${c.stats.join(', ')}]`).join(' | '));
+    await page.waitForTimeout(800); // let the view entrance animation finish
+    await shot('09-profile-roles');
+
     /* ---- 11. GM elevation from player + header identity ---- */
     await page.evaluate(() => App.go('dashboard'));
     await page.click('#gm-elevate-btn');
