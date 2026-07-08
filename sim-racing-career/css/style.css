@@ -153,19 +153,34 @@ a:hover { text-decoration: underline; }
     font-family: var(--font-display); font-size: .82rem; font-weight: 600;
     letter-spacing: .6px; text-transform: uppercase;
     padding: .55rem .7rem; border-radius: var(--r-sm); cursor: pointer;
-    position: relative; transition: color .15s, background .15s;
+    position: relative; transition: color .15s, background .15s, transform .15s ease;
+    animation: navDrop .45s cubic-bezier(.2,.75,.25,1) backwards;
 }
-.nav-btn:hover { color: var(--text); background: var(--bg-2); }
+/* Stagger the nav in when the shell first shows (display:none restarts it). */
+.nav-btn:nth-child(2)  { animation-delay: .04s; }
+.nav-btn:nth-child(3)  { animation-delay: .08s; }
+.nav-btn:nth-child(4)  { animation-delay: .12s; }
+.nav-btn:nth-child(5)  { animation-delay: .16s; }
+.nav-btn:nth-child(6)  { animation-delay: .20s; }
+.nav-btn:nth-child(7)  { animation-delay: .24s; }
+.nav-btn:nth-child(8)  { animation-delay: .28s; }
+.nav-btn:nth-child(9)  { animation-delay: .32s; }
+.nav-btn:nth-child(10) { animation-delay: .36s; }
+.nav-btn:hover { color: var(--text); background: var(--bg-2); transform: translateY(-1px); }
+.nav-btn:active { transform: translateY(0); }
 .nav-btn.active { color: var(--text); }
 .nav-btn.active::after {
     content: ""; position: absolute; left: .7rem; right: .7rem; bottom: 2px; height: 2px;
     background: var(--accent); border-radius: 2px; box-shadow: 0 0 10px var(--accent);
+    animation: underlineIn .3s cubic-bezier(.2,.9,.3,1.4);
+    transform-origin: left center;
 }
 .nav-admin { color: var(--gold); }
 
 /* .icon-btn.nav-toggle — must out-specify .icon-btn (defined later), which
    otherwise re-displays the hamburger on desktop where the full nav is visible. */
-.icon-btn.nav-toggle { display: none; }
+.icon-btn.nav-toggle { display: none; transition: transform .25s cubic-bezier(.2,.9,.3,1.3), color .2s; }
+.header-inner:has(.main-nav.open) .nav-toggle { transform: rotate(90deg); color: var(--accent-2); }
 
 .header-user { margin-left: auto; display: flex; align-items: center; gap: .6rem; min-width: 0; }
 .header-username {
@@ -583,15 +598,24 @@ select.input { cursor: pointer; }
 .modal-overlay {
     position: fixed; inset: 0; z-index: 100; display: flex; align-items: flex-start; justify-content: center;
     background: rgba(4,6,10,.7); backdrop-filter: blur(6px); padding: 4vh 1rem 1rem;
-    opacity: 0; transition: opacity .18s; overflow-y: auto;
+    opacity: 0; transition: opacity .2s; overflow-y: auto;
 }
 .modal-overlay.show { opacity: 1; }
+.modal-overlay.closing { opacity: 0; pointer-events: none; }
 .modal-card {
     width: 100%; max-width: 520px; background: var(--bg-1); border: 1px solid var(--panel-border);
     border-radius: var(--r-lg); box-shadow: var(--shadow-lg); padding: 1.4rem;
-    transform: translateY(-12px); transition: transform .18s; position: relative;
+    transform: translateY(-22px) scale(.96); opacity: 0;
+    transition: transform .3s cubic-bezier(.2,1.3,.35,1), opacity .2s; position: relative;
 }
-.modal-overlay.show .modal-card { transform: translateY(0); }
+.modal-overlay.show .modal-card { transform: none; opacity: 1; }
+.modal-overlay.closing .modal-card { transform: translateY(12px) scale(.97); opacity: 0; }
+/* Modal content cascades in a beat behind the card. */
+.modal-overlay.show .modal-card > * { animation: riseFade .35s cubic-bezier(.2,.75,.25,1) backwards; }
+.modal-overlay.show .modal-card > *:nth-child(2) { animation-delay: .05s; }
+.modal-overlay.show .modal-card > *:nth-child(3) { animation-delay: .09s; }
+.modal-overlay.show .modal-card > *:nth-child(4) { animation-delay: .13s; }
+.modal-overlay.show .modal-card > *:nth-child(n+5) { animation-delay: .16s; }
 .modal-card::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; border-radius: var(--r-lg) var(--r-lg) 0 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
 .modal-wide { max-width: 780px; }
 .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
@@ -720,6 +744,99 @@ select.input { cursor: pointer; }
     .driver-hero, .series-hero { flex-direction: column; align-items: flex-start; }
     .row-actions { justify-content: flex-start; }
     .panel { overflow-x: auto; }
+}
+
+/* ============================================================
+   Motion — menu & view animation system
+   Everything shares three moves: riseFade (content), navDrop
+   (menus dropping in), underlineIn (active markers). Durations
+   stay under 500ms so the HUD feels quick, never showy.
+   ============================================================ */
+@keyframes riseFade {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: none; }
+}
+@keyframes navDrop {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: none; }
+}
+@keyframes underlineIn {
+    from { transform: scaleX(0); }
+    to   { transform: scaleX(1); }
+}
+@keyframes tabPop {
+    0%   { transform: scale(.96); }
+    60%  { transform: scale(1.03); }
+    100% { transform: scale(1); }
+}
+@keyframes barGrow {
+    from { width: 0; }
+}
+
+/* ---- View transitions: content cascades in on every navigation ---- */
+.view-anim > * { animation: riseFade .4s cubic-bezier(.2,.75,.25,1) backwards; }
+.view-anim > *:nth-child(2) { animation-delay: .06s; }
+.view-anim > *:nth-child(3) { animation-delay: .12s; }
+.view-anim > *:nth-child(4) { animation-delay: .18s; }
+.view-anim > *:nth-child(n+5) { animation-delay: .22s; }
+/* Stat tiles and grid panels ripple in a touch behind their section. */
+.view-anim .stat-strip .stat-chip { animation: riseFade .4s cubic-bezier(.2,.75,.25,1) backwards; }
+.view-anim .stat-strip .stat-chip:nth-child(2) { animation-delay: .05s; }
+.view-anim .stat-strip .stat-chip:nth-child(3) { animation-delay: .10s; }
+.view-anim .stat-strip .stat-chip:nth-child(4) { animation-delay: .15s; }
+.view-anim .stat-strip .stat-chip:nth-child(5) { animation-delay: .20s; }
+.view-anim .stat-strip .stat-chip:nth-child(n+6) { animation-delay: .24s; }
+.view-anim .grid-2 > *:nth-child(2) { animation: riseFade .45s cubic-bezier(.2,.75,.25,1) .1s backwards; }
+.view-anim .grid-2 > *:nth-child(3) { animation: riseFade .45s cubic-bezier(.2,.75,.25,1) .18s backwards; }
+.view-anim .grid-2 > *:nth-child(n+4) { animation: riseFade .45s cubic-bezier(.2,.75,.25,1) .26s backwards; }
+
+/* ---- Menus & pickers pop ---- */
+.role-grid .role-card { animation: riseFade .4s cubic-bezier(.2,.75,.25,1) backwards; }
+.role-grid .role-card:nth-child(2) { animation-delay: .05s; }
+.role-grid .role-card:nth-child(3) { animation-delay: .10s; }
+.role-grid .role-card:nth-child(4) { animation-delay: .15s; }
+.role-grid .role-card:nth-child(5) { animation-delay: .20s; }
+.role-grid .role-card:nth-child(6) { animation-delay: .25s; }
+.role-grid .role-card:nth-child(n+7) { animation-delay: .30s; }
+
+.gate-card { animation: riseFade .5s cubic-bezier(.2,.75,.25,1); }
+.gate-tab { transition: background .2s, color .2s, transform .15s; }
+.gate-tab.active { animation: tabPop .25s ease-out; }
+.tab.active { animation: tabPop .25s ease-out; }
+
+/* ---- Hover/press feedback: lift, nudge, glow ---- */
+.btn { transition: transform .15s ease, filter .15s, background .15s, border-color .15s, box-shadow .2s; }
+.btn:hover:not(:disabled) { transform: translateY(-1px); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn-primary:hover:not(:disabled) { box-shadow: 0 0 0 1px rgba(255,59,59,.45), 0 0 30px rgba(255,59,59,.4); }
+.icon-btn { transition: background .15s, transform .15s ease, border-color .15s; }
+.icon-btn:hover { transform: translateY(-1px); }
+.chip-btn { transition: color .15s, border-color .15s, transform .15s ease, box-shadow .2s; }
+.chip-btn:hover { transform: translateY(-1px); box-shadow: 0 0 12px rgba(0,217,255,.18); }
+.race-row[onclick] { transition: background .15s, transform .18s ease; }
+.race-row[onclick]:hover { transform: translateX(4px); }
+.stat-chip { transition: transform .18s ease, border-color .18s, box-shadow .2s; }
+.stat-chip:hover { transform: translateY(-2px); border-color: rgba(0,217,255,.35); box-shadow: 0 8px 22px rgba(0,0,0,.35); }
+
+/* ---- Progress & prestige bars sweep in from zero ---- */
+.progress-fill { animation: barGrow .7s cubic-bezier(.25,.8,.25,1) .15s backwards; }
+
+/* ---- Mobile nav drawer: items slide in as the menu unfolds ---- */
+@media (max-width: 900px) {
+    .main-nav .nav-btn {
+        animation: none; opacity: 0; transform: translateX(-12px);
+        transition: opacity .25s ease, transform .25s ease, color .15s, background .15s;
+    }
+    .main-nav.open .nav-btn { opacity: 1; transform: none; }
+    .main-nav.open .nav-btn:nth-child(2)  { transition-delay: .03s; }
+    .main-nav.open .nav-btn:nth-child(3)  { transition-delay: .06s; }
+    .main-nav.open .nav-btn:nth-child(4)  { transition-delay: .09s; }
+    .main-nav.open .nav-btn:nth-child(5)  { transition-delay: .12s; }
+    .main-nav.open .nav-btn:nth-child(6)  { transition-delay: .15s; }
+    .main-nav.open .nav-btn:nth-child(7)  { transition-delay: .18s; }
+    .main-nav.open .nav-btn:nth-child(8)  { transition-delay: .21s; }
+    .main-nav.open .nav-btn:nth-child(9)  { transition-delay: .24s; }
+    .main-nav.open .nav-btn:nth-child(10) { transition-delay: .27s; }
 }
 
 /* Respect reduced motion */

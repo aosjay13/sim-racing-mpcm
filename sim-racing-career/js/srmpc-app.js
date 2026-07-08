@@ -38,10 +38,14 @@ const App = {
         this.updateHeader();
 
         const el = document.getElementById('view-root');
+        el.classList.remove('view-anim');
         el.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading…</div>';
         window.scrollTo({ top: 0 });
         try {
             await (this.routes[view])(el, param);
+            // Restart the view entrance animation (reflow resets it).
+            void el.offsetWidth;
+            el.classList.add('view-anim');
         } catch (e) {
             console.error(`Error rendering view "${view}":`, e);
             el.innerHTML = C.empty('⚠️', 'Something went wrong loading this page', e.message,

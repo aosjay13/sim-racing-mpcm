@@ -7,7 +7,9 @@
 /* ---------------- Modal system ---------------- */
 const Modal = {
     open(html, { wide = false } = {}) {
-        this.close();
+        // Replace anything on screen instantly — including overlays mid-exit
+        // — so only one modal ever exists; the new card animates in.
+        document.querySelectorAll('.modal-overlay').forEach(o => o.remove());
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
         overlay.id = 'active-modal';
@@ -18,10 +20,17 @@ const Modal = {
         requestAnimationFrame(() => overlay.classList.add('show'));
         return overlay;
     },
-    close() {
+    close(instant = false) {
         const overlay = document.getElementById('active-modal');
-        if (overlay) overlay.remove();
         document.body.style.overflow = '';
+        if (!overlay) return;
+        if (instant) { overlay.remove(); return; }
+        // Animate out, then remove. Drop the id right away so a new modal
+        // can open mid-exit without fighting over it.
+        overlay.id = '';
+        overlay.classList.add('closing');
+        overlay.classList.remove('show');
+        setTimeout(() => overlay.remove(), 220);
     },
     header(title, subtitle = '') {
         return `<div class="modal-head">
