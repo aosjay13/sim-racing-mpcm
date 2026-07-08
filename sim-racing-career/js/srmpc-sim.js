@@ -23,12 +23,14 @@
    clients deliver).
    ============================================================ */
 const Prestige = {
+    // A dominant, title-winning season earns ~650 XP at the league's usual
+    // ~9-round cadence — so Elite is a ~10-season career and Legend ~15.
     LEVELS: [
-        { stars: 1, floor: 0,    name: 'Rookie' },
-        { stars: 2, floor: 200,  name: 'Contender' },
-        { stars: 3, floor: 600,  name: 'Front Runner' },
-        { stars: 4, floor: 1500, name: 'Elite' },
-        { stars: 5, floor: 3200, name: 'Legend' }
+        { stars: 1, floor: 0,     name: 'Rookie' },
+        { stars: 2, floor: 200,   name: 'Contender' },
+        { stars: 3, floor: 2000,  name: 'Front Runner' },
+        { stars: 4, floor: 6500,  name: 'Elite' },
+        { stars: 5, floor: 10000, name: 'Legend' }
     ],
     TITLE_XP: 250,
     // Worth multiplier per star — the higher the prestige, the more money you're worth.

@@ -166,9 +166,10 @@ const log = (mark, msg) => { steps.push(`${mark} ${msg}`); console.log(`${mark} 
         const star = world.driversById[rows[0].driverId];
         await DB.update('drivers', star.id, { teamId: null });
         // Back-fill a title-laden past: one season no longer mints a high
-        // star (that's the point of the ladder), so crown them champion of
-        // three closed legacy seasons to push them to 3★+.
-        for (const y of [2023, 2024, 2025]) {
+        // star (that's the point of the ladder — Elite ≈ 10 seasons), so
+        // crown them champion of seven closed legacy seasons to push them
+        // past the 2,000 XP Front Runner floor.
+        for (const y of [2019, 2020, 2021, 2022, 2023, 2024, 2025]) {
             await DB.create('seasons', {
                 seriesId: star.seriesId || null, name: `Legacy Championship ${y}`, year: y,
                 status: 'completed', championDriverId: star.id, championTeamId: null
@@ -179,7 +180,7 @@ const log = (mark, msg) => { steps.push(`${mark} ${msg}`); console.log(`${mark} 
     });
     const releasedName = released.name;
     log(released.stars >= 3 ? '✅' : '❌',
-        `Champion-tier AI driver (${released.stars}★ after 3 legacy titles) released to free agency: ${releasedName}`);
+        `Champion-tier AI driver (${released.stars}★ after 7 legacy titles) released to free agency: ${releasedName}`);
 
     /* ---- 9. Player career: register, 1★ rookie onboarding, found team, prestige-gated hiring ---- */
     await page.click('#signout-btn');
