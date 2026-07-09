@@ -1118,6 +1118,55 @@ const Admin = {
         });
     },
 
+    async generatePersonasForm() {
+        if (!this.guard()) return;
+        Modal.open(`
+            ${Modal.header('🎭 Generate Personas & Sponsors', 'Bulk-create AI characters and sponsorships, auto-assigned to your league')}
+            <form id="persona-gen-form" class="form-grid">
+                <div class="form-row">
+                    <label class="field"><span>💼 Agents</span><input id="pg-agents" class="input" type="number" min="0" max="20" value="3"></label>
+                    <label class="field"><span>🏆 Series owners</span><input id="pg-series" class="input" type="number" min="0" max="20" value="2"></label>
+                    <label class="field"><span>🛣️ Track owners</span><input id="pg-tracks" class="input" type="number" min="0" max="20" value="2"></label>
+                </div>
+                <div class="form-row">
+                    <label class="field"><span>🤝 Sponsor personas</span><input id="pg-sponsors" class="input" type="number" min="0" max="20" value="3"></label>
+                    <label class="field"><span>💰 Sponsor brands</span><input id="pg-brands" class="input" type="number" min="0" max="20" value="4"></label>
+                </div>
+                <p class="muted small">Everyone arrives with work to do: agents sign 2–4 unrepresented drivers, series owners claim
+                    unpromoted series, track owners split unowned venues, sponsor personas back a team and one of its drivers, and
+                    sponsor brands attach to unbacked teams with a per-race payout. Edit any of them afterwards from this tab.</p>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Generate 🎭</button>
+                </div>
+            </form>
+        `);
+        Util.$('#persona-gen-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector('button[type=submit]');
+            btn.disabled = true;
+            btn.textContent = 'Generating…';
+            try {
+                const s = await generatePersonaWorld({
+                    agents: Number(Util.$('#pg-agents').value) || 0,
+                    seriesOwners: Number(Util.$('#pg-series').value) || 0,
+                    trackOwners: Number(Util.$('#pg-tracks').value) || 0,
+                    sponsors: Number(Util.$('#pg-sponsors').value) || 0,
+                    brands: Number(Util.$('#pg-brands').value) || 0
+                });
+                Modal.close();
+                Util.notify(`Cast assembled: ${Util.plural(s.agents, 'agent')}, ${Util.plural(s.seriesOwners, 'series owner')}, `
+                    + `${Util.plural(s.trackOwners, 'track owner')}, ${Util.plural(s.sponsors, 'sponsor persona')}, `
+                    + `${Util.plural(s.brands, 'sponsor brand')}. 🎭`);
+                this.refresh();
+            } catch (err) {
+                Util.notify(err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = 'Generate 🎭';
+            }
+        });
+    },
+
     async deleteDriver(driverId) {
         if (!this.guard()) return;
         if (!confirm('Delete this driver? Their past race results remain in race records but stats stop counting them.')) return;
@@ -1181,6 +1230,7 @@ const Admin = {
                     <button class="btn btn-primary btn-sm" onclick="Admin.trackPackForm()">🛣 Load Track Pack</button>
                     <button class="btn btn-secondary btn-sm" onclick="Admin.installPack()">🌍 Install Real-World Pack</button>
                     <button class="btn btn-secondary btn-sm" onclick="Admin.generateNPCsForm()">🤖 Generate Free Agents</button>
+                    <button class="btn btn-secondary btn-sm" onclick="Admin.generatePersonasForm()">🎭 Generate Personas & Sponsors</button>
                 </div></div>
             <p class="muted small">Track Packs load a game's circuits — ${Object.values(TRACK_PACKS).map(p => p.game.name).join(', ')} —
                 creating the game automatically and tagging every track with it, so the schedule builder and race form offer the right
@@ -1220,7 +1270,10 @@ const Admin = {
 
             <section class="panel">
                 <div class="panel-head"><h2>💰 Sponsors (${sponsors.length})</h2>
-                    <button class="btn btn-primary btn-sm" onclick="Admin.sponsorForm()">＋ Add Sponsor</button></div>
+                    <div class="btn-row">
+                        <button class="btn btn-secondary btn-sm" onclick="Admin.generatePersonasForm()">🎭 Generate</button>
+                        <button class="btn btn-primary btn-sm" onclick="Admin.sponsorForm()">＋ Add Sponsor</button>
+                    </div></div>
                 ${sponsors.length ? sponsors.map(s => `
                     <div class="race-row">
                         <div class="race-row-main">
@@ -1254,7 +1307,10 @@ const Admin = {
 
             <section class="panel">
                 <div class="panel-head"><h2>🤖 Personas & Role Profiles (${personas.length})</h2>
-                    <button class="btn btn-primary btn-sm" onclick="Admin.personaForm()">＋ Add Persona</button></div>
+                    <div class="btn-row">
+                        <button class="btn btn-secondary btn-sm" onclick="Admin.generatePersonasForm()">🎭 Generate</button>
+                        <button class="btn btn-primary btn-sm" onclick="Admin.personaForm()">＋ Add Persona</button>
+                    </div></div>
                 <p class="muted small">AI characters and player careers filling the league's non-driving roles — agents, sponsors, series owners,
                     track owners, crew chiefs, mechanics. As Game Master you can edit any of them, including players' profiles.</p>
                 ${personas.length ? personas.map(p => `

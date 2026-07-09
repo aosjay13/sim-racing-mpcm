@@ -217,6 +217,55 @@ const log = (mark, msg) => { steps.push(`${mark} ${msg}`); console.log(`${mark} 
     log(brand.payoutPerRace === 500 && brand.teamId === ids.teamA ? '✅' : '❌',
         `Sponsor brand doc: pays ${brand.payoutPerRace}/race backing team A`);
 
+    /* ---- 13. Bulk generation: personas & sponsors ---- */
+    const pre = await page.evaluate(async () => ({
+        profiles: (await DB.roleProfiles({ force: true })).length,
+        sponsors: (await DB.sponsors({ force: true })).length
+    }));
+    // One unclaimed series so the generated promoter has something to run.
+    await page.evaluate(() => DB.create('series', { name: 'Night Owl Series', status: 'active', ownerUid: null, season: 2026, pointsSystem: 'f1' }));
+    await page.evaluate(() => App.go('admin', 'world'));
+    await page.waitForSelector('#admin-body .panel');
+    await page.click('#admin-body button:has-text("🎭 Generate Personas & Sponsors")');
+    await page.waitForSelector('#persona-gen-form');
+    await page.fill('#pg-agents', '2');
+    await page.fill('#pg-series', '1');
+    await page.fill('#pg-tracks', '1');
+    await page.fill('#pg-sponsors', '2');
+    await page.fill('#pg-brands', '3');
+    await page.click('#persona-gen-form button[type=submit]');
+    log('✅', 'Bulk generate: ' + (await toast(/Cast assembled/)));
+
+    const post = await page.evaluate(async (preProfiles) => {
+        const ps = await DB.roleProfiles({ force: true });
+        const sp = await DB.sponsors({ force: true });
+        const known = ['Silva Dealmaker', 'Bernie Promoter', 'Vera Venues', 'Meg A. Brand', 'Torque Tommy', 'PlayerAgent Pete Jr.'];
+        const fresh = ps.filter(p => !p.uid && !known.includes(p.name));
+        const nightOwl = (await DB.series({ force: true })).find(s => s.name === 'Night Owl Series');
+        return {
+            profiles: ps.length, sponsors: sp.length,
+            agents: fresh.filter(p => p.role === 'agent').map(p => (p.clientDriverIds || []).length),
+            promoters: fresh.filter(p => p.role === 'series-owner').map(p => p.seriesIds || []),
+            venues: fresh.filter(p => p.role === 'track-owner').map(p => p.tracks || []),
+            sponPersonas: fresh.filter(p => p.role === 'sponsor').map(p => ({ t: p.sponsoredTeamId, d: p.sponsoredDriverId })),
+            brands: sp.filter(s => s.name !== 'Vortex Energy').map(s => ({ name: s.name, teamId: s.teamId, pay: s.payoutPerRace })),
+            nightOwlId: nightOwl?.id
+        };
+    }, pre.profiles);
+    log(post.profiles === pre.profiles + 6 ? '✅' : '❌', `Bulk created 6 personas (${pre.profiles} → ${post.profiles})`);
+    log(post.agents.length === 2 && post.agents.every(n => n >= 1) ? '✅' : '❌',
+        `Generated agents each got a client book: [${post.agents.join(', ')}] clients`);
+    log(post.promoters.length === 1 && post.promoters[0].includes(post.nightOwlId) ? '✅' : '❌',
+        'Generated series owner claimed the unpromoted Night Owl Series');
+    log(post.venues.length === 1 && post.venues[0].includes('Suzuka Circuit') && !post.venues[0].includes('Silverstone Circuit') ? '✅' : '❌',
+        `Generated track owner took only unowned venues: [${post.venues[0]?.join(', ')}]`);
+    log(post.sponPersonas.length === 2 && post.sponPersonas.every(x => x.t && x.d) ? '✅' : '❌',
+        'Generated sponsor personas each back a team + driver');
+    log(post.brands.length === 3 && post.brands.every(b => b.teamId && b.pay >= 200 && b.pay % 10 === 0)
+        && new Set(post.brands.map(b => b.name)).size === 3 ? '✅' : '❌',
+        `Generated 3 unique sponsor brands with teams + payouts: ${post.brands.map(b => `${b.name} $${b.pay}`).join(' | ')}`);
+    await shot('16-personas-bulk');
+
     console.log('\nDIALOGS SEEN:\n' + (await page.evaluate(() => window.__dialogs)).map(d => '  ' + d).join('\n'));
     console.log('\n=== STEPS ===\n' + steps.join('\n'));
     await browser.close();

@@ -259,6 +259,117 @@ async function generateNPCWorld({ freeDrivers = 10, freeCrew = 12, rivalTeams = 
 }
 window.generateNPCWorld = generateNPCWorld;
 
+/* ---------------- Bulk AI personas & sponsorships ---------------- */
+const PERSONA_BIOS = {
+    'agent': ['Talent scout with a phone that never stops ringing.', 'Closes seat deals before breakfast.', 'Knows every team principal by first name.'],
+    'series-owner': ['Promoter chasing the next great championship.', 'Sells out grandstands for a living.', 'Believes every race should be an event.'],
+    'track-owner': ['Venue group keeping historic circuits alive.', 'Buys tracks the way others buy watches.', 'Every apex on their land is sacred.'],
+    'sponsor': ['Marketing chief who bets the budget on race wins.', 'Wants the brand on every podium photo.', 'ROI measured in champagne sprayed.']
+};
+const BRAND_POOL = {
+    first: ['Vortex', 'Titanium', 'Comet', 'Ridgeway', 'Onyx', 'Drifter', 'Boltline', 'Zephyr', 'Cobalt', 'Ember',
+        'Falconer', 'Zenith', 'Pulsar', 'Atlas', 'Halcyon', 'Monarch', 'Stratos', 'Kestrel', 'Argon', 'Tundra'],
+    second: ['Energy', 'Motorsports', 'Fuels', 'Dynamics', 'Lubricants', 'Telecom', 'Financial', 'Gaming', 'Tyres',
+        'Logistics', 'Optics', 'Beverages', 'Apparel', 'Tools', 'Media', 'Components', 'Racing Oil', 'Electronics'],
+    industries: ['Energy drinks', 'Automotive', 'Technology', 'Finance', 'Beverages', 'Clothing', 'Logistics',
+        'Gaming', 'Insurance', 'Telecom', 'Media', 'Hardware']
+};
+
+function _shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+}
+
+// Bulk-creates AI personas (agents, series owners, track owners, sponsor
+// characters) and brand sponsors, auto-assigning them to whatever the league
+// already has: agents rep unclaimed drivers, series owners claim unpromoted
+// series, track owners split unowned venues, sponsors back teams & drivers.
+// Admin-only entry point, mirroring generateNPCWorld.
+async function generatePersonaWorld({ agents = 0, seriesOwners = 0, trackOwners = 0, sponsors = 0, brands = 0 } = {}) {
+    const [drivers, teams, seriesList, tracks, profiles, existingSponsors, existingStaff] = await Promise.all([
+        DB.drivers({ force: true }),
+        DB.teams({ force: true }),
+        DB.series({ force: true }),
+        DB.list('tracks', { force: true }).catch(() => []),
+        DB.list('roleProfiles', { force: true }).catch(() => []),
+        DB.list('sponsors', { force: true }).catch(() => []),
+        DB.list('staff', { force: true }).catch(() => [])
+    ]);
+    const usedNames = new Set([...drivers, ...existingStaff, ...profiles].map(x => x.name));
+    const bio = (role) => _rand(PERSONA_BIOS[role]);
+    const personas = [];
+    const summary = { agents: 0, seriesOwners: 0, trackOwners: 0, sponsors: 0, brands: 0 };
+
+    // Agents: 2–4 clients each, preferring drivers no AI agent reps yet.
+    const repped = new Set(profiles.filter(p => p.role === 'agent').flatMap(p => p.clientDriverIds || []));
+    let driverPool = _shuffle(drivers.filter(d => !repped.has(d.id)));
+    for (let i = 0; i < agents; i++) {
+        if (!driverPool.length) driverPool = _shuffle(drivers.slice()); // everyone repped → double-book
+        const book = driverPool.splice(0, Math.min(driverPool.length, _randInt(2, 4))).map(d => d.id);
+        personas.push({ name: makeNpcName(usedNames), role: 'agent', uid: null, isNPC: true, prestige: 1, bio: bio('agent'), clientDriverIds: book });
+        summary.agents++;
+    }
+
+    // Series owners: claim series that have no promoter persona and no player owner.
+    const promoted = new Set(profiles.filter(p => p.role === 'series-owner').flatMap(p => p.seriesIds || []));
+    const openSeries = _shuffle(seriesList.filter(s => !promoted.has(s.id) && !s.ownerUid));
+    for (let i = 0; i < seriesOwners; i++) {
+        const claimed = openSeries.splice(0, Math.max(1, Math.ceil(openSeries.length / (seriesOwners - i)))).map(s => s.id);
+        personas.push({ name: makeNpcName(usedNames), role: 'series-owner', uid: null, isNPC: true, prestige: 1, bio: bio('series-owner'), seriesIds: claimed });
+        summary.seriesOwners++;
+    }
+
+    // Track owners: split unowned library venues into portfolios of up to 4.
+    const ownedVenues = new Set(profiles.filter(p => p.role === 'track-owner').flatMap(p => p.tracks || []).map(t => t.toLowerCase()));
+    const openTracks = _shuffle(tracks.map(t => t.name).filter(n => n && !ownedVenues.has(n.toLowerCase())));
+    for (let i = 0; i < trackOwners; i++) {
+        const venues = openTracks.splice(0, Math.min(4, Math.max(1, Math.ceil(openTracks.length / (trackOwners - i)))));
+        personas.push({ name: makeNpcName(usedNames), role: 'track-owner', uid: null, isNPC: true, prestige: 1, bio: bio('track-owner'), tracks: venues });
+        summary.trackOwners++;
+    }
+
+    // Sponsor personas: each backs a team and one of its drivers when possible.
+    for (let i = 0; i < sponsors; i++) {
+        const team = teams.length ? _rand(teams) : null;
+        const roster = team ? drivers.filter(d => d.teamId === team.id) : [];
+        const driver = roster.length ? _rand(roster) : (drivers.length ? _rand(drivers) : null);
+        personas.push({
+            name: makeNpcName(usedNames), role: 'sponsor', uid: null, isNPC: true, prestige: 1, bio: bio('sponsor'),
+            sponsoredTeamId: team?.id || null, sponsoredDriverId: driver?.id || null
+        });
+        summary.sponsors++;
+    }
+
+    // Brand sponsors: named pool first (skipping existing names), procedural
+    // after, preferring teams that don't have a backer yet.
+    const brandNames = new Set(existingSponsors.map(s => (s.name || '').toLowerCase()));
+    const namedPool = _shuffle((typeof SPONSOR_BRANDS !== 'undefined' ? SPONSOR_BRANDS : [])
+        .filter(b => !brandNames.has(b.name.toLowerCase())));
+    const backed = new Set(existingSponsors.map(s => s.teamId).filter(Boolean));
+    const openTeams = _shuffle(teams.filter(t => !backed.has(t.id)));
+    const brandDocs = [];
+    for (let i = 0; i < brands; i++) {
+        let brand = namedPool.shift();
+        for (let tries = 0; !brand && tries < 50; tries++) {
+            const name = `${_rand(BRAND_POOL.first)} ${_rand(BRAND_POOL.second)}`;
+            if (!brandNames.has(name.toLowerCase())) brand = { name, industry: _rand(BRAND_POOL.industries) };
+        }
+        if (!brand) break;
+        brandNames.add(brand.name.toLowerCase());
+        const team = openTeams.shift() || (teams.length ? _rand(teams) : null);
+        brandDocs.push({ ...brand, isNPC: true, prestige: 1, teamId: team?.id || null, payoutPerRace: _randInt(20, 60) * 10 });
+        summary.brands++;
+    }
+
+    if (personas.length) await DB.batchCreate('roleProfiles', personas);
+    if (brandDocs.length) await DB.batchCreate('sponsors', brandDocs);
+    return summary;
+}
+window.generatePersonaWorld = generatePersonaWorld;
+
 /* ---------------- Market: hiring & contracts ---------------- */
 const Market = {
     // NPCs accept any offer at or above this share of their asking salary.
