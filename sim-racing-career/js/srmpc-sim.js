@@ -787,39 +787,111 @@ const Sim = {
         return todo.length;
     },
 
-    // Prize money + sponsor payouts land in real player wallets. AI earnings
-    // are reflected in prestige, not cash.
+    // Race-day settlement: everything the league owes anyone moves when a
+    // race completes. Prize money, team shares, brand-sponsor payouts,
+    // CONTRACT SALARIES (owners pay, talent collects), sponsorship deals,
+    // agent commissions, venue hosting fees, promoter fees, crew stipends —
+    // all landing in real player wallets with a ledger entry each. AI money
+    // comes from / vanishes into the league (their reward is prestige).
+    VENUE_FEE_BASE: 100,          // player track owners: base + per-entrant when their venue hosts
+    VENUE_FEE_PER_ENTRANT: 20,
+    PROMOTER_FEE_PER_ENTRANT: 50, // player series owners: per entrant in their series' races
+    CREW_STIPEND: 100,            // player crew-chief/mechanic personas attached to a team that raced
+
     async payoutRace(race, world) {
         try {
-            const owners = new Map(); // uid -> credit
-            const credit = (uid, amt) => { if (uid && amt) owners.set(uid, (owners.get(uid) || 0) + amt); };
-            const paidTeams = new Set();
+            const results = race.results || [];
+            const raceName = race.name || race.track || 'race';
+            const tx = []; // { uid, amount, icon, label } — one ledger entry each
+            const add = (uid, amount, icon, label) => {
+                amount = Math.round(Number(amount) || 0);
+                if (uid && amount) tx.push({ uid, amount, icon, label, refId: race.id || null });
+            };
 
-            let sponsors = [];
+            let sponsors = [], contracts = [], profiles = [];
             try { sponsors = await DB.list('sponsors', { force: true }); } catch (e) { /* not seeded */ }
+            try { contracts = (await DB.contracts({ force: true })).filter(c => c.status === 'active'); } catch (e) { /* none */ }
+            try { profiles = await DB.roleProfiles({ force: true }); } catch (e) { /* none */ }
 
-            for (const res of race.results || []) {
+            const racedTeams = new Set();
+            const racedDrivers = new Set(results.map(r => r.driverId));
+
+            /* -- 1. Prize money + team owner's share -- */
+            for (const res of results) {
                 const driver = world.driversById[res.driverId];
                 if (!driver) continue;
                 const prize = this.prizeFor(res);
-                credit(driver.ownerUid, prize);                                  // player driver
+                add(driver.ownerUid, prize, '🏆', `Prize money — ${raceName}`);
                 const team = world.teamsById[driver.teamId];
-                if (team?.ownerUid) {
-                    credit(team.ownerUid, Math.round(prize * this.TEAM_SHARE)); // player team owner
-                    if (!paidTeams.has(team.id)) {
-                        paidTeams.add(team.id);
-                        sponsors.filter(s => s.teamId === team.id)
-                            .forEach(s => credit(team.ownerUid, Number(s.payoutPerRace) || 0));
-                    }
+                if (team) {
+                    racedTeams.add(team.id);
+                    add(team.ownerUid, Math.round(prize * this.TEAM_SHARE), '🏆', `Team share: ${driver.name} — ${raceName}`);
                 }
             }
 
-            for (const [uid, amount] of owners) {
+            /* -- 2. Brand sponsors pay the owner of every team that raced -- */
+            for (const teamId of racedTeams) {
+                const team = world.teamsById[teamId];
+                if (!team?.ownerUid) continue;
+                sponsors.filter(s => s.teamId === teamId)
+                    .forEach(s => add(team.ownerUid, s.payoutPerRace, '💰', `Sponsor payout: ${s.name} — ${raceName}`));
+            }
+
+            /* -- 3. Contract salaries: drivers paid per race raced, staff per team race -- */
+            const hires = contracts.filter(c => c.type !== 'sponsorship');
+            for (const c of hires) {
+                const isDriver = c.personKind === 'driver';
+                const due = isDriver ? racedDrivers.has(c.personId) : racedTeams.has(c.teamId);
+                if (!due || !c.salary) continue;
+                const team = world.teamsById[c.teamId];
+                add(team?.ownerUid, -c.salary, '💼', `Payroll: ${c.personName} — ${raceName}`);
+                if (isDriver) add(world.driversById[c.personId]?.ownerUid, c.salary, '💼', `Salary from ${c.teamName || 'team'} — ${raceName}`);
+            }
+
+            /* -- 4. Sponsorship deals (negotiated): sponsor pays the target per race run -- */
+            for (const c of contracts.filter(c => c.type === 'sponsorship')) {
+                const due = c.teamId ? racedTeams.has(c.teamId) : racedDrivers.has(c.driverId);
+                if (!due || !c.salary) continue;
+                add(c.sponsorUid, -c.salary, '🤝', `Sponsorship paid: ${c.teamName || c.driverName} — ${raceName}`);
+                const recvUid = c.teamId ? world.teamsById[c.teamId]?.ownerUid : world.driversById[c.driverId]?.ownerUid;
+                add(recvUid, c.salary, '🤝', `Sponsorship from ${c.sponsorName} — ${raceName}`);
+            }
+
+            /* -- 5. Player role personas earn their cut -- */
+            const playerProfiles = profiles.filter(p => p.uid);
+            // Agents: commission on every contracted client who raced.
+            for (const p of playerProfiles.filter(p => p.role === 'agent')) {
+                for (const clientId of (p.clientDriverIds || []).filter(id => racedDrivers.has(id))) {
+                    const c = hires.find(c => c.personKind === 'driver' && c.personId === clientId && c.salary);
+                    const salary = c?.salary || world.driversById[clientId]?.salary || 0;
+                    if (salary) add(p.uid, salary * Deals.AGENT_COMMISSION, '💼', `Agent commission: ${world.driversById[clientId]?.name || 'client'} — ${raceName}`);
+                }
+            }
+            // Track owners: hosting fee when their venue hosts a league race.
+            if (race.track) {
+                playerProfiles.filter(p => p.role === 'track-owner' &&
+                    (p.tracks || []).some(t => t.toLowerCase() === race.track.toLowerCase()))
+                    .forEach(p => add(p.uid, this.VENUE_FEE_BASE + this.VENUE_FEE_PER_ENTRANT * results.length, '🛣️', `Hosting fee: ${race.track}`));
+            }
+            // Series owners: promoter fee per entrant.
+            playerProfiles.filter(p => p.role === 'series-owner' &&
+                ((p.seriesIds || []).includes(race.seriesId) || (world.seriesById[race.seriesId]?.ownerUid === p.uid)))
+                .forEach(p => add(p.uid, this.PROMOTER_FEE_PER_ENTRANT * results.length, '🏆', `Promoter fee — ${raceName}`));
+            // Crew personas attached to a team that raced.
+            playerProfiles.filter(p => (p.role === 'crew-chief' || p.role === 'mechanic') && racedTeams.has(p.teamId))
+                .forEach(p => add(p.uid, this.CREW_STIPEND, '🔧', `Race-day crew stipend — ${raceName}`));
+
+            /* -- Apply: one balance write per player, one ledger row per line -- */
+            const perUser = new Map();
+            tx.forEach(t => perUser.set(t.uid, (perUser.get(t.uid) || 0) + t.amount));
+            for (const [uid, delta] of perUser) {
+                if (!delta) continue;
                 const user = await DB.get('users', uid).catch(() => null);
                 if (!user) continue;
-                await DB.update('users', uid, { balance: (Number(user.balance) || 0) + amount }).catch(() => {});
+                await DB.update('users', uid, { balance: (Number(user.balance) || 0) + delta }).catch(() => {});
                 if (uid === Auth.uid()) await Auth.reloadProfile().catch(() => {});
             }
+            await Economy.logMany(tx);
         } catch (e) { console.warn('Race payout failed:', e); }
     },
 

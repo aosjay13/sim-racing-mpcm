@@ -159,10 +159,14 @@ const Career = {
         } catch (e) { /* fine */ }
         const approvedClaims = myClaims.filter(c => c.status === 'approved').length;
 
-        let myContract = null;
+        let myContracts = [];
         try {
-            myContract = (await DB.contracts()).find(c => c.personId === driver.id && c.status === 'active') || null;
+            myContracts = (await DB.contracts({ force: true })).filter(c =>
+                c.personId === driver.id && c.status === 'active' && c.type !== 'sponsorship');
         } catch (e) { /* contracts optional */ }
+        const myContract = myContracts.find(c => c.teamId === driver.teamId) || myContracts[0] || null;
+        // Multi-team: can seek another seat if no active contract is exclusive.
+        const canJoinAnother = !myContracts.some(c => c.exclusive !== false);
 
         const prestigeProg = Prestige.driverProgress(driver.id, world);
 
@@ -181,9 +185,10 @@ const Career = {
                 ${Prestige.progressBar(prestigeProg, 'Your prestige — points, wins, poles, and titles earn XP')}
             </div>
             <div class="btn-col">
-                ${team
-                    ? `<button class="btn btn-ghost btn-sm" onclick="Career.leaveTeam()">Leave team</button>`
-                    : `<button class="btn btn-primary btn-sm" onclick="Career.joinTeamModal()">Join a team</button>`}
+                ${!myContracts.length && !team
+                    ? `<button class="btn btn-primary btn-sm" onclick="Career.joinTeamModal()">Join a team</button>`
+                    : `${canJoinAnother ? `<button class="btn btn-primary btn-sm" onclick="Career.joinTeamModal()" title="Your contracts are non-exclusive — you can drive for another team too">＋ Join another team</button>` : ''}
+                       ${team ? `<button class="btn btn-ghost btn-sm" onclick="Career.leaveTeam()">Leave team</button>` : ''}`}
             </div>
         </div>
 
@@ -205,6 +210,22 @@ const Career = {
             </section>
 
             <section class="panel">
+                <div class="panel-head"><h2>📜 My Contracts${myContracts.length ? ` (${myContracts.length})` : ''}</h2></div>
+                ${myContracts.length ? myContracts.map(c => `
+                    <div class="race-row">
+                        <div class="race-row-main">
+                            <span class="race-title">${Util.esc(c.teamName || 'Team')}
+                                ${c.teamId === driver.teamId ? '<span class="chip chip-dim" title="Your points count for this team">⭐ Primary</span>' : ''}
+                                ${c.exclusive !== false ? '<span class="chip chip-dim">🔒 Exclusive</span>' : '<span class="chip chip-dim">🔓 Non-exclusive</span>'}</span>
+                            <span class="race-sub">${Economy.fmt(c.salary)}/race — paid automatically every race you run${Number(c.buyout) ? ` · buyout ${Economy.fmt(c.buyout)}` : ''}</span>
+                        </div>
+                        <button class="btn btn-ghost btn-sm" onclick="Hub.leaveTeamFlow('${Util.attr(c.id)}')">🚪 Leave</button>
+                    </div>`).join('')
+                    : C.empty('📜', 'No contracts', 'Join a team or negotiate offers from team owners — your signed deals live here.')}
+                ${canJoinAnother && myContracts.length ? `<p class="muted small">🔓 All your contracts are non-exclusive — you can sign with more teams from the League Hub.</p>` : ''}
+            </section>
+
+            <section class="panel">
                 <div class="panel-head"><h2>📊 Race History</h2></div>
                 ${history.length ? `<table class="table table-tight">
                     <thead><tr><th></th><th>Race</th><th>Game</th><th class="num">Pts</th></tr></thead>
@@ -217,6 +238,12 @@ const Career = {
                         </tr>`).join('')}</tbody></table>`
                     : C.empty('🏁', 'No races completed yet', 'Your full race-by-race history will build here.')}
             </section>
+
+            ${Market.garagePanel()}
+
+            ${await Deals.panel()}
+
+            ${await Economy.earningsPanel()}
         </div>`;
     },
 
@@ -335,7 +362,7 @@ const Career = {
         const teams = (await DB.teams({ force: true })).filter(t => t.recruiting !== false);
         if (!teams.length) { Util.notify('No teams are recruiting right now.', 'info'); return; }
         Modal.open(`
-            ${Modal.header('Join a Team', `Joining signs a standard contract: ${Economy.fmt(Hub.STANDARD_SALARY)}/race with a ${Economy.fmt(Hub.buyoutFor(Hub.STANDARD_SALARY))} buyout clause`)}
+            ${Modal.header('Join a Team', `Instant signing on standard terms: ${Economy.fmt(Hub.STANDARD_SALARY)}/race, non-exclusive, ${Economy.fmt(Hub.buyoutFor(Hub.STANDARD_SALARY))} buyout. Want better pay? Apply via the League Hub and negotiate.`)}
             <div class="stack">${teams.map(t => `
                 <div class="race-row" onclick="Career.joinTeam('${Util.attr(t.id)}')">
                     ${C.logoBox(t)}
@@ -365,6 +392,8 @@ const Career = {
     leaveTeam() { return Hub.leaveTeamFlow(); },
 
     /* ---------------- Team owner workspace ---------------- */
+    _ownerTab: 'overview',
+
     async teamOwnerWorkspace(el) {
         const world = await DB.loadWorld();
         let team = world.teams.find(t => t.ownerUid === Auth.uid());
@@ -390,69 +419,52 @@ const Career = {
             return;
         }
 
-        const roster = world.drivers.filter(d => d.teamId === team.id);
+        // Staff on payroll + active contracts (salary lookup by person).
+        let staff = [], contracts = [], brandSponsors = [];
+        try {
+            [staff, contracts, brandSponsors] = await Promise.all([
+                DB.staff({ force: true }).catch(() => []),
+                DB.contracts({ force: true }).catch(() => []),
+                DB.sponsors({ force: true }).catch(() => [])
+            ]);
+        } catch (e) { /* market not seeded yet */ }
+
+        const activeHires = contracts.filter(c => c.status === 'active' && c.teamId === team.id && c.type !== 'sponsorship');
+        const sponsorships = contracts.filter(c => c.status === 'active' && c.type === 'sponsorship' && c.teamId === team.id);
+        const myBrands = brandSponsors.filter(s => s.teamId === team.id);
+        // Roster = primary drivers + multi-team drivers contracted to us.
+        const roster = world.drivers.filter(d => d.teamId === team.id ||
+            activeHires.some(c => c.personKind === 'driver' && c.personId === d.id));
         const teamRow = Stats.teamTable(world.races, world).find(t => t.teamId === team.id);
         const results = Stats.completedRaces(world.races)
             .filter(r => r.results.some(res => roster.some(d => d.id === res.driverId)))
             .sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 8);
-
-        // Staff on payroll + active contracts (salary lookup by person).
-        let staff = [], contracts = [];
-        try {
-            [staff, contracts] = await Promise.all([
-                DB.staff({ force: true }).catch(() => []),
-                DB.contracts({ force: true }).catch(() => [])
-            ]);
-        } catch (e) { /* market not seeded yet */ }
         const myStaff = staff.filter(s => s.teamId === team.id);
         const salaryOf = (personId) => {
-            const c = contracts.find(c => c.personId === personId && c.teamId === team.id && c.status === 'active');
+            const c = activeHires.find(c => c.personId === personId);
             return c ? c.salary : null;
         };
-        const payroll = [...roster, ...myStaff].reduce((sum, p) => sum + (salaryOf(p.id) ?? p.salary ?? 0), 0);
+        const payroll = activeHires.reduce((s, c) => s + (Number(c.salary) || 0), 0)
+            || [...roster, ...myStaff].reduce((sum, p) => sum + (salaryOf(p.id) ?? p.salary ?? 0), 0);
+        const sponsorIncome = myBrands.reduce((s, b) => s + (Number(b.payoutPerRace) || 0), 0)
+            + sponsorships.reduce((s, c) => s + (Number(c.salary) || 0), 0);
 
-        el.innerHTML = `
-        ${this._workspaceHead('team-owner', `<button class="btn btn-secondary" onclick="Career.teamForm('${Util.attr(team.id)}')">✎ Edit Team</button>`)}
+        const tab = this._ownerTab || 'overview';
+        const driverRows = Stats.driverTable(world.races, world);
 
-        <div class="driver-hero panel">
-            ${C.logoBox(team, 'logo-xl')}
-            <div class="driver-hero-info">
-                <h2>${Util.esc(team.name)}</h2>
-                <div class="chip-row">
-                    ${team.recruiting !== false ? '<span class="badge badge-green">Recruiting</span>' : '<span class="badge badge-dim">Roster closed</span>'}
-                    ${team.headquarters ? `<span class="chip chip-dim">📍 ${Util.esc(team.headquarters)}</span>` : ''}
-                </div>
-                ${Prestige.progressBar(Prestige.teamProgress(team.id, world), 'Team prestige — sets which drivers will sign for you')}
-                ${team.description ? `<p class="muted">${Util.esc(team.description)}</p>` : ''}
-            </div>
-            <div class="btn-col">
-                <button class="btn btn-secondary btn-sm" onclick="Career.toggleRecruiting('${Util.attr(team.id)}', ${team.recruiting === false})">
-                    ${team.recruiting === false ? 'Open recruiting' : 'Close recruiting'}
-                </button>
-                <button class="btn btn-ghost btn-sm" onclick="Career.leaveTeamOwnership('${Util.attr(team.id)}')">🚪 Leave team</button>
-            </div>
-        </div>
-
-        <div class="stat-strip">
-            ${C.statChip(Economy.fmt(Economy.balance()), 'Balance')}
-            ${C.statChip(payroll ? Economy.fmt(payroll) : '$0', 'Payroll / race')}
-            ${C.statChip(roster.length, 'Drivers')}
-            ${C.statChip(myStaff.length, 'Pit crew')}
-            ${C.statChip(teamRow?.points || 0, 'Points')}
-            ${C.statChip(teamRow?.wins || 0, 'Wins')}
-        </div>
-
+        const overviewHtml = `
         <div class="grid-2">
             <section class="panel">
                 <div class="panel-head"><h2>👥 Roster</h2>
                     <button class="btn btn-primary btn-sm" onclick="Market.hireModal('${Util.attr(team.id)}')">🤝 Hire</button></div>
                 ${roster.length ? roster.map(d => {
                     const sal = salaryOf(d.id) ?? d.salary ?? null;
+                    const secondSeat = d.teamId !== team.id;
                     return `
                     <div class="race-row" onclick="Views.showDriver('${Util.attr(d.id)}')">
                         <div class="driver-hero-num" style="font-size:1.1rem;min-width:3rem">${d.number ? '#' + Util.esc(String(d.number)) : '🏎️'}</div>
                         <div class="race-row-main">
-                            <span class="race-title">${Util.esc(d.name)} ${d.ownerUid ? '<span class="badge badge-blue">Player</span>' : ''}</span>
+                            <span class="race-title">${Util.esc(d.name)} ${d.ownerUid ? '<span class="badge badge-blue">Player</span>' : ''}${secondSeat ? '<span class="badge badge-purple" title="Their points score for their primary team — this is an additional non-exclusive seat">2nd seat</span>' : ''}</span>
                             <span class="race-sub">${Util.esc(d.country || '')}${sal ? ` · ${Economy.fmt(sal)}/race` : ''}</span>
                         </div>
                         <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();Market.release('driver','${Util.attr(d.id)}','${Util.attr(team.id)}')">Release</button>
@@ -486,24 +498,135 @@ const Career = {
                     : C.empty('📊', 'No results yet', 'Team results appear once your drivers finish races.')}
             </section>
 
+            ${await Deals.panel('🤝 Deals & Negotiations')}
+        </div>`;
+
+        const payrollRow = (c) => {
+            const isDriver = c.personKind === 'driver';
+            const person = isDriver ? world.driversById[c.personId] : staff.find(s => s.id === c.personId);
+            const stars = isDriver
+                ? Prestige.driverStars(c.personId, world, driverRows)
+                : Prestige.stored(person || { prestige: 1 });
+            const cap = Economy.payCap(stars);
+            return `
+            <div class="race-row">
+                <div class="driver-hero-num" style="font-size:1rem;min-width:2.6rem;height:2.6rem">${isDriver ? '🏎️' : staffRoleInfo(c.role).icon}</div>
+                <div class="race-row-main">
+                    <span class="race-title">${Util.esc(c.personName)} ${Prestige.chip(stars)}
+                        ${person?.ownerUid ? '<span class="badge badge-blue">Player</span>' : ''}
+                        ${isDriver ? (c.exclusive !== false ? '<span class="chip chip-dim">🔒 Exclusive</span>' : '<span class="chip chip-dim">🔓 Multi-team</span>') : ''}</span>
+                    <span class="race-sub">${Util.esc(isDriver ? 'Driver' : staffRoleInfo(c.role).label)} · ${Economy.fmt(c.salary)}/race
+                        (cap ${Economy.fmt(cap)})${Number(c.buyout) ? ` · buyout ${Economy.fmt(c.buyout)}` : ''}</span>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-secondary btn-sm" onclick="Deals.adjustPay('${Util.attr(c.id)}')">✎ Adjust pay</button>
+                    ${Number(c.buyout) > 0 ? `<button class="btn btn-ghost btn-sm" onclick="Hub.waiveBuyout('${Util.attr(c.id)}')">Waive buyout</button>` : ''}
+                    <button class="btn btn-danger btn-sm" onclick="Market.release('${isDriver ? 'driver' : 'staff'}','${Util.attr(c.personId)}','${Util.attr(team.id)}')">Release</button>
+                </div>
+            </div>`;
+        };
+
+        const manageHtml = `
+        <div class="stat-strip">
+            ${C.statChip(Economy.fmt(payroll), 'Payroll / race')}
+            ${C.statChip(Economy.fmt(sponsorIncome), 'Sponsor income / race')}
+            ${C.statChip(Economy.fmt(sponsorIncome - payroll), 'Net / race (pre-prizes)')}
+            ${C.statChip(activeHires.length, 'Active contracts')}
+        </div>
+        <div class="grid-2">
             <section class="panel">
-                <div class="panel-head"><h2>📜 Contracts</h2></div>
-                ${(() => {
-                    const mine = contracts.filter(c => c.teamId === team.id)
-                        .sort((a, b) => (b.signedAt || '').localeCompare(a.signedAt || ''));
-                    return mine.length ? mine.slice(0, 10).map(c => `
+                <div class="panel-head"><h2>💼 Payroll</h2>
+                    <button class="btn btn-primary btn-sm" onclick="Market.hireModal('${Util.attr(team.id)}')">🤝 Hire</button></div>
+                <p class="muted small">Salaries leave your wallet automatically every race your team runs. League rule: nobody can be paid
+                    above their prestige level — raise their stars to raise their ceiling.</p>
+                ${activeHires.length ? activeHires.map(payrollRow).join('')
+                    : C.empty('💼', 'No active contracts', 'Hires and negotiated signings appear here with pay controls.')}
+            </section>
+
+            <section class="panel">
+                <div class="panel-head"><h2>💰 Sponsorships</h2></div>
+                <p class="muted small">Sponsors pay you every race your team runs. Sponsor players negotiate deals with you; brand sponsors are fixed backers.</p>
+                ${sponsorships.length || myBrands.length ? `
+                    ${sponsorships.map(c => `
                         <div class="race-row">
                             <div class="race-row-main">
-                                <span class="race-title">${Util.esc(c.personName)}</span>
-                                <span class="race-sub">${Util.esc(c.personKind === 'driver' ? 'Driver' : staffRoleInfo(c.role).label)} · ${Economy.fmt(c.salary)}/race${Number(c.buyout) ? ` · buyout ${Economy.fmt(c.buyout)}` : ''} · ${Util.esc(String(c.seasonYear || ''))} season</span>
+                                <span class="race-title">${Util.esc(c.sponsorName)} <span class="badge badge-blue">Player deal</span></span>
+                                <span class="race-sub">${Economy.fmt(c.salary)}/race · since ${Util.esc(Util.fmtDateShort(c.signedAt))}</span>
                             </div>
-                            ${c.status === 'active' && Number(c.buyout) > 0 ? `<button class="btn btn-ghost btn-sm" onclick="Hub.waiveBuyout('${Util.attr(c.id)}')">Waive buyout</button>` : ''}
-                            <span class="badge ${c.status === 'active' ? 'badge-green' : 'badge-dim'}">${Util.esc(c.status)}</span>
+                            <button class="btn btn-ghost btn-sm" onclick="Deals.endSponsorship('${Util.attr(c.id)}')">End deal</button>
+                        </div>`).join('')}
+                    ${myBrands.map(b => `
+                        <div class="race-row">
+                            <div class="race-row-main">
+                                <span class="race-title">${Util.esc(b.name)} ${Prestige.chip(Prestige.stored(b))}</span>
+                                <span class="race-sub">${Util.esc(b.industry || 'Brand sponsor')} · ${Economy.fmt(b.payoutPerRace)}/race</span>
+                            </div>
+                        </div>`).join('')}`
+                : C.empty('💰', 'No sponsors yet', 'Sponsor players will find you as your prestige grows — their offers land in your Deals panel.')}
+            </section>
+
+            <section class="panel">
+                <div class="panel-head"><h2>📜 Contract History</h2></div>
+                ${(() => {
+                    const mine = contracts.filter(c => c.teamId === team.id && c.status !== 'active')
+                        .sort((a, b) => (b.signedAt || '').localeCompare(a.signedAt || ''));
+                    return mine.length ? mine.slice(0, 8).map(c => `
+                        <div class="race-row">
+                            <div class="race-row-main">
+                                <span class="race-title">${Util.esc(c.personName || c.sponsorName || '')}</span>
+                                <span class="race-sub">${Util.esc(c.type === 'sponsorship' ? 'Sponsorship' : (c.personKind === 'driver' ? 'Driver' : staffRoleInfo(c.role).label))} · ${Economy.fmt(c.salary)}/race · ${Util.esc(String(c.seasonYear || ''))}</span>
+                            </div>
+                            <span class="badge badge-dim">${Util.esc(c.status)}</span>
                         </div>`).join('')
-                        : C.empty('📜', 'No contracts yet', 'Every hire signs a season contract — they all show up here.');
+                        : C.empty('📜', 'No past contracts', 'Ended, released, and bought-out contracts land here.');
                 })()}
             </section>
+
+            ${await Economy.earningsPanel('📒 Team Finances')}
         </div>`;
+
+        el.innerHTML = `
+        ${this._workspaceHead('team-owner', `<button class="btn btn-secondary" onclick="Career.teamForm('${Util.attr(team.id)}')">✎ Edit Team</button>`)}
+
+        <div class="driver-hero panel">
+            ${C.logoBox(team, 'logo-xl')}
+            <div class="driver-hero-info">
+                <h2>${Util.esc(team.name)}</h2>
+                <div class="chip-row">
+                    ${team.recruiting !== false ? '<span class="badge badge-green">Recruiting</span>' : '<span class="badge badge-dim">Roster closed</span>'}
+                    ${team.headquarters ? `<span class="chip chip-dim">📍 ${Util.esc(team.headquarters)}</span>` : ''}
+                </div>
+                ${Prestige.progressBar(Prestige.teamProgress(team.id, world), 'Team prestige — sets which drivers will sign for you')}
+                ${team.description ? `<p class="muted">${Util.esc(team.description)}</p>` : ''}
+            </div>
+            <div class="btn-col">
+                <button class="btn btn-secondary btn-sm" onclick="Career.toggleRecruiting('${Util.attr(team.id)}', ${team.recruiting === false})">
+                    ${team.recruiting === false ? 'Open recruiting' : 'Close recruiting'}
+                </button>
+                <button class="btn btn-ghost btn-sm" onclick="Career.leaveTeamOwnership('${Util.attr(team.id)}')">🚪 Leave team</button>
+            </div>
+        </div>
+
+        <div class="stat-strip">
+            ${C.statChip(Economy.fmt(Economy.balance()), 'Balance')}
+            ${C.statChip(payroll ? Economy.fmt(payroll) : '$0', 'Payroll / race')}
+            ${C.statChip(roster.length, 'Drivers')}
+            ${C.statChip(myStaff.length, 'Pit crew')}
+            ${C.statChip(teamRow?.points || 0, 'Points')}
+            ${C.statChip(teamRow?.wins || 0, 'Wins')}
+        </div>
+
+        <div class="filter-bar"><div class="tab-row">
+            <button class="tab ${tab === 'overview' ? 'active' : ''}" data-owner-tab="overview">🏠 Overview</button>
+            <button class="tab ${tab === 'manage' ? 'active' : ''}" data-owner-tab="manage">💼 Team Management</button>
+        </div></div>
+
+        ${tab === 'manage' ? manageHtml : overviewHtml}`;
+
+        Util.$$('[data-owner-tab]', el).forEach(btn => btn.addEventListener('click', () => {
+            this._ownerTab = btn.dataset.ownerTab;
+            App.go('career');
+        }));
     },
 
     async teamForm(teamId = null) {
@@ -712,16 +835,38 @@ const Career = {
             const drvRow = sponsoredDriver ? rowFor(sponsoredDriver.id) : null;
             const exposurePts = (teamRow?.points || 0) + (drvRow?.points || 0);
             const exposureWins = (teamRow?.wins || 0) + (drvRow?.wins || 0);
-            const exposurePod = (teamRow?.podiums || 0) + (drvRow?.podiums || 0);
 
-            kpis = `${kpi(exposurePts, 'Exposure pts')}${kpi(exposureWins, 'Wins backed')}${kpi(exposurePod, 'Podiums backed')}${kpi(challengePoints, 'Challenge pts')}`;
+            // Active sponsorship deals I'm paying for (negotiated contracts).
+            let myDealsList = [];
+            try {
+                myDealsList = (await DB.contracts({ force: true }))
+                    .filter(c => c.type === 'sponsorship' && c.status === 'active' && c.sponsorUid === Auth.uid());
+            } catch (e) { /* fine */ }
+            const spendPerRace = myDealsList.reduce((s, c) => s + (Number(c.salary) || 0), 0);
+
+            kpis = `${kpi(myDealsList.length, 'Active deals')}${kpi(Economy.fmt(spendPerRace), 'Spend / race')}${kpi(exposurePts, 'Exposure pts')}${kpi(exposureWins, 'Wins backed')}`;
             contextHtml = `<section class="panel">
-                <div class="panel-head"><h2>💰 Portfolio ROI</h2>
-                    <button class="btn btn-secondary btn-sm" onclick="Career.sponsorPortfolio('${Util.attr(mine.id)}')">✎ Manage</button></div>
+                <div class="panel-head"><h2>🤝 Sponsorship Deals</h2>
+                    <button class="btn btn-primary btn-sm" onclick="Deals.sponsorOfferForm('${Util.attr(mine.id)}')">＋ Offer Sponsorship</button></div>
+                <p class="muted small">Your brand pays each partner every race they run — capped by YOUR prestige
+                    (${Economy.capLine(Prestige.stored(mine))}). Player targets negotiate in a deal room; AI targets answer instantly.</p>
+                ${myDealsList.length ? myDealsList.map(c => `
+                    <div class="race-row">
+                        <div class="race-row-main">
+                            <span class="race-title">${Util.esc(c.teamName || c.driverName)}</span>
+                            <span class="race-sub">${Economy.fmt(c.salary)}/race · since ${Util.esc(Util.fmtDateShort(c.signedAt))}</span>
+                        </div>
+                        <button class="btn btn-ghost btn-sm" onclick="Deals.endSponsorship('${Util.attr(c.id)}')">End deal</button>
+                    </div>`).join('')
+                    : C.empty('🤝', 'No deals inked yet', 'Offer a sponsorship to a team or driver — payouts leave your wallet automatically on race day.')}
+            </section>
+            <section class="panel">
+                <div class="panel-head"><h2>💰 Brand Exposure</h2>
+                    <button class="btn btn-secondary btn-sm" onclick="Career.sponsorPortfolio('${Util.attr(mine.id)}')">✎ Focus</button></div>
                 ${sponsoredTeam || sponsoredDriver ? `
                     ${sponsoredTeam ? `<div class="race-row" onclick="Views.showTeam('${Util.attr(sponsoredTeam.id)}')">${C.logoBox(sponsoredTeam)}<div class="race-row-main"><span class="race-title">${Util.esc(sponsoredTeam.name)}</span><span class="race-sub">${teamRow ? `#${teamRow.rank} · ${teamRow.points} pts · ${teamRow.wins} wins` : 'Sponsored team'}</span></div></div>` : ''}
                     ${sponsoredDriver ? `<div class="race-row" onclick="Views.showDriver('${Util.attr(sponsoredDriver.id)}')"><div class="race-row-main"><span class="race-title">${Util.esc(sponsoredDriver.name)}</span><span class="race-sub">${drvRow ? `#${drvRow.rank} · ${drvRow.points} pts · ${drvRow.wins} wins` : 'Sponsored driver'}</span></div></div>` : ''}`
-                    : C.empty('💰', 'Nothing sponsored yet', 'Put your brand on a team or driver and follow the ROI on race day.')}
+                    : C.empty('💰', 'No focus partner set', 'Pick the team or driver whose results build your brand prestige.')}
             </section>`;
         } else if (roleId === 'series-owner') {
             const mySeries = world.series.filter(s => s.ownerUid === Auth.uid());
@@ -783,6 +928,8 @@ const Career = {
         ${kpis ? `<div class="stat-strip">${kpis}</div>` : ''}
         <div class="grid-2">
             ${contextHtml}
+            ${await Deals.panel()}
+            ${await Economy.earningsPanel()}
             <section class="panel">
                 <div class="panel-head"><h2>🎯 Active Challenges</h2><button class="btn btn-ghost btn-sm" onclick="App.go('challenges')">All →</button></div>
                 <p class="muted">You've banked <strong>${challengePoints}</strong> challenge ${challengePoints === 1 ? 'point' : 'points'}. Complete solo & multiplayer challenges to climb the league leaderboard, whatever your role.</p>

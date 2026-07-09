@@ -160,22 +160,26 @@ const Hub = {
     tab_players(el) { return Profile.directory(el); },
 
     /* ---------------- Recruitment tab ---------------- */
-    // Everything pending that needs MY decision.
+    // Everything pending that needs MY decision (recruitment + negotiations).
     async _inbox() {
         if (!Auth.isSignedIn()) return [];
         const uid = Auth.uid();
         if (!uid) return [];
         const items = await DB.recruitment({ force: true }).catch(() => []);
-        return items.filter(r => r.status === 'pending' &&
+        const pending = items.filter(r => r.status === 'pending' &&
             (r.kind === 'offer' ? r.driverUid === uid : r.ownerUid === uid));
+        let negs = 0;
+        try { negs = await Deals.myTurnCount(); } catch (e) { /* fine */ }
+        return [...pending, ...Array(negs).fill({ kind: 'negotiation' })];
     },
 
     async tab_recruitment(el) {
         const uid = Auth.uid();
-        const [world, recruitment, contracts] = await Promise.all([
+        const [world, recruitment, contracts, myDeals] = await Promise.all([
             DB.loadWorld(),
             DB.recruitment({ force: true }).catch(() => []),
-            DB.contracts({ force: true }).catch(() => [])
+            DB.contracts({ force: true }).catch(() => []),
+            Deals.mine().catch(() => [])
         ]);
         const profile = Auth.state.profile;
         const myTeam = world.teams.find(t => t.ownerUid === uid);
@@ -186,6 +190,7 @@ const Hub = {
         const outbox = recruitment.filter(r =>
             (r.kind === 'offer' ? r.ownerUid === uid : r.driverUid === uid))
             .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)).slice(0, 8);
+        const openDeals = myDeals.filter(n => n.status === 'open');
 
         const kindLabel = { offer: 'Contract offer', application: 'Application', 'release-request': 'Release request' };
         const statusBadge = (s) => `<span class="badge ${s === 'pending' ? 'badge-amber' : s === 'accepted' ? 'badge-green' : 'badge-dim'}">${Util.esc(s)}</span>`;
@@ -217,21 +222,45 @@ const Hub = {
             </div>`;
         };
 
-        // Free agent PLAYER drivers an owner can make offers to.
-        const freeAgents = myTeam
-            ? world.drivers.filter(d => d.ownerUid && !d.teamId && d.ownerUid !== uid)
+        // Player drivers an owner can approach: free agents AND drivers whose
+        // contracts leave room for another team (no exclusive clause).
+        const activeDriverContracts = (id) => contracts.filter(c => c.status === 'active' &&
+            c.type !== 'sponsorship' && c.personKind === 'driver' && c.personId === id);
+        const signable = myTeam
+            ? world.drivers.filter(d => d.ownerUid && d.ownerUid !== uid).filter(d => {
+                const act = activeDriverContracts(d.id);
+                return !act.some(c => c.exclusive !== false) && !act.some(c => c.teamId === myTeam.id);
+            })
             : [];
-        // Teams a free-agent driver can apply to.
-        const openTeams = (myDriver && !myDriver.teamId)
-            ? world.teams.filter(t => t.recruiting !== false && t.ownerUid !== uid)
+        // Teams a player driver can apply to (multi-team aware).
+        const myActive = myDriver ? activeDriverContracts(myDriver.id) : [];
+        const canSeekTeams = myDriver && !myActive.some(c => c.exclusive !== false);
+        const openTeams = canSeekTeams
+            ? world.teams.filter(t => t.recruiting !== false && t.ownerUid !== uid && !myActive.some(c => c.teamId === t.id))
             : [];
 
         el.innerHTML = `
         <div class="grid-2">
             <section class="panel">
-                <div class="panel-head"><h2>📥 Inbox (${inbox.length})</h2></div>
-                ${inbox.length ? inbox.map(inboxRow).join('')
-                    : '<p class="muted">Nothing needs your decision right now. 🎉</p>'}
+                <div class="panel-head"><h2>📥 Inbox (${inbox.length + openDeals.filter(n => n.turnUid === uid).length})</h2></div>
+                ${openDeals.filter(n => n.turnUid === uid).map(n => `
+                    <div class="race-row">
+                        <div class="race-row-main">
+                            <span class="race-title">🤝 Negotiation: ${Util.esc(Deals._label(n))} <span class="badge badge-amber">Your move</span></span>
+                            <span class="race-sub">${Economy.fmt(n.salary)}/race on the table${n.kind === 'team-driver' && !n.contractId ? (n.exclusive ? ' · exclusive' : ' · non-exclusive') : ''}</span>
+                        </div>
+                        <button class="btn btn-primary btn-sm" onclick="Deals.room('${Util.attr(n.id)}')">Open room</button>
+                    </div>`).join('')}
+                ${inbox.length ? inbox.map(inboxRow).join('') : ''}
+                ${!inbox.length && !openDeals.some(n => n.turnUid === uid) ? '<p class="muted">Nothing needs your decision right now. 🎉</p>' : ''}
+                ${openDeals.filter(n => n.turnUid !== uid).length ? `<h3 class="section-label" style="margin-top:1rem">⏳ Awaiting their answer</h3>
+                    ${openDeals.filter(n => n.turnUid !== uid).map(n => `<div class="race-row">
+                        <div class="race-row-main">
+                            <span class="race-title">${Util.esc(Deals._label(n))}</span>
+                            <span class="race-sub">${Economy.fmt(n.salary)}/race on the table</span>
+                        </div>
+                        <button class="btn btn-ghost btn-sm" onclick="Deals.room('${Util.attr(n.id)}')">Open</button>
+                    </div>`).join('')}` : ''}
                 ${outbox.length ? `<h3 class="section-label" style="margin-top:1rem">📤 Sent</h3>
                     ${outbox.map(r => `<div class="race-row">
                         <div class="race-row-main">
@@ -243,20 +272,22 @@ const Hub = {
             </section>
 
             ${myTeam ? `<section class="panel">
-                <div class="panel-head"><h2>🏎 Free Agent Players</h2><span class="chip chip-dim">Offer real players a seat</span></div>
-                ${freeAgents.length ? freeAgents.map(d => `
-                    <div class="race-row">
+                <div class="panel-head"><h2>🏎 Player Drivers</h2><span class="chip chip-dim">Open contract negotiations</span></div>
+                ${signable.length ? signable.map(d => {
+                    const act = activeDriverContracts(d.id);
+                    return `<div class="race-row">
                         <div class="race-row-main">
                             <span class="race-title">${Util.esc(d.name)} <span class="badge badge-blue">Player</span></span>
-                            <span class="race-sub">${Util.esc(d.country || 'Free agent')}</span>
+                            <span class="race-sub">${act.length ? `${Util.plural(act.length, 'team')} (non-exclusive) — open to another seat` : Util.esc(d.country || 'Free agent')}</span>
                         </div>
-                        <button class="btn btn-primary btn-sm" onclick="Hub.offerForm('${Util.attr(d.id)}','${Util.attr(myTeam.id)}')">✍️ Offer contract</button>
-                    </div>`).join('')
-                    : '<p class="muted">No free-agent player drivers right now. AI free agents are hired from My Career → Hire.</p>'}
+                        <button class="btn btn-primary btn-sm" onclick="Hub.offerForm('${Util.attr(d.id)}','${Util.attr(myTeam.id)}')">✍️ Negotiate</button>
+                    </div>`;
+                }).join('')
+                    : '<p class="muted">No signable player drivers right now (exclusive contracts lock drivers to one team). AI free agents are hired from My Career → Hire.</p>'}
             </section>` : ''}
 
-            ${(myDriver && !myDriver.teamId) ? `<section class="panel">
-                <div class="panel-head"><h2>🪑 Teams Hiring</h2><span class="chip chip-dim">Apply for a seat</span></div>
+            ${canSeekTeams ? `<section class="panel">
+                <div class="panel-head"><h2>🪑 Teams Hiring</h2><span class="chip chip-dim">${myActive.length ? 'Add another seat — your deals are non-exclusive' : 'Apply for a seat'}</span></div>
                 ${openTeams.length ? openTeams.map(t => {
                     const pending = recruitment.some(r => r.kind === 'application' && r.driverId === myDriver.id && r.teamId === t.id && r.status === 'pending');
                     return `<div class="race-row">
@@ -273,57 +304,69 @@ const Hub = {
 
             ${(!myTeam && !myDriver) ? `<section class="panel">
                 <div class="panel-head"><h2>🤝 How it works</h2></div>
-                <p class="muted">Team owners offer contracts to free-agent player drivers, and drivers apply to recruiting teams — all with real salaries and buyout clauses. Create a driver profile or found a team in <a href="#" onclick="App.go('career');return false">My Career</a> to join the market.</p>
+                <p class="muted">Team owners negotiate contracts with player drivers, and drivers apply to recruiting teams — real salaries, buyout clauses, and counter-offers in a shared deal room. Create a driver profile or found a team in <a href="#" onclick="App.go('career');return false">My Career</a> to join the market.</p>
             </section>` : ''}
 
             <section class="panel">
                 <div class="panel-head"><h2>📜 Contract Rules</h2></div>
-                <p class="muted small">• Joining a team signs a season contract with a salary per race and a <strong>buyout clause</strong> (10× salary, min ${Economy.fmt(1000)}).<br>
-                • To leave mid-contract you either <strong>pay the buyout</strong> (it goes to the team owner) or <strong>request release</strong> — the owner decides whether to let you go for free.<br>
-                • Owners can release anyone for free at any time, and can waive a buyout from their Contracts panel.</p>
+                <p class="muted small">• Every signing is a negotiation: one side offers a salary per race, the other <strong>accepts, counters, or declines</strong> — with messages in a shared deal room. AI talent answers instantly.<br>
+                • <strong>Prestige pay cap:</strong> nobody can be paid above their star level — ${Prestige.LEVELS.map(l => `${l.stars}★ ${Economy.fmt(Economy.payCap(l.stars))}`).join(' · ')} per race. Raise your prestige to raise your ceiling.<br>
+                • Contracts carry a <strong>buyout clause</strong> (10× salary, min ${Economy.fmt(1000)}). Leave by paying it (goes to the owner) or requesting release.<br>
+                • <strong>Multi-team driving:</strong> drivers may sign with several teams if every contract is non-exclusive. An exclusive contract locks them to that team — and pays like it.<br>
+                • Salaries are paid automatically every race: owners fund payroll, talent collects, sponsors pay out, agents take ${Math.round(Deals.AGENT_COMMISSION * 100)}% commission.</p>
             </section>
         </div>`;
     },
 
     /* ---------------- Recruitment actions ---------------- */
+    // A contract offer to a player driver opens a NEGOTIATION — they can
+    // accept, counter with their own number, or talk terms in the deal room.
     async offerForm(driverId, teamId) {
-        const [driver, team, recruitment] = await Promise.all([
-            DB.get('drivers', driverId), DB.get('teams', teamId),
-            DB.recruitment({ force: true }).catch(() => [])
+        const [driver, team, world] = await Promise.all([
+            DB.get('drivers', driverId), DB.get('teams', teamId), DB.loadWorld()
         ]);
-        if (!driver || driver.teamId) { Util.notify('That driver is no longer a free agent.', 'info'); this.refresh(); return; }
-        if (recruitment.some(r => r.kind === 'offer' && r.driverId === driverId && r.teamId === teamId && r.status === 'pending')) {
-            Util.notify('You already have a pending offer to this driver.', 'info'); return;
-        }
+        if (!driver) { Util.notify('That driver no longer exists.', 'info'); this.refresh(); return; }
+        const stars = Prestige.driverStars(driverId, world);
+        const cap = Economy.payCap(stars);
         Modal.open(`
-            ${Modal.header(`✍️ Offer — ${Util.esc(driver.name)}`, `A contract offer from ${Util.esc(team.name)}. They accept or decline from their League Hub inbox.`)}
+            ${Modal.header(`✍️ Negotiate — ${Util.esc(driver.name)}`, `A contract offer from ${Util.esc(team.name)}. They can accept, counter, or decline in the deal room.`)}
             <form id="hub-offer-form" class="form-grid">
-                <label class="field"><span>Salary per race</span>
-                    <input id="ho-salary" class="input" type="number" min="0" step="10" value="${this.STANDARD_SALARY}" required></label>
-                <p class="muted small" id="ho-buyout-note">Buyout clause: ${Economy.fmt(this.buyoutFor(this.STANDARD_SALARY))} (10× salary, min ${Economy.fmt(1000)}).</p>
+                <div class="chip-row">${Prestige.chip(stars)}<span class="chip chip-dim">⭐ ${Economy.capLine(stars)}</span></div>
+                <div class="form-row">
+                    <label class="field"><span>Salary per race</span>
+                        <input id="ho-salary" class="input" type="number" min="10" max="${cap}" step="10" value="${Math.min(this.STANDARD_SALARY, cap)}" required></label>
+                </div>
+                <label class="check"><input id="ho-exclusive" type="checkbox" checked>
+                    🔒 Exclusive contract — they drive for you and nobody else (uncheck to allow multi-team)</label>
+                <label class="field"><span>Message with your offer</span>
+                    <input id="ho-note" class="input" maxlength="200" placeholder="Why should they sign with you?"></label>
+                <p class="muted small" id="ho-buyout-note">Buyout clause: ${Economy.fmt(this.buyoutFor(this.STANDARD_SALARY))} (10× salary, min ${Economy.fmt(1000)}). Signing bonus (one race of salary) is paid when the deal closes.</p>
+                <p id="ho-error" class="form-error"></p>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Send Offer ✍️</button>
+                    <button type="submit" class="btn btn-primary">Open Negotiation ✍️</button>
                 </div>
             </form>
         `);
         Util.$('#ho-salary').addEventListener('input', (e) => {
-            Util.$('#ho-buyout-note').textContent = `Buyout clause: ${Economy.fmt(this.buyoutFor(e.target.value))} (10× salary, min ${Economy.fmt(1000)}).`;
+            Util.$('#ho-buyout-note').textContent = `Buyout clause: ${Economy.fmt(this.buyoutFor(e.target.value))} (10× salary, min ${Economy.fmt(1000)}). Signing bonus (one race of salary) is paid when the deal closes.`;
         });
         Util.$('#hub-offer-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             try {
                 const salary = Math.round(Number(Util.$('#ho-salary').value) || 0);
-                await DB.create('recruitment', {
-                    kind: 'offer', status: 'pending',
+                await Deals.start({
+                    kind: 'team-driver',
                     teamId, teamName: team.name, ownerUid: Auth.uid(),
-                    driverId, driverName: driver.name, driverUid: driver.ownerUid,
-                    salary, buyout: this.buyoutFor(salary)
+                    personId: driverId, personKind: 'driver', personName: driver.name, personUid: driver.ownerUid || null,
+                    salary, buyout: this.buyoutFor(salary),
+                    exclusive: Util.$('#ho-exclusive').checked,
+                    note: Util.$('#ho-note').value
                 });
                 Modal.close();
-                Util.notify(`Offer sent to ${driver.name}. They'll see it in their League Hub. ✍️`);
+                Util.notify(`Negotiation opened with ${driver.name} — follow it in your Deals panel. ✍️`);
                 this.refresh();
-            } catch (err) { Util.notify(err.message, 'error'); }
+            } catch (err) { Util.$('#ho-error').textContent = err.message; }
         });
     },
 
@@ -335,7 +378,8 @@ const Hub = {
                 DB.recruitment({ force: true }).catch(() => [])
             ]);
             if (!driver) throw new Error('Create your driver profile first (My Career).');
-            if (driver.teamId) throw new Error('You already have a team — leave it first.');
+            const can = await Deals.canSignWithTeam(driver.id, teamId, false);
+            if (!can.ok) throw new Error(can.reason.replace('They are', 'You are').replace('They already', 'You already'));
             if (recruitment.some(r => r.kind === 'application' && r.driverId === driver.id && r.teamId === teamId && r.status === 'pending')) {
                 Util.notify('Your application is already pending.', 'info'); return;
             }
@@ -350,24 +394,31 @@ const Hub = {
     },
 
     // Puts a player driver on a team with a signed contract. Shared by
-    // accepted offers, accepted applications, and instant joins.
-    async signPlayerDriver({ driverId, driverUid, teamId, salary }) {
+    // accepted applications and instant joins. Multi-team aware: the first
+    // team a driver signs with becomes their primary (points-scoring) team.
+    async signPlayerDriver({ driverId, driverUid, teamId, salary, exclusive = false }) {
         const team = await DB.get('teams', teamId);
         const driver = await DB.get('drivers', driverId);
         if (!driver) throw new Error('Driver profile not found.');
-        if (driver.teamId) throw new Error(`${driver.name} already has a team.`);
+        const can = await Deals.canSignWithTeam(driverId, teamId, exclusive);
+        if (!can.ok) throw new Error(can.reason);
         salary = Math.round(Number(salary) || 0);
-        await DB.update('drivers', driverId, { teamId });
-        if (driverUid === Auth.uid()) await Auth.updateProfile({ teamId });
-        else if (driverUid) await DB.update('users', driverUid, { teamId }).catch(() => {});
+        const world = await DB.loadWorld();
+        const cap = Economy.payCap(Prestige.driverStars(driverId, world));
+        if (salary > cap) throw new Error(`League rule: pay is capped at ${Economy.fmt(cap)}/race at their prestige level.`);
+        if (!driver.teamId) {
+            await DB.update('drivers', driverId, { teamId });
+            if (driverUid === Auth.uid()) await Auth.updateProfile({ teamId });
+            else if (driverUid) await DB.update('users', driverUid, { teamId }).catch(() => {});
+        }
         await DB.create('contracts', {
             teamId, teamName: team?.name || '',
             ownerUid: team?.ownerUid || null,
             personId: driverId, personKind: 'driver', personName: driver.name,
-            role: 'driver', salary, buyout: this.buyoutFor(salary),
+            role: 'driver', salary, buyout: this.buyoutFor(salary), exclusive: !!exclusive,
             seasonYear: new Date().getFullYear(), status: 'active', signedAt: Util.todayISO()
         });
-        News.post('🤝', `${driver.name} signed with ${team?.name || 'a team'} (${Economy.fmt(salary)}/race)`);
+        News.post('🤝', `${driver.name} signed with ${team?.name || 'a team'} (${Economy.fmt(salary)}/race${exclusive ? ', exclusive' : ''})`);
     },
 
     async actOffer(id, accept) {
@@ -380,7 +431,7 @@ const Hub = {
                 this.refresh();
                 return;
             }
-            await this.signPlayerDriver({ driverId: offer.driverId, driverUid: offer.driverUid, teamId: offer.teamId, salary: offer.salary });
+            await this.signPlayerDriver({ driverId: offer.driverId, driverUid: offer.driverUid, teamId: offer.teamId, salary: offer.salary, exclusive: offer.exclusive !== false });
             await DB.update('recruitment', id, { status: 'accepted' });
             Util.notify(`Welcome to ${offer.teamName}! Contract signed. 🤝`);
             App.go('career');
@@ -397,30 +448,48 @@ const Hub = {
         } catch (e) { Util.notify(e.message, 'error'); }
     },
 
+    // Accepting an application opens a negotiation: the owner proposes terms,
+    // the applying driver accepts/counters from their deal room.
     async acceptApplication(id) {
         const app = await DB.get('recruitment', id);
         if (!app || app.status !== 'pending') { this.refresh(); return; }
+        const world = await DB.loadWorld();
+        const stars = Prestige.driverStars(app.driverId, world);
+        const cap = Economy.payCap(stars);
         Modal.open(`
-            ${Modal.header(`✍️ Sign ${Util.esc(app.driverName)}`, `Set the contract terms for ${Util.esc(app.teamName)}`)}
+            ${Modal.header(`✍️ Terms for ${Util.esc(app.driverName)}`, `They applied to ${Util.esc(app.teamName)} — propose the contract; they accept or counter`)}
             <form id="hub-sign-form" class="form-grid">
+                <div class="chip-row">${Prestige.chip(stars)}<span class="chip chip-dim">⭐ ${Economy.capLine(stars)}</span></div>
                 <label class="field"><span>Salary per race</span>
-                    <input id="hs-salary" class="input" type="number" min="0" step="10" value="${this.STANDARD_SALARY}" required></label>
+                    <input id="hs-salary" class="input" type="number" min="10" max="${cap}" step="10" value="${Math.min(this.STANDARD_SALARY, cap)}" required></label>
+                <label class="check"><input id="hs-exclusive" type="checkbox" checked>
+                    🔒 Exclusive contract (uncheck to allow them to drive for other teams too)</label>
+                <label class="field"><span>Message</span><input id="hs-note" class="input" maxlength="200" placeholder="Welcome aboard — here's the deal."></label>
                 <p class="muted small">Buyout clause is 10× salary (min ${Economy.fmt(1000)}).</p>
+                <p id="hs-error" class="form-error"></p>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Sign Contract ✍️</button>
+                    <button type="submit" class="btn btn-primary">Propose Contract ✍️</button>
                 </div>
             </form>
         `);
         Util.$('#hub-sign-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             try {
-                await this.signPlayerDriver({ driverId: app.driverId, driverUid: app.driverUid, teamId: app.teamId, salary: Util.$('#hs-salary').value });
-                await DB.update('recruitment', id, { status: 'accepted', salary: Math.round(Number(Util.$('#hs-salary').value) || 0) });
+                const salary = Math.round(Number(Util.$('#hs-salary').value) || 0);
+                await Deals.start({
+                    kind: 'team-driver',
+                    teamId: app.teamId, teamName: app.teamName, ownerUid: Auth.uid(),
+                    personId: app.driverId, personKind: 'driver', personName: app.driverName, personUid: app.driverUid || null,
+                    salary, buyout: this.buyoutFor(salary),
+                    exclusive: Util.$('#hs-exclusive').checked,
+                    note: Util.$('#hs-note').value
+                });
+                await DB.update('recruitment', id, { status: 'accepted', salary });
                 Modal.close();
-                Util.notify(`${app.driverName} joins your roster. 🤝`);
+                Util.notify(`Terms sent to ${app.driverName} — the contract signs when they accept. ✍️`);
                 this.refresh();
-            } catch (err) { Util.notify(err.message, 'error'); }
+            } catch (err) { Util.$('#hs-error').textContent = err.message; }
         });
     },
 
@@ -434,7 +503,7 @@ const Hub = {
                 this.refresh();
                 return;
             }
-            await this._freeDriver(req.driverId, req.driverUid, 'released');
+            await this._freeDriver(req.driverId, req.driverUid, 'released', req.contractId || null);
             await DB.update('recruitment', id, { status: 'accepted' });
             News.post('👋', `${req.driverName} released by ${req.teamName} — buyout waived`);
             Util.notify(`${req.driverName} released for free.`);
@@ -442,47 +511,63 @@ const Hub = {
         } catch (e) { Util.notify(e.message, 'error'); }
     },
 
-    // Clears team links + ends any active contracts for a player driver.
-    async _freeDriver(driverId, driverUid, contractStatus) {
+    // Ends ONE team contract for a player driver (or all, when no contractId
+    // is given — used by release requests which predate multi-team). The
+    // primary team link falls back to their next active contract.
+    async _freeDriver(driverId, driverUid, contractStatus, contractId = null) {
         const driver = await DB.get('drivers', driverId);
-        await DB.update('drivers', driverId, { teamId: null });
-        if (driverUid === Auth.uid()) await Auth.updateProfile({ teamId: null });
-        else if (driverUid) await DB.update('users', driverUid, { teamId: null }).catch(() => {});
         const contracts = await DB.contracts({ force: true }).catch(() => []);
-        for (const c of contracts.filter(c => c.personId === driverId && c.status === 'active')) {
+        const mine = contracts.filter(c => c.personId === driverId && c.status === 'active' && c.type !== 'sponsorship');
+        const ending = contractId ? mine.filter(c => c.id === contractId) : mine;
+        for (const c of ending) {
             await DB.update('contracts', c.id, { status: contractStatus, endedAt: Util.todayISO() });
+        }
+        const remaining = mine.filter(c => !ending.some(e => e.id === c.id));
+        const endedTeamIds = new Set(ending.map(c => c.teamId));
+        if (!driver?.teamId || endedTeamIds.has(driver.teamId)) {
+            const nextTeamId = remaining[0]?.teamId || null;
+            await DB.update('drivers', driverId, { teamId: nextTeamId });
+            if (driverUid === Auth.uid()) await Auth.updateProfile({ teamId: nextTeamId });
+            else if (driverUid) await DB.update('users', driverUid, { teamId: nextTeamId }).catch(() => {});
         }
         return driver;
     },
 
-    /* ---------------- Leaving a team (driver side) ---------------- */
-    async leaveTeamFlow() {
+    /* ---------------- Leaving a team (driver side, per contract) ---------------- */
+    async leaveTeamFlow(contractId = null) {
         const profile = Auth.state.profile;
         const driverId = profile?.driverId;
         const driver = driverId ? await DB.get('drivers', driverId) : null;
-        if (!driver?.teamId) { Util.notify('You are not on a team.', 'info'); return; }
-        const team = await DB.get('teams', driver.teamId);
-        const contracts = await DB.contracts({ force: true }).catch(() => []);
-        const contract = contracts.find(c => c.personId === driverId && c.status === 'active');
+        if (!driver) { Util.notify('Create your driver profile first.', 'info'); return; }
+        const contracts = (await DB.contracts({ force: true }).catch(() => []))
+            .filter(c => c.personId === driverId && c.status === 'active' && c.type !== 'sponsorship');
+        const contract = contractId ? contracts.find(c => c.id === contractId) : contracts[0];
+        if (!contract && !driver.teamId) { Util.notify('You are not on a team.', 'info'); return; }
+        const teamId = contract?.teamId || driver.teamId;
+        const team = await DB.get('teams', teamId).catch(() => null);
         const buyout = Number(contract?.buyout) || 0;
         const payee = contract?.ownerUid || team?.ownerUid || null;
 
         // No contract, no buyout, or nobody to pay → simple free exit.
         if (!contract || !buyout || !payee) {
-            if (!confirm(`Leave ${team?.name || 'your team'} and become a free agent?`)) return;
-            await this._freeDriver(driverId, Auth.uid(), 'released');
-            News.post('👋', `${driver.name} left ${team?.name || 'their team'} — now a free agent`);
-            Util.notify('You are now a free agent.');
+            if (!confirm(`Leave ${team?.name || 'your team'}?`)) return;
+            if (contract) await this._freeDriver(driverId, Auth.uid(), 'released', contract.id);
+            else {
+                await DB.update('drivers', driverId, { teamId: null });
+                await Auth.updateProfile({ teamId: null });
+            }
+            News.post('👋', `${driver.name} left ${team?.name || 'their team'}`);
+            Util.notify(`You left ${team?.name || 'the team'}.`);
             App.go('career');
             return;
         }
 
         const pendingReq = (await DB.recruitment({ force: true }).catch(() => []))
-            .some(r => r.kind === 'release-request' && r.driverId === driverId && r.status === 'pending');
+            .some(r => r.kind === 'release-request' && r.driverId === driverId && r.contractId === contract.id && r.status === 'pending');
 
         Modal.open(`
-            ${Modal.header(`🚪 Leave ${Util.esc(team?.name || 'team')}`, 'Your contract has a buyout clause')}
-            <p class="muted">Your contract: <strong>${Economy.fmt(contract.salary)}/race</strong> · buyout <strong>${Economy.fmt(buyout)}</strong>.
+            ${Modal.header(`🚪 Leave ${Util.esc(team?.name || 'team')}`, 'This contract has a buyout clause')}
+            <p class="muted">This contract: <strong>${Economy.fmt(contract.salary)}/race</strong>${contract.exclusive === false ? ' (non-exclusive)' : ''} · buyout <strong>${Economy.fmt(buyout)}</strong>.
                 Your balance: <strong>${Economy.fmt(Economy.balance())}</strong>.</p>
             <div class="stack" style="margin-top:.8rem">
                 <button class="btn btn-primary" id="lv-pay" ${Economy.balance() < buyout ? 'disabled title="Not enough funds"' : ''}>
@@ -495,13 +580,12 @@ const Hub = {
 
         Util.$('#lv-pay')?.addEventListener('click', async () => {
             try {
-                await Economy.spend(buyout, 'your contract buyout');
-                const owner = await DB.get('users', payee).catch(() => null);
-                if (owner) await DB.update('users', payee, { balance: (Number(owner.balance) || 0) + buyout }).catch(() => {});
-                await this._freeDriver(driverId, Auth.uid(), 'bought-out');
+                await Economy.spend(buyout, `Contract buyout: ${team?.name || 'team'}`, '💸');
+                await Economy.adjustWallet(payee, buyout, '💸', `Buyout received: ${driver.name}`);
+                await this._freeDriver(driverId, Auth.uid(), 'bought-out', contract.id);
                 Modal.close();
                 News.post('💸', `${driver.name} paid a ${Economy.fmt(buyout)} buyout to leave ${team?.name || 'their team'}`);
-                Util.notify(`Buyout paid — you are a free agent. 💸`);
+                Util.notify(`Buyout paid — contract with ${team?.name || 'the team'} ended. 💸`);
                 App.go('career');
             } catch (e) { Util.notify(e.message, 'error'); }
         });
@@ -510,7 +594,7 @@ const Hub = {
             try {
                 await DB.create('recruitment', {
                     kind: 'release-request', status: 'pending',
-                    teamId: driver.teamId, teamName: team?.name || '', ownerUid: payee,
+                    teamId, teamName: team?.name || '', ownerUid: payee,
                     driverId, driverName: driver.name, driverUid: Auth.uid(),
                     contractId: contract.id, buyout
                 });

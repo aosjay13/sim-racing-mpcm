@@ -30,7 +30,7 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
     await page.click('#header-username');
     await page.waitForSelector('.profile-avatar');
     const nudge = await page.evaluate(() => document.getElementById('view-root').innerText);
-    log(/add a bio and photo/i.test(nudge) ? '✅' : '❌', 'Own empty profile nudges toward ✎ Edit Profile');
+    log(/set your display name, photo/i.test(nudge) ? '✅' : '❌', 'Own empty profile nudges toward ✎ Edit Profile');
     await page.click('button:has-text("✎ Edit Profile")');
     await page.waitForSelector('#profile-form');
     log('✅', 'Edit Profile modal opens from the profile page');

@@ -18,7 +18,10 @@ const Economy = {
     },
     difficultyInfo(id) { return this.DIFFICULTIES[id] || null; },
 
-    fmt(n) { return '$' + Math.round(Number(n) || 0).toLocaleString('en-US'); },
+    fmt(n) {
+        n = Math.round(Number(n) || 0);
+        return (n < 0 ? '−$' : '$') + Math.abs(n).toLocaleString('en-US');
+    },
     balance() { return Number(Auth.state.profile?.balance) || 0; },
 
     /* ----- Difficulty picker (first login + change-with-restart) ----- */
@@ -114,18 +117,91 @@ const Economy = {
         } catch (e) { Util.notify(e.message, 'error'); }
     },
 
-    async spend(amount, label) {
+    async spend(amount, label, icon = '💸') {
         amount = Math.round(Number(amount) || 0);
         const bal = this.balance();
         if (amount > bal) {
             throw new Error(`Not enough funds — ${label} costs ${this.fmt(amount)} but you have ${this.fmt(bal)}.`);
         }
         await Auth.updateProfile({ balance: bal - amount });
+        this.logTx(Auth.uid(), -amount, icon, label);
+    },
+
+    /* ----- Prestige pay cap: nobody can be paid above their star level ----- */
+    PAY_CAP_BASE: 2000, // 1★ cap; higher stars scale by the prestige multiplier
+    payCap(stars) { return Math.round(this.PAY_CAP_BASE * Prestige.multiplier(stars) / 10) * 10; },
+    capLine(stars) {
+        return `${Prestige.stars(stars)} ${Prestige.levelName(stars)} — pay capped at ${this.fmt(this.payCap(stars))}/race`;
+    },
+
+    /* ----- Ledger: every wallet movement, tracked ----- */
+    // Fire-and-forget: a failed ledger write must never break the payment.
+    async logTx(uid, amount, icon, label, refId = null) {
+        if (!uid || !Math.round(Number(amount) || 0)) return;
+        try {
+            await DB.create('ledger', {
+                uid, amount: Math.round(Number(amount)), icon: icon || '💵',
+                label: String(label || '').slice(0, 140), refId, at: Util.todayISO()
+            });
+        } catch (e) { console.warn('Ledger write failed:', e); }
+    },
+
+    async logMany(entries) {
+        const rows = entries.filter(t => t.uid && Math.round(Number(t.amount) || 0));
+        if (!rows.length) return;
+        try {
+            await DB.batchCreate('ledger', rows.map(t => ({
+                uid: t.uid, amount: Math.round(Number(t.amount)), icon: t.icon || '💵',
+                label: String(t.label || '').slice(0, 140), refId: t.refId || null, at: Util.todayISO()
+            })));
+        } catch (e) { console.warn('Ledger batch failed:', e); }
+    },
+
+    // Credit/debit ANY player's wallet (race payouts, buyouts, signing
+    // bonuses between players). Debits may go negative — contract debts are
+    // real; the ledger shows where the money went.
+    async adjustWallet(uid, delta, icon, label, refId = null) {
+        delta = Math.round(Number(delta) || 0);
+        if (!uid || !delta) return;
+        if (uid === Auth.uid()) {
+            await Auth.updateProfile({ balance: this.balance() + delta });
+        } else {
+            const user = await DB.get('users', uid).catch(() => null);
+            if (!user) return;
+            await DB.update('users', uid, { balance: (Number(user.balance) || 0) + delta }).catch(() => {});
+        }
+        this.logTx(uid, delta, icon, label, refId);
+    },
+
+    async ledgerFor(uid, limit = 10) {
+        const rows = (await DB.list('ledger', { force: true }).catch(() => []))
+            .filter(t => t.uid === uid)
+            .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0) || (b.at || '').localeCompare(a.at || ''));
+        return { recent: rows.slice(0, limit), total: rows.reduce((s, t) => s + t.amount, 0), count: rows.length };
+    },
+
+    // Reusable "Earnings & Spending" panel for any workspace.
+    async earningsPanel(title = '💵 Earnings & Spending') {
+        const { recent, count } = await this.ledgerFor(Auth.uid());
+        return `<section class="panel">
+            <div class="panel-head"><h2>${title}</h2><span class="chip wallet-chip">💵 ${this.fmt(this.balance())}</span></div>
+            ${recent.length ? recent.map(t => `
+                <div class="race-row">
+                    <div class="driver-hero-num" style="font-size:1rem;min-width:2.4rem;height:2.4rem">${t.icon || '💵'}</div>
+                    <div class="race-row-main">
+                        <span class="race-title">${Util.esc(t.label)}</span>
+                        <span class="race-sub">${Util.esc(Util.fmtDateShort(t.at))}</span>
+                    </div>
+                    <span class="market-price" style="color:${t.amount < 0 ? 'var(--bad)' : 'var(--good)'}">${t.amount < 0 ? '−' : '+'}${this.fmt(Math.abs(t.amount))}</span>
+                </div>`).join('') + (count > recent.length ? `<p class="muted small">Showing the last ${recent.length} of ${count} transactions.</p>` : '')
+            : C.empty('📒', 'No transactions yet', 'Prizes, salaries, sponsorship payouts, fees, and purchases all land here as they happen.')}
+        </section>`;
     },
 
     walletChip() {
         if (!Auth.isPlayer() || !Auth.state.profile?.walletInitialized) return '';
-        return `<span class="chip wallet-chip" title="Your career balance">💵 ${this.fmt(this.balance())}</span>`;
+        const bal = this.balance();
+        return `<span class="chip wallet-chip" title="Your career balance" ${bal < 0 ? 'style="color:var(--bad)"' : ''}>💵 ${this.fmt(bal)}</span>`;
     }
 };
 window.Economy = Economy;
@@ -470,6 +546,7 @@ const Market = {
         }
 
         const asking = this.askingFor(person, kind, stars);
+        const cap = Economy.payCap(stars);
         const roleLabel = kind === 'driver' ? 'Driver' : staffRoleInfo(person.role).label;
 
         Modal.open(`
@@ -482,9 +559,10 @@ const Market = {
                     <span class="chip chip-dim">Season contract</span>
                 </div>
                 <label class="field"><span>Salary per race (your offer)</span>
-                    <input id="offer-salary" class="input" type="number" min="0" step="10" value="${asking}" required></label>
-                <p class="muted small">They'll accept a fair offer — lowball too hard and they'll walk.
-                    Signing bonus (one race of salary) is paid from your balance of <strong>${Economy.fmt(Economy.balance())}</strong> when they sign.</p>
+                    <input id="offer-salary" class="input" type="number" min="0" max="${cap}" step="10" value="${Math.min(asking, cap)}" required></label>
+                <p class="muted small">They'll accept a fair offer — lowball and they'll counter. 📜 League rule: pay can never exceed
+                    a talent's prestige level (${Economy.capLine(stars)}). Signing bonus (one race of salary) is paid from your
+                    balance of <strong>${Economy.fmt(Economy.balance())}</strong> when they sign.</p>
                 <p id="offer-error" class="form-error"></p>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
@@ -499,15 +577,21 @@ const Market = {
             const errEl = Util.$('#offer-error');
             errEl.textContent = '';
             const offer = Math.round(Number(Util.$('#offer-salary').value) || 0);
-            const minAccept = Math.ceil(asking * this.MIN_OFFER_RATIO);
+            // Round up to $10 so the counter always satisfies the input's step.
+            const minAccept = Math.min(Math.ceil(asking * this.MIN_OFFER_RATIO / 10) * 10, cap);
 
+            if (offer > cap) {
+                errEl.textContent = `League rule: ${person.name} is ${Prestige.stars(stars)} — nobody may pay them more than ${Economy.fmt(cap)}/race until their prestige rises.`;
+                return;
+            }
             if (offer < minAccept) {
-                errEl.textContent = `${person.name} declined — they won't sign for less than ${Economy.fmt(minAccept)} per race.`;
+                Util.$('#offer-salary').value = minAccept;
+                errEl.textContent = `${person.name} counters: "${Economy.fmt(minAccept)}/race and I'll sign today." (Offer updated — submit to agree.)`;
                 return;
             }
             btn.disabled = true;
             try {
-                await Economy.spend(offer, 'the signing bonus');
+                await Economy.spend(offer, `Signing bonus: ${person.name}`, '🤝');
                 await DB.update(collection, personId, { teamId, salary: offer });
                 await DB.create('contracts', {
                     teamId,
@@ -518,6 +602,7 @@ const Market = {
                     personName: person.name,
                     role: kind === 'driver' ? 'driver' : person.role,
                     salary: offer,
+                    exclusive: true,
                     seasonYear: new Date().getFullYear(),
                     status: 'active',
                     signedAt: Util.todayISO()
@@ -534,30 +619,39 @@ const Market = {
     },
 
     /* ----- Releasing a hire (owner's call — always free for them) ----- */
+    // Multi-team aware: only this team's contract ends. The person's primary
+    // team link moves to their next active contract (or free agency).
     async release(kind, personId, teamId) {
         const collection = kind === 'driver' ? 'drivers' : 'staff';
         const [person, team] = await Promise.all([
             DB.get(collection, personId),
             DB.get('teams', teamId).catch(() => null)
         ]);
-        if (!confirm(`Release ${person?.name || 'this person'} from your team? They return to the free agent market.`)) return;
+        if (!confirm(`Release ${person?.name || 'this person'} from your team? Their contract with you ends.`)) return;
         try {
-            await DB.update(collection, personId, { teamId: null });
-            // A released PLAYER driver also gets their account unlinked.
-            if (kind === 'driver' && person?.ownerUid) {
-                if (person.ownerUid === Auth.uid()) await Auth.updateProfile({ teamId: null });
-                else await DB.update('users', person.ownerUid, { teamId: null }).catch(() => {});
-            }
             const contracts = await DB.contracts({ force: true }).catch(() => []);
             const active = contracts.filter(c => c.personId === personId && c.teamId === teamId && c.status === 'active');
             for (const c of active) await DB.update('contracts', c.id, { status: 'released', endedAt: Util.todayISO() });
+
+            // Primary team link: fall back to another active team contract if they have one.
+            if (person?.teamId === teamId || !person?.teamId) {
+                const other = contracts.find(c => c.personId === personId && c.status === 'active' &&
+                    c.teamId !== teamId && c.personKind === kind && c.type !== 'sponsorship');
+                const nextTeamId = other?.teamId || null;
+                await DB.update(collection, personId, { teamId: nextTeamId });
+                if (kind === 'driver' && person?.ownerUid) {
+                    if (person.ownerUid === Auth.uid()) await Auth.updateProfile({ teamId: nextTeamId });
+                    else await DB.update('users', person.ownerUid, { teamId: nextTeamId }).catch(() => {});
+                }
+            }
             News.post('👋', `${team?.name || 'A team'} released ${person?.name || 'a team member'}`);
             Util.notify(`${person?.name || 'They'} released. Contract ended.`);
             App.go('career');
         } catch (e) { Util.notify(e.message, 'error'); }
     },
 
-    /* ---------------- Dealership (placeholder) ---------------- */
+    /* ---------------- Dealership & garage ---------------- */
+    SELL_RATIO: 0.6, // cars sell back at 60% of what you paid
     STOCK: {
         new: [
             { emoji: '🏎️', name: 'Phoenix GT-R Street Spec', price: 42000, tag: 'Gran Turismo 7' },
@@ -571,12 +665,15 @@ const Market = {
         ]
     },
 
+    myGarage() { return Array.isArray(Auth.state.profile?.garage) ? Auth.state.profile.garage : []; },
+
     async dealership(el) {
         if (!Auth.isSignedIn()) {
             el.innerHTML = C.empty('🔒', 'Sign in to visit the Dealership', 'Every player can buy cars here — drivers keep their own garage and can bring cars to a new team.');
             return;
         }
-        const carCard = (c) => `
+        const canBuy = Auth.isPlayer() && Auth.state.profile?.walletInitialized;
+        const carCard = (c, kind, i) => `
             <div class="car-card">
                 <span class="car-emoji">${c.emoji}</span>
                 <h3>${Util.esc(c.name)}</h3>
@@ -584,7 +681,8 @@ const Market = {
                     <span class="chip chip-dim">${Util.esc(c.tag)}</span>
                     <span class="market-price">${Economy.fmt(c.price)}</span>
                 </div>
-                <button class="btn btn-secondary btn-sm" disabled title="Buying opens with the garage update">🔧 Coming Soon</button>
+                <button class="btn btn-primary btn-sm" ${canBuy ? '' : 'disabled title="Player accounts with a started career can buy"'}
+                    onclick="Market.buyCar('${kind}',${i})">🔑 Buy</button>
             </div>`;
 
         el.innerHTML = `
@@ -593,22 +691,69 @@ const Market = {
             <div class="btn-row">${Economy.walletChip()}</div>
         </div>
 
-        <div class="warn-banner">🚧 The Dealership is a preview. Browsing is open — buying, selling, and your personal garage arrive in an upcoming update. Any player (not just team owners) will be able to own cars and bring them to a new team.</div>
-
         <section class="panel" style="margin-bottom:1.1rem">
             <div class="panel-head"><h2>✨ New Cars</h2><span class="chip chip-dim">Factory fresh</span></div>
-            <div class="card-grid">${this.STOCK.new.map(carCard).join('')}</div>
+            <div class="card-grid">${this.STOCK.new.map((c, i) => carCard(c, 'new', i)).join('')}</div>
         </section>
 
         <section class="panel" style="margin-bottom:1.1rem">
             <div class="panel-head"><h2>🔑 Used Lot</h2><span class="chip chip-dim">Priced to move</span></div>
-            <div class="card-grid">${this.STOCK.used.map(carCard).join('')}</div>
+            <div class="card-grid">${this.STOCK.used.map((c, i) => carCard(c, 'used', i)).join('')}</div>
         </section>
 
-        <section class="panel">
-            <div class="panel-head"><h2>🚗 My Garage</h2></div>
-            ${C.empty('🏚', 'Your garage is empty', 'Cars you buy will live here — take them street racing or lend them to your team.')}
+        ${this.garagePanel()}`;
+    },
+
+    // Reusable garage panel — shown at the Dealership AND on the driver page.
+    garagePanel() {
+        const cars = this.myGarage();
+        return `<section class="panel">
+            <div class="panel-head"><h2>🚗 My Garage (${cars.length})</h2>
+                <button class="btn btn-secondary btn-sm" onclick="App.go('dealership')">🏬 Dealership</button></div>
+            ${cars.length ? cars.map(c => `
+                <div class="race-row">
+                    <div class="driver-hero-num" style="font-size:1.2rem;min-width:2.8rem;height:2.8rem">${c.emoji || '🚗'}</div>
+                    <div class="race-row-main">
+                        <span class="race-title">${Util.esc(c.name)}</span>
+                        <span class="race-sub">${Util.esc(c.tag || '')} · bought ${Util.esc(Util.fmtDateShort(c.boughtAt))} for ${Economy.fmt(c.price)}</span>
+                    </div>
+                    <button class="btn btn-ghost btn-sm" onclick="Market.sellCar('${Util.attr(c.id)}')">Sell ${Economy.fmt(Math.round(c.price * this.SELL_RATIO))}</button>
+                </div>`).join('')
+            : C.empty('🏚', 'Your garage is empty', 'Cars you buy at the Dealership live here — take them street racing or lend them to your team.')}
         </section>`;
+    },
+
+    async buyCar(kind, index) {
+        try {
+            const car = this.STOCK[kind]?.[index];
+            if (!car) return;
+            if (!Auth.isPlayer() || !Auth.state.profile?.walletInitialized) {
+                throw new Error('Start your career (pick a difficulty) before buying cars.');
+            }
+            await Economy.spend(car.price, `${car.name} (Dealership)`, '🚗');
+            const garage = [...this.myGarage(), {
+                id: 'car-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+                name: car.name, emoji: car.emoji, tag: car.tag, price: car.price, boughtAt: Util.todayISO()
+            }];
+            await Auth.updateProfile({ garage });
+            News.post('🚗', `${Auth.state.profile?.displayName || 'A player'} bought a ${car.name} from the Dealership`);
+            Util.notify(`${car.emoji} ${car.name} is yours! It's parked in your garage. 🔑`);
+            App.go(App.current.view, App.current.param);
+        } catch (e) { Util.notify(e.message, 'error'); }
+    },
+
+    async sellCar(carId) {
+        try {
+            const cars = this.myGarage();
+            const car = cars.find(c => c.id === carId);
+            if (!car) return;
+            const back = Math.round(car.price * this.SELL_RATIO);
+            if (!confirm(`Sell your ${car.name} back to the Dealership for ${Economy.fmt(back)}? (You paid ${Economy.fmt(car.price)}.)`)) return;
+            await Auth.updateProfile({ garage: cars.filter(c => c.id !== carId), balance: Economy.balance() + back });
+            Economy.logTx(Auth.uid(), back, '🚗', `Sold ${car.name} (Dealership)`);
+            Util.notify(`Sold the ${car.name} for ${Economy.fmt(back)}. 💵`);
+            App.go(App.current.view, App.current.param);
+        } catch (e) { Util.notify(e.message, 'error'); }
     }
 };
 window.Market = Market;

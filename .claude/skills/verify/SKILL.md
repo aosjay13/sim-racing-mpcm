@@ -49,3 +49,6 @@ node drive.js
   `#gate-name-field.hidden` before clicking `#gate-mode-toggle`.
 - `harness/profile-drive.js` covers the player-profile flows (v3.6.0).
 - `harness/persona-drive.js` covers the GM persona/role-profile + sponsor flows, incl. bulk generation (v3.11.0).
+- `harness/deals-drive.js` covers the negotiation economy: P2P deal rooms, prestige pay caps, multi-team
+  contracts, sponsorship deals, race-day settlement, Team Management, garage (v3.12.0). New collections
+  `negotiations` + `ledger` need firestore.rules deployed in prod.
