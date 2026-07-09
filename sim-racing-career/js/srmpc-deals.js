@@ -65,7 +65,10 @@ const Deals = {
     /* ---------------- Starting a negotiation ---------------- */
     // Creates the negotiation and, when the other side is AI, resolves their
     // answer immediately. Returns the negotiation doc (post-resolution).
-    async start({ kind, teamId = null, teamName = '', ownerUid = null,
+    // sideAProxyUid lets the Game Master negotiate FOR an unowned team: the GM
+    // drives the conversation, but the contract stays league-owned (no ownerUid,
+    // no wallet debits from the GM).
+    async start({ kind, teamId = null, teamName = '', ownerUid = null, sideAProxyUid = null,
         personId = null, personKind = null, personName = '', personUid = null,
         sponsorProfileId = null, sponsorName = '', sponsorUid = null,
         targetDriverId = null, targetDriverName = '', targetDriverUid = null,
@@ -77,7 +80,7 @@ const Deals = {
         const uid = Auth.uid();
         const myName = Auth.state.profile?.displayName || 'A player';
         // Paying side (A) = team owner / sponsor. Paid side (B) = talent / sponsorship target.
-        const sideAUid = kind === 'sponsorship' ? sponsorUid : ownerUid;
+        const sideAUid = kind === 'sponsorship' ? sponsorUid : (ownerUid || sideAProxyUid);
         const sideBUid = kind === 'sponsorship' ? (teamId ? ownerUid : targetDriverUid) : personUid;
         const neg = {
             kind, status: 'open', contractId,
@@ -119,10 +122,43 @@ const Deals = {
     },
 
     /* ---------------- The AI across the table ---------------- */
+    // Generated dialogue for AI team principals (unowned teams).
+    PRINCIPAL_LINES: {
+        offer: [
+            'Our scouts have had eyes on you for a while. The board approved {SALARY}/race for your signature.',
+            'We like what you bring to the grid. The seat pays {SALARY}/race — fair money for where you are.',
+            'The garage is ready and the budget is signed off: {SALARY}/race. Interested?'
+        ],
+        accept: [
+            'Deal. The seat is yours — don\'t make the board regret it.',
+            'Fair number. Welcome to the team — the car\'s waiting.',
+            'Agreed. Legal will draw the papers up today. Welcome aboard.'
+        ],
+        counter: [
+            'That\'s above our valuation. {SALARY}/race is where the budget lands — take it and let\'s go racing.',
+            'The board won\'t sign off on that. We can do {SALARY}/race — strong money for your record.',
+            'Ambitious, I\'ll give you that. Our ceiling for this seat is {SALARY}/race.'
+        ],
+        decline: [
+            'That number is fantasy at your prestige. The board is walking away — good luck out there.',
+            'We\'re done here. Come back when your asking price matches your record.'
+        ]
+    },
+    _principalLine(action, salary) {
+        const pool = this.PRINCIPAL_LINES[action] || [];
+        const line = pool[Math.floor(Math.random() * pool.length)] || '';
+        return line.replaceAll('{SALARY}', Economy.fmt(salary) + '');
+    },
+
     async _npcRespond(neg) {
         const patchHistory = async (entry, patch = {}) => {
             await DB.update('negotiations', neg.id, { ...patch, history: [...neg.history, { ...entry, at: Util.todayISO() }] });
         };
+
+        // The AI can sit on either side of a hire: an unowned team's principal
+        // (side A) answering a player's terms, or AI talent (side B) answering
+        // a team's offer. Sponsorships keep their own branch below.
+        if (neg.kind !== 'sponsorship' && !neg.sideAUid) return this._npcTeamRespond(neg, patchHistory);
 
         if (neg.kind === 'sponsorship') {
             // NPC teams/drivers happily take real money.
@@ -157,6 +193,67 @@ const Deals = {
             await patchHistory({ byUid: null, byName: neg.personName, action: 'counter', salary: counter, note: `I know what I'm worth — ${Economy.fmt(counter)}/race and we have a deal.` },
                 { salary: counter, turnUid: neg.sideAUid });
         }
+    },
+
+    // An unowned team's AI principal answering the player across the table.
+    // Fair asks (at or under market value) sign on the spot; greedy asks get
+    // countered at market value; fantasy numbers end the meeting.
+    async _npcTeamRespond(neg, patchHistory) {
+        const world = await DB.loadWorld();
+        const collection = neg.personKind === 'driver' ? 'drivers' : 'staff';
+        const person = await DB.get(collection, neg.personId).catch(() => null);
+        if (!person) { await DB.update('negotiations', neg.id, { status: 'declined', turnUid: null }); return; }
+        const stars = neg.personKind === 'driver' ? Prestige.driverStars(neg.personId, world) : Prestige.stored(person);
+        const cap = Economy.payCap(stars);
+        const fair = Math.max(10, Math.min(Math.round(Market.askingFor(person, neg.personKind === 'driver' ? 'driver' : 'staff', stars) / 10) * 10, cap));
+        const principal = `${neg.teamName} — Team Principal`;
+
+        if (neg.salary <= fair) {
+            await patchHistory({ byUid: null, byName: principal, action: 'accept', salary: neg.salary, note: this._principalLine('accept', neg.salary) }, { status: 'accepted', turnUid: null });
+            neg.status = 'accepted';
+            await this.execute({ ...neg });
+        } else if (neg.salary > Math.min(cap, Math.round(fair / this.INSULT_RATIO))) {
+            await patchHistory({ byUid: null, byName: principal, action: 'decline', note: this._principalLine('decline', fair) }, { status: 'declined', turnUid: null });
+        } else {
+            await patchHistory({ byUid: null, byName: principal, action: 'counter', salary: fair, note: this._principalLine('counter', fair) }, { salary: fair, turnUid: neg.sideBUid });
+        }
+    },
+
+    // GM hands a pending application to the AI: the unowned team's principal
+    // opens the deal room with a market-rate offer and generated dialogue, and
+    // the player accepts / counters / declines like any other negotiation.
+    async aiPrincipalOffer(recruitmentId) {
+        if (!Auth.isAdmin()) throw new Error('Only the Game Master can send in the AI principal.');
+        const app = await DB.get('recruitment', recruitmentId);
+        if (!app || app.status !== 'pending') throw new Error('That application is no longer pending.');
+        if (!app.driverUid) throw new Error('Only player applications can go to the AI principal.');
+        const [world, person] = await Promise.all([DB.loadWorld(), DB.get('drivers', app.driverId)]);
+        if (!person) throw new Error('That driver no longer exists.');
+        const can = await this.canSignWithTeam(app.driverId, app.teamId, false);
+        if (!can.ok) throw new Error(can.reason);
+        const dup = (await DB.list('negotiations', { force: true }).catch(() => []))
+            .find(n => n.status === 'open' && n.kind === 'team-driver' && n.teamId === app.teamId && n.personId === app.driverId && !n.contractId);
+        if (dup) throw new Error('A negotiation for this signing is already open.');
+
+        const stars = Prestige.driverStars(app.driverId, world);
+        const cap = Economy.payCap(stars);
+        const salary = Math.max(10, Math.min(Math.round(Market.askingFor(person, 'driver', stars) / 10) * 10, cap));
+        const neg = {
+            kind: 'team-driver', status: 'open', contractId: null,
+            teamId: app.teamId, teamName: app.teamName, ownerUid: null,
+            personId: app.driverId, personKind: 'driver', personName: app.driverName, personUid: app.driverUid,
+            sponsorProfileId: null, sponsorName: '', sponsorUid: null,
+            targetDriverId: null, targetDriverName: '', targetDriverUid: null,
+            salary, buyout: Hub.buyoutFor(salary), exclusive: false,
+            sideAUid: null, sideBUid: app.driverUid,
+            initiatorUid: null, turnUid: app.driverUid,
+            capStars: stars, capAmount: cap,
+            history: [{ byUid: null, byName: `${app.teamName} — Team Principal`, action: 'offer', salary, note: this._principalLine('offer', salary), at: Util.todayISO() }]
+        };
+        neg.id = await DB.create('negotiations', neg);
+        await DB.update('recruitment', recruitmentId, { status: 'accepted' });
+        News.post('🤖', `${app.teamName}'s team principal opened contract talks with ${app.driverName}`);
+        return DB.get('negotiations', neg.id);
     },
 
     /* ---------------- Player actions ---------------- */

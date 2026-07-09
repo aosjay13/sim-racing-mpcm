@@ -197,8 +197,8 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
     log(multi.count === 2 && multi.primaryStillAlpha ? '✅' : '❌',
         `Multi-team: Bob holds ${multi.count} active contracts, primary team unchanged (Alpha)`);
     const bobWs = await page.evaluate(async () => { await App.go('career'); return document.getElementById('view-root').innerText; });
-    log(/My Contracts \(2\)/i.test(bobWs) && /Join another team/i.test(bobWs) ? '✅' : '❌',
-        'Driver page lists both contracts + offers "Join another team" (all non-exclusive)');
+    log(/My Contracts \(2\)/i.test(bobWs) && /Apply to another team/i.test(bobWs) ? '✅' : '❌',
+        'Driver page lists both contracts + offers "Apply to another team" (all non-exclusive)');
 
     /* ---- 7. Dave: SPONSOR player — capped offers, deal with Alice's team ---- */
     await registerPlayer('Dave', 'dave@example.com', 'Sponsor');

@@ -186,8 +186,8 @@ const Career = {
             </div>
             <div class="btn-col">
                 ${!myContracts.length && !team
-                    ? `<button class="btn btn-primary btn-sm" onclick="Career.joinTeamModal()">Join a team</button>`
-                    : `${canJoinAnother ? `<button class="btn btn-primary btn-sm" onclick="Career.joinTeamModal()" title="Your contracts are non-exclusive — you can drive for another team too">＋ Join another team</button>` : ''}
+                    ? `<button class="btn btn-primary btn-sm" onclick="Career.joinTeamModal()">Apply to a team</button>`
+                    : `${canJoinAnother ? `<button class="btn btn-primary btn-sm" onclick="Career.joinTeamModal()" title="Your contracts are non-exclusive — you can apply to another team too">＋ Apply to another team</button>` : ''}
                        ${team ? `<button class="btn btn-ghost btn-sm" onclick="Career.leaveTeam()">Leave team</button>` : ''}`}
             </div>
         </div>
@@ -221,7 +221,7 @@ const Career = {
                         </div>
                         <button class="btn btn-ghost btn-sm" onclick="Hub.leaveTeamFlow('${Util.attr(c.id)}')">🚪 Leave</button>
                     </div>`).join('')
-                    : C.empty('📜', 'No contracts', 'Join a team or negotiate offers from team owners — your signed deals live here.')}
+                    : C.empty('📜', 'No contracts', 'Apply to a team and negotiate your terms — your signed deals live here.')}
                 ${canJoinAnother && myContracts.length ? `<p class="muted small">🔓 All your contracts are non-exclusive — you can sign with more teams from the League Hub.</p>` : ''}
             </section>
 
@@ -256,9 +256,9 @@ const Career = {
                 startMode = 'scratch';
             } else {
                 teamsHtml = `
-                <label class="field"><span>Choose your team</span>
+                <label class="field"><span>Apply to a team (they negotiate your contract — no automatic signing)</span>
                     <select id="ob-team" class="input">
-                        ${teams.map(t => `<option value="${Util.attr(t.id)}">${Util.esc(t.name)}</option>`).join('')}
+                        ${teams.map(t => `<option value="${Util.attr(t.id)}">${Util.esc(t.name)}${t.ownerUid ? ' 👤' : ' 🤖'}</option>`).join('')}
                     </select>
                 </label>`;
             }
@@ -288,33 +288,36 @@ const Career = {
             try {
                 const name = Util.$('#ob-name').value.trim();
                 if (!name) throw new Error('Driver name is required.');
+                // Nobody is ever auto-assigned to a team — every rookie starts
+                // as a free agent, and picking a team here sends an APPLICATION
+                // that the team (or the GM / AI principal) must negotiate.
                 const teamId = Util.$('#ob-team')?.value || null;
                 const driverId = await DB.create('drivers', {
                     name,
                     number: Util.$('#ob-number').value ? Number(Util.$('#ob-number').value) : null,
                     country: Util.$('#ob-country').value.trim(),
                     bio: Util.$('#ob-bio').value.trim(),
-                    teamId,
+                    teamId: null,
                     ownerUid: Auth.uid(),
                     careerStart: startMode,
                     status: 'approved',
                     prestige: 1 // everyone starts their career at 1 star
                 });
-                await Auth.updateProfile({ driverId, teamId: teamId || null });
+                await Auth.updateProfile({ driverId, teamId: null });
                 if (teamId) {
                     const team = await DB.get('teams', teamId);
-                    await DB.create('contracts', {
+                    await DB.create('recruitment', {
+                        kind: 'application', status: 'pending',
                         teamId, teamName: team?.name || '', ownerUid: team?.ownerUid || null,
-                        personId: driverId, personKind: 'driver', personName: name, role: 'driver',
-                        salary: Hub.STANDARD_SALARY, buyout: Hub.buyoutFor(Hub.STANDARD_SALARY),
-                        seasonYear: new Date().getFullYear(), status: 'active', signedAt: Util.todayISO()
+                        driverId, driverName: name, driverUid: Auth.uid()
                     });
-                    News.post('🌱', `Rookie ${name} joins the league with ${team?.name || 'a team'}`);
+                    News.post('🌱', `Rookie ${name} joins the league and applies to ${team?.name || 'a team'}`);
+                    Util.notify(`Welcome to the grid! Your application is with ${team?.name || 'the team'} — the contract gets negotiated before you sign. ✍️`);
                 } else {
                     News.post('🌱', `Rookie ${name} joins the league as a free agent`);
+                    Util.notify('Welcome to the grid! Your career starts now. 🏁');
                 }
                 Modal.close();
-                Util.notify('Welcome to the grid! Your career starts now. 🏁');
                 App.go('career');
             } catch (err) {
                 Util.notify(err.message, 'error');
@@ -358,33 +361,43 @@ const Career = {
         });
     },
 
+    // No instant signings: every seat is applied for and negotiated. Player-
+    // owned teams answer in their League Hub; unowned teams go to the Game
+    // Master, who negotiates personally or sends in the AI team principal.
     async joinTeamModal() {
-        const teams = (await DB.teams({ force: true })).filter(t => t.recruiting !== false);
-        if (!teams.length) { Util.notify('No teams are recruiting right now.', 'info'); return; }
+        const driverId = Auth.state.profile?.driverId;
+        if (!driverId) { Util.notify('Create your driver profile first.', 'info'); return; }
+        const [teams, recruitment, contracts] = await Promise.all([
+            DB.teams({ force: true }),
+            DB.recruitment({ force: true }).catch(() => []),
+            DB.contracts({ force: true }).catch(() => [])
+        ]);
+        const myActive = contracts.filter(c => c.status === 'active' && c.type !== 'sponsorship' &&
+            c.personKind === 'driver' && c.personId === driverId);
+        const open = teams.filter(t => t.recruiting !== false && !myActive.some(c => c.teamId === t.id));
+        if (!open.length) { Util.notify('No teams are recruiting right now.', 'info'); return; }
         Modal.open(`
-            ${Modal.header('Join a Team', `Instant signing on standard terms: ${Economy.fmt(Hub.STANDARD_SALARY)}/race, non-exclusive, ${Economy.fmt(Hub.buyoutFor(Hub.STANDARD_SALARY))} buyout. Want better pay? Apply via the League Hub and negotiate.`)}
-            <div class="stack">${teams.map(t => `
-                <div class="race-row" onclick="Career.joinTeam('${Util.attr(t.id)}')">
+            ${Modal.header('Apply to a Team', 'No instant signings — every seat is a negotiated contract. 👤 Player-owned teams answer in their League Hub; 🤖 unowned teams are handled by the Game Master or their AI team principal.')}
+            <div class="stack">${open.map(t => {
+                const pending = recruitment.some(r => r.kind === 'application' && r.driverId === driverId && r.teamId === t.id && r.status === 'pending');
+                return `
+                <div class="race-row" ${pending ? '' : `onclick="Career.applyTo('${Util.attr(t.id)}')"`}>
                     ${C.logoBox(t)}
                     <div class="race-row-main">
-                        <span class="race-title">${Util.esc(t.name)}</span>
-                        <span class="race-sub">${Util.esc(t.description || '')}</span>
+                        <span class="race-title">${Util.esc(t.name)} ${t.ownerUid ? '👤' : '🤖'}</span>
+                        <span class="race-sub">${Util.esc(t.description || 'Recruiting drivers')}</span>
                     </div>
-                    <span class="btn btn-primary btn-sm">Join</span>
-                </div>`).join('')}
+                    ${pending ? '<span class="badge badge-amber">Applied</span>' : '<span class="btn btn-primary btn-sm">Apply</span>'}
+                </div>`;
+            }).join('')}
             </div>
         `);
     },
 
-    async joinTeam(teamId) {
-        try {
-            const driverId = Auth.state.profile?.driverId;
-            if (!driverId) throw new Error('Create your driver profile first.');
-            await Hub.signPlayerDriver({ driverId, driverUid: Auth.uid(), teamId, salary: Hub.STANDARD_SALARY });
-            Modal.close();
-            Util.notify('You have signed with the team! 🤝');
-            App.go('career');
-        } catch (e) { Util.notify(e.message, 'error'); }
+    async applyTo(teamId) {
+        Modal.close();
+        await Hub.apply(teamId); // notifies success or the reason it can't happen
+        App.go('hub', 'recruitment');
     },
 
     // Contract-aware: with an active buyout clause this walks through

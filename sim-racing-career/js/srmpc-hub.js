@@ -172,14 +172,21 @@ const Hub = {
     tab_players(el) { return Profile.directory(el); },
 
     /* ---------------- Recruitment tab ---------------- */
+    // Does this recruitment item need THIS user's decision? Offers go to the
+    // driver; applications and release requests go to the team's owner — or to
+    // the Game Master when the team has no player owner.
+    _forMe(r, uid) {
+        if (r.kind === 'offer') return r.driverUid === uid;
+        return r.ownerUid ? r.ownerUid === uid : Auth.isAdmin();
+    },
+
     // Everything pending that needs MY decision (recruitment + negotiations).
     async _inbox() {
         if (!Auth.isSignedIn()) return [];
         const uid = Auth.uid();
         if (!uid) return [];
         const items = await DB.recruitment({ force: true }).catch(() => []);
-        const pending = items.filter(r => r.status === 'pending' &&
-            (r.kind === 'offer' ? r.driverUid === uid : r.ownerUid === uid));
+        const pending = items.filter(r => r.status === 'pending' && this._forMe(r, uid));
         let negs = 0;
         try { negs = await Deals.myTurnCount(); } catch (e) { /* fine */ }
         return [...pending, ...Array(negs).fill({ kind: 'negotiation' })];
@@ -197,8 +204,7 @@ const Hub = {
         const myTeam = world.teams.find(t => t.ownerUid === uid);
         const myDriver = profile?.driverId ? world.driversById[profile.driverId] : null;
 
-        const inbox = recruitment.filter(r => r.status === 'pending' &&
-            (r.kind === 'offer' ? r.driverUid === uid : r.ownerUid === uid));
+        const inbox = recruitment.filter(r => r.status === 'pending' && this._forMe(r, uid));
         const outbox = recruitment.filter(r =>
             (r.kind === 'offer' ? r.ownerUid === uid : r.driverUid === uid))
             .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)).slice(0, 8);
@@ -215,9 +221,13 @@ const Hub = {
                 actions = `<button class="btn btn-primary btn-sm" onclick="Hub.actOffer('${Util.attr(r.id)}',true)">✓ Accept</button>
                     <button class="btn btn-danger btn-sm" onclick="Hub.actOffer('${Util.attr(r.id)}',false)">✕ Decline</button>`;
             } else if (r.kind === 'application') {
+                const unowned = !r.ownerUid;
                 text = `${r.driverName} wants to drive for ${r.teamName}`;
-                sub = 'Accepting opens a contract form where you set their pay';
-                actions = `<button class="btn btn-primary btn-sm" onclick="Hub.acceptApplication('${Util.attr(r.id)}')">✓ Sign them</button>
+                sub = unowned
+                    ? '🤖 This team has no player owner — negotiate the deal yourself as GM, or send in the AI team principal'
+                    : 'Accepting opens a contract form where you set their pay';
+                actions = `<button class="btn btn-primary btn-sm" onclick="Hub.acceptApplication('${Util.attr(r.id)}')">✍️ ${unowned ? 'Negotiate as GM' : 'Sign them'}</button>
+                    ${unowned ? `<button class="btn btn-secondary btn-sm" onclick="Hub.aiPrincipal('${Util.attr(r.id)}')">🤖 AI Principal</button>` : ''}
                     <button class="btn btn-danger btn-sm" onclick="Hub.actApplication('${Util.attr(r.id)}',false)">✕ Decline</button>`;
             } else {
                 text = `${r.driverName} requests release from ${r.teamName}`;
@@ -321,7 +331,7 @@ const Hub = {
 
             <section class="panel">
                 <div class="panel-head"><h2>📜 Contract Rules</h2></div>
-                <p class="muted small">• Every signing is a negotiation: one side offers a salary per race, the other <strong>accepts, counters, or declines</strong> — with messages in a shared deal room. AI talent answers instantly.<br>
+                <p class="muted small">• Every signing is a negotiation: one side offers a salary per race, the other <strong>accepts, counters, or declines</strong> — with messages in a shared deal room. AI talent answers instantly, and unowned teams negotiate through the Game Master or their 🤖 AI team principal.<br>
                 • <strong>Prestige pay cap:</strong> nobody can be paid above their star level — ${Prestige.LEVELS.map(l => `${l.stars}★ ${Economy.fmt(Economy.payCap(l.stars))}`).join(' · ')} per race. Raise your prestige to raise your ceiling.<br>
                 • Contracts carry a <strong>buyout clause</strong> (10× salary, min ${Economy.fmt(1000)}). Leave by paying it (goes to the owner) or requesting release.<br>
                 • <strong>Multi-team driving:</strong> drivers may sign with several teams if every contract is non-exclusive. An exclusive contract locks them to that team — and pays like it.<br>
@@ -400,7 +410,9 @@ const Hub = {
                 teamId, teamName: team.name, ownerUid: team.ownerUid || null,
                 driverId: driver.id, driverName: driver.name, driverUid: Auth.uid()
             });
-            Util.notify(`Application sent to ${team.name}. 🤞`);
+            Util.notify(team.ownerUid
+                ? `Application sent to ${team.name}. 🤞`
+                : `Application sent to ${team.name} — the league office (Game Master) will open contract talks. 🏛️`);
             this.refresh();
         } catch (e) { Util.notify(e.message, 'error'); }
     },
@@ -460,8 +472,20 @@ const Hub = {
         } catch (e) { Util.notify(e.message, 'error'); }
     },
 
+    // Hands a pending application to the AI: the team principal opens the
+    // deal room with a market-rate offer and the player negotiates from there.
+    async aiPrincipal(id) {
+        try {
+            const n = await Deals.aiPrincipalOffer(id);
+            Util.notify(`🤖 ${n.teamName}'s principal sent ${n.personName} an offer of ${Economy.fmt(n.salary)}/race — they'll answer in their deal room.`);
+            this.refresh();
+        } catch (e) { Util.notify(e.message, 'error'); }
+    },
+
     // Accepting an application opens a negotiation: the owner proposes terms,
-    // the applying driver accepts/counters from their deal room.
+    // the applying driver accepts/counters from their deal room. For unowned
+    // teams the Game Master negotiates in the team's name — the contract stays
+    // league-owned (no ownerUid), so the GM's wallet is never touched.
     async acceptApplication(id) {
         const app = await DB.get('recruitment', id);
         if (!app || app.status !== 'pending') { this.refresh(); return; }
@@ -469,7 +493,7 @@ const Hub = {
         const stars = Prestige.driverStars(app.driverId, world);
         const cap = Economy.payCap(stars);
         Modal.open(`
-            ${Modal.header(`✍️ Terms for ${Util.esc(app.driverName)}`, `They applied to ${Util.esc(app.teamName)} — propose the contract; they accept or counter`)}
+            ${Modal.header(`✍️ Terms for ${Util.esc(app.driverName)}`, `They applied to ${Util.esc(app.teamName)}${app.ownerUid ? '' : ' (unowned team — you negotiate as the GM)'} — propose the contract; they accept or counter`)}
             <form id="hub-sign-form" class="form-grid">
                 <div class="chip-row">${Prestige.chip(stars)}<span class="chip chip-dim">⭐ ${Economy.capLine(stars)}</span></div>
                 <label class="field"><span>Salary per race</span>
@@ -491,7 +515,9 @@ const Hub = {
                 const salary = Math.round(Number(Util.$('#hs-salary').value) || 0);
                 await Deals.start({
                     kind: 'team-driver',
-                    teamId: app.teamId, teamName: app.teamName, ownerUid: Auth.uid(),
+                    teamId: app.teamId, teamName: app.teamName,
+                    ownerUid: app.ownerUid || null,
+                    sideAProxyUid: app.ownerUid ? null : Auth.uid(),
                     personId: app.driverId, personKind: 'driver', personName: app.driverName, personUid: app.driverUid || null,
                     salary, buyout: this.buyoutFor(salary),
                     exclusive: Util.$('#hs-exclusive').checked,
