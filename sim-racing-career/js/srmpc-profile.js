@@ -260,6 +260,7 @@ const Profile = {
                     ${diff ? (isSelf
                         ? `<button class="chip chip-btn" onclick="Economy.difficultyPicker(false)" title="Change difficulty — restarts your career from scratch">${diff.icon} ${Util.esc(diff.label)} ⇄</button>`
                         : `<span class="chip chip-dim">${diff.icon} ${Util.esc(diff.label)}</span>`) : ''}
+                    ${isSelf ? `<button class="chip chip-btn" onclick="Economy.resetCareerPrompt()" title="Reset your career on your current difficulty">🔄 Reset Career</button>` : ''}
                     ${joined ? `<span class="chip chip-dim">📅 Member since ${Util.esc(joined)}</span>` : ''}
                     ${(isSelf || isAdmin) && user.walletInitialized ? `<span class="chip wallet-chip" title="Earned through prizes, sponsor payouts, and contracts — spent on signings and buyouts">💵 ${Economy.fmt(user.balance)}</span>` : ''}
                     ${isAdmin ? `<span class="chip chip-dim">✉️ ${Util.esc(user.email || '—')}</span>` : ''}
