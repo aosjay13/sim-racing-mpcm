@@ -103,9 +103,21 @@ const Hub = {
                         <span class="race-title">${Util.esc(n.message)}</span>
                         <span class="race-sub">${Util.esc(Util.fmtDate(n.date))}</span>
                     </div>
+                    ${Auth.isAdmin() ? `<button class="btn btn-danger btn-sm" onclick="Hub.deleteNews('${Util.attr(n.id)}')" title="Game Master: remove this announcement">Del</button>` : ''}
                 </div>`).join('')
             : C.empty('📣', 'No news yet', 'The feed writes itself: driver signings, team takeovers, race winners, contract buyouts — every career move lands here automatically.')}
         </section>`;
+    },
+
+    // Game Master only: pull an announcement from the league feed.
+    async deleteNews(id) {
+        if (!Auth.isAdmin()) { Util.notify('Only the Game Master can delete news.', 'error'); return; }
+        if (!confirm('Delete this announcement from the league news feed?')) return;
+        try {
+            await DB.remove('news', id);
+            Util.notify('Announcement deleted. 🗑');
+            this.refresh();
+        } catch (e) { Util.notify(e.message, 'error'); }
     },
 
     /* ---------------- Achievements tab ---------------- */
