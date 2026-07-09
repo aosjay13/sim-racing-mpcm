@@ -35,7 +35,8 @@ const Deals = {
             const stars = Prestige.driverStars(neg.personId, world);
             return { stars, cap: Economy.payCap(stars), who: neg.personName };
         }
-        const person = await DB.get('staff', neg.personId).catch(() => null);
+        // Staff: AI crew live in `staff`, player crew in `roleProfiles`.
+        const person = await DB.get(neg.roleProfileId ? 'roleProfiles' : 'staff', neg.personId).catch(() => null);
         const stars = Prestige.stored(person || { prestige: 1 });
         return { stars, cap: Economy.payCap(stars), who: neg.personName };
     },
@@ -69,7 +70,7 @@ const Deals = {
     // drives the conversation, but the contract stays league-owned (no ownerUid,
     // no wallet debits from the GM).
     async start({ kind, teamId = null, teamName = '', ownerUid = null, sideAProxyUid = null,
-        personId = null, personKind = null, personName = '', personUid = null,
+        personId = null, personKind = null, personName = '', personUid = null, roleProfileId = null,
         sponsorProfileId = null, sponsorName = '', sponsorUid = null,
         targetDriverId = null, targetDriverName = '', targetDriverUid = null,
         contractId = null, salary, buyout = 0, exclusive = false, note = '' }) {
@@ -85,7 +86,7 @@ const Deals = {
         const neg = {
             kind, status: 'open', contractId,
             teamId, teamName, ownerUid,
-            personId, personKind, personName, personUid,
+            personId, personKind, personName, personUid, roleProfileId,
             sponsorProfileId, sponsorName, sponsorUid,
             targetDriverId, targetDriverName, targetDriverUid,
             salary, buyout: Math.round(Number(buyout) || 0), exclusive: !!exclusive,
@@ -286,10 +287,16 @@ const Deals = {
         return DB.get('negotiations', id);
     },
 
-    async accept(id) {
-        const neg = await DB.get('negotiations', id);
+    // seenSalary (optional): the number the user had on screen when they hit
+    // Accept. If the deal moved under them (other side countered from another
+    // device), refuse instead of silently signing a different amount.
+    async accept(id, seenSalary = null) {
+        const neg = await DB.get('negotiations', id, { force: true });
         if (!neg || neg.status !== 'open') throw new Error('This negotiation is closed.');
         if (neg.turnUid !== Auth.uid()) throw new Error('The current offer is yours — they have to answer it.');
+        if (seenSalary !== null && Math.round(Number(seenSalary)) !== neg.salary) {
+            throw new Error(`This deal has moved to ${Economy.fmt(neg.salary)}/race since you last looked — review the updated offer before signing.`);
+        }
         const capInfo = await this.capForNeg(neg);
         if (neg.salary > capInfo.cap) throw new Error(`This deal now exceeds the prestige pay cap (${Economy.fmt(capInfo.cap)}/race) — counter with a legal number.`);
         await DB.update('negotiations', id, {
@@ -333,7 +340,8 @@ const Deals = {
             const contract = await DB.get('contracts', neg.contractId);
             if (!contract || contract.status !== 'active') throw new Error('That contract is no longer active.');
             await DB.update('contracts', neg.contractId, { salary: neg.salary });
-            const collection = neg.personKind === 'driver' ? 'drivers' : 'staff';
+            const collection = neg.personKind === 'driver' ? 'drivers'
+                : (neg.roleProfileId ? 'roleProfiles' : 'staff');
             const person = await DB.get(collection, neg.personId).catch(() => null);
             if (person?.teamId === neg.teamId) await DB.update(collection, neg.personId, { salary: neg.salary });
             News.post('✍️', `${neg.personName} renegotiated with ${neg.teamName}: now ${Economy.fmt(neg.salary)}/race`);
@@ -341,8 +349,11 @@ const Deals = {
             return;
         }
 
-        // Fresh hire (driver or staff).
-        const collection = neg.personKind === 'driver' ? 'drivers' : 'staff';
+        // Fresh hire: a driver, an AI staff doc, or a PLAYER in a staff role
+        // (crew chief / mechanic / agent), whose league identity lives in
+        // roleProfiles rather than the staff collection.
+        const collection = neg.personKind === 'driver' ? 'drivers'
+            : (neg.roleProfileId ? 'roleProfiles' : 'staff');
         const person = await DB.get(collection, neg.personId);
         if (!person) throw new Error('That person no longer exists.');
         if (neg.personKind === 'driver') {
@@ -362,6 +373,8 @@ const Deals = {
         await DB.create('contracts', {
             teamId: neg.teamId, teamName: neg.teamName, ownerUid: neg.ownerUid || null,
             personId: neg.personId, personKind: neg.personKind, personName: neg.personName,
+            personUid: neg.personUid || null, // player talent — payroll credits their wallet
+            roleProfileId: neg.roleProfileId || null,
             role: neg.personKind === 'driver' ? 'driver' : (person.role || 'staff'),
             salary: neg.salary, buyout: Hub.buyoutFor(neg.salary), exclusive: !!neg.exclusive,
             seasonYear: year, status: 'active', signedAt: Util.todayISO()
@@ -379,39 +392,67 @@ const Deals = {
         return `${n.personName} ⇄ ${n.teamName}${n.contractId ? ' (new terms)' : ''}`;
     },
 
-    async room(id) {
-        const neg = await DB.get('negotiations', id);
+    // The room re-renders IN PLACE after every action (no page-refresh dance),
+    // live-polls for the other side's moves while open, and always derives the
+    // action buttons from the LATEST state — the accept button can never show
+    // a stale number. The view behind refreshes when the room is dismissed.
+    _roomTimer: null,
+
+    async room(id, { poll = true } = {}) {
+        const neg = await DB.get('negotiations', id, { force: true });
         if (!neg) { Util.notify('Negotiation not found.', 'error'); return; }
         const uid = Auth.uid();
         const myTurn = neg.status === 'open' && neg.turnUid === uid;
         const involved = neg.sideAUid === uid || neg.sideBUid === uid;
         const perRace = neg.kind === 'sponsorship' ? 'payout' : 'salary';
 
-        const actionIcon = { offer: '✍️', counter: '↩️', message: '💬', accept: '✅', decline: '❌', withdraw: '🚫' };
-        const thread = neg.history.map(h => `
-            <div class="race-row">
-                <div class="driver-hero-num" style="font-size:1rem;min-width:2.4rem;height:2.4rem">${actionIcon[h.action] || '💬'}</div>
-                <div class="race-row-main">
-                    <span class="race-title">${Util.esc(h.byName || 'AI')}${h.byUid ? '' : ' <span class="chip chip-dim">🤖 AI</span>'}
-                        <span class="muted">— ${h.action}${h.salary ? ` at ${Economy.fmt(h.salary)}/race` : ''}</span></span>
-                    ${h.note ? `<span class="race-sub">“${Util.esc(h.note)}”</span>` : ''}
-                    <span class="race-sub muted">${Util.esc(Util.fmtDateShort(h.at))}</span>
-                </div>
-            </div>`).join('');
-
+        // ---- Current state of the deal, front and center ----
+        const lastMove = [...neg.history].reverse().find(h => h.action === 'offer' || h.action === 'counter');
+        const closer = [...neg.history].reverse().find(h => ['accept', 'decline', 'withdraw'].includes(h.action));
+        const proposedBy = lastMove ? (lastMove.byUid === uid ? 'you' : lastMove.byName) : '—';
         const statusBadge = neg.status === 'open'
             ? (myTurn ? '<span class="badge badge-amber">Your move</span>' : '<span class="badge badge-blue">Waiting on them</span>')
             : `<span class="badge ${neg.status === 'accepted' ? 'badge-green' : 'badge-dim'}">${Util.esc(neg.status)}</span>`;
+        const offerHero = `
+            <div class="panel deal-offer-hero" style="padding:.7rem .9rem;margin-bottom:.7rem">
+                <div class="chip-row" style="align-items:baseline">
+                    <span class="market-price" style="font-size:1.25rem">${Economy.fmt(neg.salary)}/race</span>
+                    <span class="muted small">on the table — ${neg.status === 'open'
+                        ? `latest ${lastMove?.action === 'counter' ? 'counter' : 'offer'} by <strong>${Util.esc(proposedBy)}</strong>${lastMove?.at ? ` · ${Util.esc(Util.fmtDateShort(lastMove.at))}` : ''}`
+                        : `${Util.esc(neg.status)}${closer ? ` by ${Util.esc(closer.byUid === uid ? 'you' : closer.byName)}` : ''}`}</span>
+                </div>
+                <div class="chip-row" style="margin-top:.35rem">
+                    ${statusBadge}
+                    ${neg.kind === 'team-driver' && !neg.contractId ? `<span class="chip chip-dim">${neg.exclusive ? '🔒 Exclusive' : '🔓 Non-exclusive (multi-team OK)'}</span>` : ''}
+                    <span class="chip chip-dim" title="League rule: pay can never exceed the paid party's prestige level">⭐ Cap ${Economy.fmt(neg.capAmount || Economy.payCap(neg.capStars || 1))}/race</span>
+                </div>
+            </div>`;
+
+        // ---- The thread: newest highlighted, counters show what changed ----
+        const actionIcon = { offer: '✍️', counter: '↩️', message: '💬', accept: '✅', decline: '❌', withdraw: '🚫' };
+        let prevSalary = null;
+        const thread = neg.history.map((h, i) => {
+            const latest = i === neg.history.length - 1;
+            const was = h.action === 'counter' && prevSalary !== null && prevSalary !== h.salary
+                ? ` <span class="muted">(was ${Economy.fmt(prevSalary)})</span>` : '';
+            if (h.salary) prevSalary = h.salary;
+            return `
+            <div class="race-row ${latest ? 'deal-latest' : ''}">
+                <div class="driver-hero-num" style="font-size:1rem;min-width:2.4rem;height:2.4rem">${actionIcon[h.action] || '💬'}</div>
+                <div class="race-row-main">
+                    <span class="race-title">${Util.esc(h.byName || 'AI')}${h.byUid ? '' : ' <span class="chip chip-dim">🤖 AI</span>'}
+                        <span class="muted">— ${h.action}${h.salary ? ` at ${Economy.fmt(h.salary)}/race` : ''}</span>${was}
+                        ${latest ? '<span class="chip chip-dim">latest</span>' : ''}</span>
+                    ${h.note ? `<span class="race-sub">“${Util.esc(h.note)}”</span>` : ''}
+                    <span class="race-sub muted">${Util.esc(Util.fmtDateShort(h.at))}</span>
+                </div>
+            </div>`;
+        }).join('');
 
         Modal.open(`
-            ${Modal.header(`🤝 ${Util.esc(this._label(neg))}`, 'Contract negotiation room — both sides see this thread')}
-            <div class="chip-row" style="margin-bottom:.6rem">
-                <span class="market-price">${Economy.fmt(neg.salary)}/race on the table</span>
-                ${neg.kind === 'team-driver' && !neg.contractId ? `<span class="chip chip-dim">${neg.exclusive ? '🔒 Exclusive' : '🔓 Non-exclusive (multi-team OK)'}</span>` : ''}
-                <span class="chip chip-dim" title="League rule: pay can never exceed the paid party's prestige level">⭐ Cap ${Economy.fmt(neg.capAmount || Economy.payCap(neg.capStars || 1))}/race</span>
-                ${statusBadge}
-            </div>
-            <div class="stack" style="max-height:240px;overflow-y:auto;gap:.15rem" id="deal-thread">${thread}</div>
+            ${Modal.header(`🤝 ${Util.esc(this._label(neg))}`, 'Contract negotiation room — both sides see this thread, and it updates live')}
+            ${offerHero}
+            <div class="stack" style="max-height:220px;overflow-y:auto;gap:.15rem" id="deal-thread">${thread}</div>
             ${neg.status === 'open' && involved ? `
                 <form id="deal-act" class="form-grid" style="margin-top:.8rem">
                     ${myTurn ? `
@@ -434,18 +475,21 @@ const Deals = {
                 </form>`
             : `<div class="modal-actions" style="margin-top:.8rem"><button class="btn btn-primary" onclick="Modal.close()">Close</button></div>`}
         `, { wide: true });
+        // Refresh whatever is behind once the player dismisses the room.
+        Modal.onClose(() => App.go(App.current.view, App.current.param));
 
         const errEl = () => Util.$('#deal-error');
-        // Refresh the view behind first (App.go closes any modal), THEN reopen
-        // the room on top so the thread stays in front of the player.
+        const busy = (on) => Util.$$('#deal-act button, #deal-accept').forEach(b => { b.disabled = on; });
+        // Re-render this modal in place with fresh state — the room never
+        // disappears out from under the player mid-conversation.
         const rerender = async (msg) => {
             if (msg) Util.notify(msg);
-            await App.go(App.current.view, App.current.param);
-            await this.room(id);
+            await this.room(id, { poll });
         };
 
         Util.$('#deal-act')?.addEventListener('submit', async (e) => {
             e.preventDefault();
+            busy(true);
             try {
                 const note = Util.$('#deal-note').value;
                 if (myTurn) {
@@ -453,23 +497,51 @@ const Deals = {
                     await rerender(n.status === 'accepted' ? null : 'Counter sent. ↩️');
                 } else {
                     await this.sendNote(id, note);
-                    Util.$('#deal-note').value = '';
                     await rerender('Note sent. 💬');
                 }
-            } catch (err) { errEl().textContent = err.message; }
+            } catch (err) { busy(false); errEl().textContent = err.message; }
         });
         Util.$('#deal-accept')?.addEventListener('click', async () => {
-            try { await this.accept(id); await rerender(); }
-            catch (err) { errEl().textContent = err.message; }
+            busy(true);
+            try { await this.accept(id, neg.salary); await rerender(); }
+            catch (err) {
+                // The deal may have moved under us — surface why, then show
+                // the room's fresh state so the buttons match reality again.
+                Util.notify(err.message, 'error');
+                await rerender();
+            }
         });
         Util.$('#deal-decline')?.addEventListener('click', async () => {
+            busy(true);
             try { await this.close(id, 'decline'); await rerender('Negotiation declined.'); }
-            catch (err) { errEl().textContent = err.message; }
+            catch (err) { busy(false); errEl().textContent = err.message; }
         });
         Util.$('#deal-withdraw')?.addEventListener('click', async () => {
+            busy(true);
             try { await this.close(id, 'withdraw'); await rerender('Offer withdrawn.'); }
-            catch (err) { errEl().textContent = err.message; }
+            catch (err) { busy(false); errEl().textContent = err.message; }
         });
+
+        // ---- Live updates: poll while the room is open so the other side's
+        // counters appear without reopening (rooms are snapshots otherwise).
+        clearInterval(this._roomTimer);
+        if (!poll || neg.status !== 'open') return;
+        const stamp = { history: neg.history.length, salary: neg.salary, status: neg.status };
+        this._roomTimer = setInterval(async () => {
+            const overlay = document.getElementById('active-modal');
+            if (!overlay || !document.getElementById('deal-thread')) { clearInterval(this._roomTimer); return; }
+            try {
+                const fresh = await DB.get('negotiations', id, { force: true });
+                if (!fresh) { clearInterval(this._roomTimer); return; }
+                if (fresh.history.length !== stamp.history || fresh.salary !== stamp.salary || fresh.status !== stamp.status) {
+                    clearInterval(this._roomTimer);
+                    const typed = Util.$('#deal-note')?.value;
+                    Util.notify(fresh.status === 'open' ? 'The deal moved — room updated. 🔄' : `Negotiation ${fresh.status}. 🔄`);
+                    await this.room(id, { poll });
+                    if (typed && Util.$('#deal-note')) Util.$('#deal-note').value = typed;
+                }
+            } catch (e) { /* transient read error — keep polling */ }
+        }, 4000);
     },
 
     /* ---------------- Workspace panel + inbox count ---------------- */
@@ -514,7 +586,8 @@ const Deals = {
         if (!contract || contract.status !== 'active') { Util.notify('That contract is no longer active.', 'info'); return; }
         const world = await DB.loadWorld(true);
         const isDriver = contract.personKind === 'driver';
-        const person = await DB.get(isDriver ? 'drivers' : 'staff', contract.personId).catch(() => null);
+        // Player crew contracts point at roleProfiles, AI crew at staff.
+        const person = await DB.get(isDriver ? 'drivers' : (contract.roleProfileId ? 'roleProfiles' : 'staff'), contract.personId).catch(() => null);
         if (!person) { Util.notify('That person no longer exists.', 'error'); return; }
         const stars = isDriver ? Prestige.driverStars(person.id, world) : Prestige.stored(person);
         const cap = Economy.payCap(stars);
@@ -528,7 +601,7 @@ const Deals = {
                         <input id="aj-salary" class="input" type="number" min="10" max="${cap}" step="10" value="${Math.min(contract.salary, cap)}" required></label>
                 </div>
                 <label class="field"><span>Message</span><input id="aj-note" class="input" maxlength="200" placeholder="Why the new number?"></label>
-                <p class="muted small">${person.ownerUid ? 'They are a player — this opens a negotiation they must accept.' : 'AI talent answers instantly: fair terms sign, lowballs get countered.'}</p>
+                <p class="muted small">${(person.ownerUid || person.uid) ? 'They are a player — this opens a negotiation they must accept.' : 'AI talent answers instantly: fair terms sign, lowballs get countered.'}</p>
                 <p id="aj-error" class="form-error"></p>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
@@ -543,7 +616,8 @@ const Deals = {
                     kind: isDriver ? 'team-driver' : 'team-staff',
                     contractId, teamId: contract.teamId, teamName: contract.teamName, ownerUid: Auth.uid(),
                     personId: contract.personId, personKind: contract.personKind, personName: contract.personName,
-                    personUid: person.ownerUid || null,
+                    personUid: person.ownerUid || person.uid || null,
+                    roleProfileId: contract.roleProfileId || null,
                     salary: Util.$('#aj-salary').value, exclusive: contract.exclusive !== false,
                     note: Util.$('#aj-note').value
                 });

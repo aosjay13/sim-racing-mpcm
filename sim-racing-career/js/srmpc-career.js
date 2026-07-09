@@ -189,6 +189,7 @@ const Career = {
                     ? `<button class="btn btn-primary btn-sm" onclick="Career.joinTeamModal()">Apply to a team</button>`
                     : `${canJoinAnother ? `<button class="btn btn-primary btn-sm" onclick="Career.joinTeamModal()" title="Your contracts are non-exclusive — you can apply to another team too">＋ Apply to another team</button>` : ''}
                        ${team ? `<button class="btn btn-ghost btn-sm" onclick="Career.leaveTeam()">Leave team</button>` : ''}`}
+                <button class="btn btn-secondary btn-sm" onclick="Hub.recruitProfileForm()" title="Pace, safety, disciplines, availability — what teams see when scouting">🧲 Recruitment Profile</button>
             </div>
         </div>
 
@@ -828,7 +829,7 @@ const Career = {
             kpis = `${kpi(teamRank ? '#' + teamRank : '—', 'Constructor rank')}${kpi(roster.length, 'Cars')}${kpi(reliability != null ? reliability + '%' : '—', 'Reliability')}${kpi(dnfs, 'DNFs')}`;
             contextHtml = `<section class="panel">
                 <div class="panel-head"><h2>🔧 My Garage</h2>
-                    <button class="btn btn-secondary btn-sm" onclick="Career.pickTeamForRole('${Util.attr(mine.id)}')">✎ Choose Team</button></div>
+                    <button class="btn btn-secondary btn-sm" onclick="Career.pickTeamForRole('${Util.attr(mine.id)}')">✍️ Apply to a Team</button></div>
                 ${team ? `<div class="race-row" onclick="Views.showTeam('${Util.attr(team.id)}')">
                         ${C.logoBox(team)}
                         <div class="race-row-main"><span class="race-title">${Util.esc(team.name)}</span>
@@ -928,7 +929,9 @@ const Career = {
         }
 
         el.innerHTML = `
-        ${this._workspaceHead(roleId, `<button class="btn btn-secondary" onclick="Career.roleProfileForm('${roleId}','${Util.attr(mine.id)}')">✎ Edit Profile</button>`)}
+        ${this._workspaceHead(roleId, `
+            ${Hub.RECRUIT_ATTRS[roleId] ? `<button class="btn btn-secondary" onclick="Hub.recruitProfileForm()" title="What teams see when scouting your role">🧲 Recruitment Profile</button>` : ''}
+            <button class="btn btn-secondary" onclick="Career.roleProfileForm('${roleId}','${Util.attr(mine.id)}')">✎ Edit Profile</button>`)}
         <div class="driver-hero panel">
             <div class="driver-hero-num">${info.icon}</div>
             <div class="driver-hero-info">
@@ -1003,27 +1006,22 @@ const Career = {
         });
     },
 
+    // Crew never gets auto-assigned either: picking a team sends an
+    // APPLICATION the owner (or GM / AI-managed office) must answer — same
+    // double-opt-in as drivers.
     async pickTeamForRole(profileId) {
         const teams = await DB.teams();
         if (!teams.length) { Util.notify('No teams exist yet.', 'info'); return; }
         Modal.open(`
-            ${Modal.header('Choose Your Team')}
+            ${Modal.header('Apply to a Team', 'No instant hires — the team (or the Game Master for 🤖 unowned teams) reviews your application and negotiates a contract.')}
             <div class="stack">${teams.map(t => `
-                <div class="race-row" onclick="Career._setRoleTeam('${Util.attr(profileId)}','${Util.attr(t.id)}')">
+                <div class="race-row" onclick="Hub.applyStaff('${Util.attr(profileId)}','${Util.attr(t.id)}')">
                     ${C.logoBox(t)}
-                    <div class="race-row-main"><span class="race-title">${Util.esc(t.name)}</span></div>
+                    <div class="race-row-main"><span class="race-title">${Util.esc(t.name)} ${t.ownerUid ? '👤' : '🤖'}</span></div>
+                    <span class="btn btn-primary btn-sm">Apply</span>
                 </div>`).join('')}
             </div>
         `);
-    },
-
-    async _setRoleTeam(profileId, teamId) {
-        try {
-            await DB.update('roleProfiles', profileId, { teamId });
-            Modal.close();
-            Util.notify('Team assigned.');
-            App.go('career');
-        } catch (e) { Util.notify(e.message, 'error'); }
     },
 
     async sponsorPortfolio(profileId) {

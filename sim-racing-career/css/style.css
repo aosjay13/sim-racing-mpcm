@@ -177,6 +177,28 @@ a:hover { text-decoration: underline; }
 }
 .nav-admin { color: var(--gold); }
 
+/* Red notification counter on a nav button (League Hub inbox events). */
+.nav-badge {
+    position: absolute; top: 0; right: -2px;
+    min-width: 1.05rem; height: 1.05rem; padding: 0 .25rem;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #e11d2e; color: #fff;
+    font-size: .6rem; font-weight: 800; letter-spacing: 0;
+    border-radius: 999px; line-height: 1;
+    box-shadow: 0 0 0 2px var(--bg-1), 0 0 8px rgba(225, 29, 46, .55);
+    pointer-events: none;
+}
+.nav-badge.hidden { display: none; }
+
+/* Deal room: the newest move in the thread glows so the current state is
+   unmissable; the offer hero card frames the number actually on the table. */
+.deal-offer-hero { border-left: 3px solid var(--accent); }
+.race-row.deal-latest {
+    background: color-mix(in srgb, var(--accent) 9%, transparent);
+    border-radius: var(--r-sm);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
 /* .icon-btn.nav-toggle — must out-specify .icon-btn (defined later), which
    otherwise re-displays the hamburger on desktop where the full nav is visible. */
 .icon-btn.nav-toggle { display: none; transition: transform .25s cubic-bezier(.2,.9,.3,1.3), color .2s; }
@@ -449,6 +471,7 @@ select.input { cursor: pointer; }
 .chip-row { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
 .chip-btn { cursor: pointer; }
 .chip-btn:hover { color: var(--text); border-color: var(--accent-2); }
+.chip-active { color: var(--text); border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 /* Scrollable chip pool (e.g. the schedule builder's track library) */
 .chip-cloud {
     display: flex; flex-wrap: wrap; gap: .35rem;

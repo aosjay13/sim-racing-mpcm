@@ -643,11 +643,17 @@ const Market = {
     // Multi-team aware: only this team's contract ends. The person's primary
     // team link moves to their next active contract (or free agency).
     async release(kind, personId, teamId) {
-        const collection = kind === 'driver' ? 'drivers' : 'staff';
-        const [person, team] = await Promise.all([
-            DB.get(collection, personId),
+        // Player crew (crew chief / mechanic / agent) live in roleProfiles,
+        // AI crew in staff — resolve whichever collection actually has them.
+        let collection = kind === 'driver' ? 'drivers' : 'staff';
+        let [person, team] = await Promise.all([
+            DB.get(collection, personId).catch(() => null),
             DB.get('teams', teamId).catch(() => null)
         ]);
+        if (!person && kind !== 'driver') {
+            person = await DB.get('roleProfiles', personId).catch(() => null);
+            if (person) collection = 'roleProfiles';
+        }
         if (!confirm(`Release ${person?.name || 'this person'} from your team? Their contract with you ends.`)) return;
         try {
             const contracts = await DB.contracts({ force: true }).catch(() => []);
@@ -655,7 +661,7 @@ const Market = {
             for (const c of active) await DB.update('contracts', c.id, { status: 'released', endedAt: Util.todayISO() });
 
             // Primary team link: fall back to another active team contract if they have one.
-            if (person?.teamId === teamId || !person?.teamId) {
+            if (person && (person.teamId === teamId || !person.teamId)) {
                 const other = contracts.find(c => c.personId === personId && c.status === 'active' &&
                     c.teamId !== teamId && c.personKind === kind && c.type !== 'sponsorship');
                 const nextTeamId = other?.teamId || null;

@@ -20,17 +20,27 @@ const Modal = {
         requestAnimationFrame(() => overlay.classList.add('show'));
         return overlay;
     },
-    close(instant = false) {
+    // One-shot callback fired when the user dismisses the modal (X, backdrop,
+    // Escape, or an explicit Modal.close()). Navigation via App.go closes
+    // silently instead, so a close-triggered refresh can never recurse.
+    _onClose: null,
+    onClose(fn) { this._onClose = fn; },
+    close(instant = false, silent = false) {
         const overlay = document.getElementById('active-modal');
         document.body.style.overflow = '';
+        const fn = this._onClose;
+        this._onClose = null;
         if (!overlay) return;
-        if (instant) { overlay.remove(); return; }
-        // Animate out, then remove. Drop the id right away so a new modal
-        // can open mid-exit without fighting over it.
-        overlay.id = '';
-        overlay.classList.add('closing');
-        overlay.classList.remove('show');
-        setTimeout(() => overlay.remove(), 220);
+        if (instant) { overlay.remove(); }
+        else {
+            // Animate out, then remove. Drop the id right away so a new modal
+            // can open mid-exit without fighting over it.
+            overlay.id = '';
+            overlay.classList.add('closing');
+            overlay.classList.remove('show');
+            setTimeout(() => overlay.remove(), 220);
+        }
+        if (!silent && fn) { try { fn(); } catch (e) { console.error(e); } }
     },
     header(title, subtitle = '') {
         return `<div class="modal-head">

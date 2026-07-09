@@ -845,7 +845,10 @@ const Sim = {
                 if (!due || !c.salary) continue;
                 const team = world.teamsById[c.teamId];
                 add(team?.ownerUid, -c.salary, '💼', `Payroll: ${c.personName} — ${raceName}`);
-                if (isDriver) add(world.driversById[c.personId]?.ownerUid, c.salary, '💼', `Salary from ${c.teamName || 'team'} — ${raceName}`);
+                // Player talent collects: drivers via their driver doc, player
+                // crew (crew chief / mechanic / agent) via personUid on the contract.
+                const paidUid = c.personUid || (isDriver ? world.driversById[c.personId]?.ownerUid : null);
+                add(paidUid, c.salary, '💼', `Salary from ${c.teamName || 'team'} — ${raceName}`);
             }
 
             /* -- 4. Sponsorship deals (negotiated): sponsor pays the target per race run -- */

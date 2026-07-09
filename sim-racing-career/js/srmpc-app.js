@@ -27,7 +27,7 @@ const App = {
         const route = this.routes[view];
         if (!route) view = 'dashboard';
         this.current = { view, param };
-        Modal.close();
+        Modal.close(false, true); // silent — navigation renders fresh anyway
 
         // Nav highlight ('series-detail' highlights 'series')
         const navKey = view === 'series-detail' ? 'series' : view;
@@ -51,6 +51,19 @@ const App = {
             el.innerHTML = C.empty('⚠️', 'Something went wrong loading this page', e.message,
                 `<button class="btn btn-primary" onclick="App.go('${view}'${param ? `,'${Util.attr(param)}'` : ''})">Try again</button>`);
         }
+        this.refreshHubBadge(); // fire-and-forget — never blocks navigation
+    },
+
+    /* ---------------- League Hub notification badge ---------------- */
+    // Red counter on the League Hub nav button: decisions waiting on me,
+    // negotiations where it's my move, and unseen results of things I sent.
+    async refreshHubBadge() {
+        const el = document.getElementById('hub-badge');
+        if (!el) return;
+        let n = 0;
+        try { if (Auth.isSignedIn()) n = await Hub.notifCount(); } catch (e) { /* signed out / offline */ }
+        el.textContent = n > 99 ? '99+' : String(n);
+        el.classList.toggle('hidden', !n);
     },
 
     /* ---------------- Startup ---------------- */

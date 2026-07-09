@@ -86,9 +86,11 @@ const DB = {
         return docs;
     },
 
-    async get(collection, id) {
-        const cached = this._cache[collection]?.find(d => d.id === id);
-        if (cached) return cached;
+    async get(collection, id, { force = false } = {}) {
+        if (!force) {
+            const cached = this._cache[collection]?.find(d => d.id === id);
+            if (cached) return cached;
+        }
         const snap = await this._fs().collection(collection).doc(id).get();
         return snap.exists ? { id: snap.id, ...snap.data() } : null;
     },

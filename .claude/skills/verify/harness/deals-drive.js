@@ -106,7 +106,7 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
     await page.waitForSelector('#hub-body .panel');
     const hubText = await page.evaluate(() => document.getElementById('hub-body').innerText);
     log(/Bob Racer/.test(hubText) && /Prestige pay cap/i.test(hubText) ? '✅' : '❌', 'Hub lists Bob as signable + shows pay-cap contract rules');
-    await page.click('#hub-body .race-row:has-text("Bob Racer") button:has-text("Negotiate")');
+    await page.click('#hub-body .race-row:has-text("Bob Racer") button:has-text("Offer")');
     await page.waitForSelector('#hub-offer-form');
     await page.fill('#ho-salary', '800');
     await page.uncheck('#ho-exclusive');
