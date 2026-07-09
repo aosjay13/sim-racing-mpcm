@@ -231,6 +231,7 @@ const Profile = {
             <div><h1>👤 Player Profile</h1><p class="muted">The complete career record — every race, team, and title since day one.</p></div>
             <div class="btn-row">
                 ${isSelf || isAdmin ? `<button class="btn btn-secondary" onclick="Profile.editModal('${Util.attr(uid)}')">✎ Edit Profile</button>` : ''}
+                ${isSelf ? `<button class="btn btn-danger" onclick="Economy.resetCareerPrompt()" title="Reset your career on your current difficulty">🔄 Reset Career</button>` : ''}
                 ${isSelf ? `<button class="btn btn-ghost" onclick="App.go('career')">🏎 My Career</button>` : ''}
                 ${isAdmin && !isSelf ? `<button class="btn btn-ghost" onclick="App.go('admin','players')">👥 All Players</button>` : ''}
             </div>

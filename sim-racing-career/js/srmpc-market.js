@@ -73,6 +73,27 @@ const Economy = {
         await this.restartCareer(id);
     },
 
+    async resetCareerPrompt() {
+        const currentDiffId = Auth.state.profile?.difficulty;
+        const d = this.difficultyInfo(currentDiffId);
+        if (!d) {
+            Util.notify('Choose a difficulty first before resetting your career.', 'info');
+            return;
+        }
+        const typed = prompt(
+            `Resetting your career on ${d.label} wipes everything and starts you fresh:\n\n` +
+            `• Team ownership released (team becomes available for takeover)\n` +
+            `• Your driver profile and stats are deleted\n` +
+            `• Your contracts end and challenge progress clears\n` +
+            `• Balance resets to ${this.fmt(d.start)}\n\n` +
+            `Type RESET to confirm.`);
+        if ((typed || '').trim().toUpperCase() !== 'RESET') {
+            Util.notify('Reset cancelled — career untouched.', 'info');
+            return;
+        }
+        await this.restartCareer(currentDiffId);
+    },
+
     // Full career wipe + fresh start on the chosen difficulty.
     async restartCareer(diffId) {
         try {
