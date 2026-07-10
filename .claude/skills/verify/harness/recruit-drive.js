@@ -214,8 +214,9 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
     await toast(/Counter sent/);
     await page.waitForFunction(() => /counter at \$800\/race/i.test(document.querySelector('.modal-card')?.innerText || ''));
     roomText = await page.evaluate(() => document.querySelector('.modal-card').innerText);
-    log(/latest counter by you/i.test(roomText) && /\(was \$600\)/i.test(roomText) && !/Accept \$600/i.test(roomText) ? '✅' : '❌',
-        'Room re-rendered in place: hero says "latest counter by you", thread shows $800 (was $600), no stale $600 button');
+    // The counter's delta renders as a highlighted chip ($600 → $800) since 0.5.8.5.
+    log(/latest counter by you/i.test(roomText) && /\$600 → \$800\/race/i.test(roomText) && !/Accept \$600/i.test(roomText) ? '✅' : '❌',
+        'Room re-rendered in place: hero says "latest counter by you", thread chip shows $600 → $800, no stale $600 button');
     log(await page.evaluate(() => !!document.querySelector('.modal-card .race-row.deal-latest')) ? '✅' : '❌',
         'Latest move is visually highlighted in the thread');
     await shot('24-deal-room-live');

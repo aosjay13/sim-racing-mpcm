@@ -161,8 +161,18 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
     await page.fill('#cl-flap', '80');
     await page.uncheck('#deal-exclusive');
     await page.click('#deal-act button[type=submit]');
-    await toast(/Counter sent/);
+    const counterToast = await toast(/Counter sent/);
     log('✅', "Henry countered: added an $80 fastest-lap bonus, dropped exclusivity, kept the rest of Greta's sheet");
+    log(/Fastest lap/.test(counterToast) && /Exclusivity dropped/.test(counterToast) ? '✅' : '❌',
+        'Counter toast spells out what changed: ' + counterToast.slice(0, 90));
+
+    // The thread entry itself carries highlighted delta chips — both sides see
+    // exactly what this counter changed, forever.
+    await page.waitForSelector('#deal-thread .deal-latest .chip-delta');
+    const deltaChips = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('#deal-thread .deal-latest .chip-delta')).map(c => c.textContent.trim()));
+    log(deltaChips.some(c => /Fastest lap.*\$80/.test(c)) && deltaChips.some(c => /Exclusivity dropped/.test(c)) ? '✅' : '❌',
+        `Latest thread entry shows highlighted change chips: [${deltaChips.join(' | ')}]`);
 
     // Right after countering, the ball is in Greta's court: Henry must NOT be
     // able to accept, decline, or withdraw — only talk. And the close() guards

@@ -475,6 +475,8 @@ select.input { cursor: pointer; }
     background: var(--bg-2);
 }
 .chip-dim { color: var(--text-faint); }
+/* Deal-room thread: what a counter actually changed — pops against the dim info chips */
+.chip-delta { color: var(--warn); background: rgba(245,179,1,.12); border-color: rgba(245,179,1,.4); }
 .chip-row { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
 .chip-btn { cursor: pointer; }
 .chip-btn:hover { color: var(--text); border-color: var(--accent-2); }

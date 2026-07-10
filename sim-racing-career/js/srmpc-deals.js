@@ -221,7 +221,7 @@ const Deals = {
             await patchHistory({ byUid: null, byName: neg.personName, action: 'decline', note: 'That offer is an insult. Lose my number.' }, { status: 'declined', turnUid: null });
         } else {
             const counter = Math.min(asking, cap);
-            await patchHistory({ byUid: null, byName: neg.personName, action: 'counter', salary: counter, note: `I know what I'm worth — ${Economy.fmt(counter)}/race and we have a deal.` },
+            await patchHistory({ byUid: null, byName: neg.personName, action: 'counter', salary: counter, note: `I know what I'm worth — ${Economy.fmt(counter)}/race and we have a deal.`, changes: this._termChanges(neg, { salary: counter }) },
                 { salary: counter, turnUid: neg.sideAUid });
         }
     },
@@ -246,7 +246,7 @@ const Deals = {
         } else if (neg.salary > Math.min(cap, Math.round(fair / this.INSULT_RATIO))) {
             await patchHistory({ byUid: null, byName: principal, action: 'decline', note: this._principalLine('decline', fair) }, { status: 'declined', turnUid: null });
         } else {
-            await patchHistory({ byUid: null, byName: principal, action: 'counter', salary: fair, note: this._principalLine('counter', fair) }, { salary: fair, turnUid: neg.sideBUid });
+            await patchHistory({ byUid: null, byName: principal, action: 'counter', salary: fair, note: this._principalLine('counter', fair), changes: this._termChanges(neg, { salary: fair }) }, { salary: fair, turnUid: neg.sideBUid });
         }
     },
 
@@ -311,6 +311,34 @@ const Deals = {
         });
     },
 
+    /* ---------------- What changed in a counter? ---------------- */
+    // Human-readable delta between the deal's previous terms and a counter's
+    // patch — stored on the history entry so BOTH sides see exactly what moved,
+    // forever, without replaying the thread.
+    _termChanges(before, patch, unit = '/race') {
+        const out = [];
+        if (patch.salary !== undefined && patch.salary !== before.salary)
+            out.push(`💰 ${Economy.fmt(before.salary)} → ${Economy.fmt(patch.salary)}${unit}`);
+        if (patch.exclusive !== undefined && !!patch.exclusive !== !!before.exclusive)
+            out.push(patch.exclusive ? '🔒 Now exclusive' : '🔓 Exclusivity dropped');
+        if (patch.agreement !== undefined && patch.agreement !== (before.agreement || 'contracted'))
+            out.push(patch.agreement === 'open' ? '🤝 Now an open agreement — no buyout' : '🔒 Now contracted — buyout applies');
+        if (patch.signOnBonus !== undefined && (patch.signOnBonus ?? null) !== (before.signOnBonus ?? null)) {
+            const show = (v) => v === null || v === undefined ? 'default (1× salary)' : Economy.fmt(v);
+            out.push(`🎁 Sign-on ${show(before.signOnBonus)} → ${show(patch.signOnBonus)}`);
+        }
+        if (patch.clauses !== undefined) {
+            const was = Clauses.flatten(before.clauses), now = Clauses.flatten(patch.clauses);
+            const fmt = (e) => e.money ? Economy.fmt(e.value) : e.value;
+            for (const k of new Set([...Object.keys(was), ...Object.keys(now)])) {
+                if (!was[k]) out.push(`+ ${now[k].label} ${fmt(now[k])}`);
+                else if (!now[k]) out.push(`− ${was[k].label} removed (was ${fmt(was[k])})`);
+                else if (was[k].value !== now[k].value) out.push(`${now[k].label} ${fmt(was[k])} → ${fmt(now[k])}`);
+            }
+        }
+        return out;
+    },
+
     /* ---------------- Player actions ---------------- */
     // `terms` (optional): { exclusive, agreement, signOnBonus, clauses } — the
     // same menu offered on the initial offer form. Only applies to fresh-hire
@@ -344,10 +372,11 @@ const Deals = {
             patch.clauses = validated.clauses;
         }
 
+        const changes = this._termChanges(neg, patch, neg.kind === 'buyout' ? ' one-time' : '/race');
         const other = neg.turnUid === neg.sideAUid ? neg.sideBUid : neg.sideAUid;
         const updated = {
             ...neg, ...patch, turnUid: other || null,
-            history: [...neg.history, { byUid: Auth.uid(), byName: Auth.state.profile?.displayName || 'A player', action: 'counter', salary, note: note || '', at: Util.todayISO() }]
+            history: [...neg.history, { byUid: Auth.uid(), byName: Auth.state.profile?.displayName || 'A player', action: 'counter', salary, note: note || '', changes, at: Util.todayISO() }]
         };
         await DB.update('negotiations', id, { ...patch, turnUid: updated.turnUid, history: updated.history });
         if (updated.turnUid === null) await this._npcRespond(updated);
@@ -567,14 +596,20 @@ const Deals = {
                 ${clauseSummary ? `<div class="chip-row" style="margin-top:.35rem"><span class="chip chip-dim" title="Performance clauses — bonuses settle per race, ⚠️ stipulations are checked at season close">📜 ${Util.esc(clauseSummary)}</span></div>` : ''}
             </div>`;
 
-        // ---- The thread: newest highlighted, counters show what changed ----
+        // ---- The thread: newest highlighted, counters spell out what changed ----
+        // Modern counter entries carry `changes` (written by counter() at move
+        // time) and render them as highlighted delta chips. Entries from before
+        // that fall back to the old inline "(was $X)".
         const actionIcon = { offer: '✍️', counter: '↩️', message: '💬', accept: '✅', decline: '❌', withdraw: '🚫' };
         let prevSalary = null;
         const thread = neg.history.map((h, i) => {
             const latest = i === neg.history.length - 1;
-            const was = h.action === 'counter' && prevSalary !== null && prevSalary !== h.salary
+            const was = h.action === 'counter' && !h.changes && prevSalary !== null && prevSalary !== h.salary
                 ? ` <span class="muted">(was ${Economy.fmt(prevSalary)})</span>` : '';
             if (h.salary) prevSalary = h.salary;
+            const deltas = (h.changes || []).length
+                ? `<span class="chip-row" style="margin-top:.25rem">${h.changes.map(ch => `<span class="chip chip-delta">${Util.esc(ch)}</span>`).join('')}</span>`
+                : (h.action === 'counter' && h.changes ? '<span class="race-sub muted">No terms changed — same deal, resent</span>' : '');
             return `
             <div class="race-row ${latest ? 'deal-latest' : ''}">
                 <div class="driver-hero-num" style="font-size:1rem;min-width:2.4rem;height:2.4rem">${actionIcon[h.action] || '💬'}</div>
@@ -582,6 +617,7 @@ const Deals = {
                     <span class="race-title">${Util.esc(h.byName || 'AI')}${h.byUid ? '' : ' <span class="chip chip-dim">🤖 AI</span>'}
                         <span class="muted">— ${h.action}${h.salary ? ` at ${Economy.fmt(h.salary)}/race` : ''}</span>${was}
                         ${latest ? '<span class="chip chip-dim">latest</span>' : ''}</span>
+                    ${deltas}
                     ${h.note ? `<span class="race-sub">“${Util.esc(h.note)}”</span>` : ''}
                     <span class="race-sub muted">${Util.esc(Util.fmtDateShort(h.at))}</span>
                 </div>
@@ -645,7 +681,9 @@ const Deals = {
                         ...Clauses.readForm()
                     } : null;
                     const n = await this.counter(id, Util.$('#deal-salary').value, note, terms);
-                    await rerender(n.status === 'accepted' ? null : 'Counter sent. ↩️');
+                    const sent = [...n.history].reverse().find(h => h.action === 'counter' && h.byUid === uid);
+                    const what = (sent?.changes || []).slice(0, 3).join(' · ');
+                    await rerender(n.status === 'accepted' ? null : `Counter sent${what ? ': ' + what : ''}. ↩️`);
                 } else {
                     await this.sendNote(id, note);
                     await rerender('Note sent. 💬');

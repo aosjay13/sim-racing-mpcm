@@ -159,6 +159,22 @@ const Clauses = {
         return tier ? { rank: entry.rank, amount: tier.amount, label: `Championship P${entry.rank}` } : null;
     },
 
+    /* ---------------- Flat label→value view of a sheet (for diffing) ---------------- */
+    // Money clauses carry money:true so a differ can format them as $; the
+    // termination stipulations are counts/positions, not dollars.
+    flatten(c) {
+        const out = {};
+        if (!c) return out;
+        const money = { winBonus: '🏆 Race win', poleBonus: '🅿️ Pole', fastestLapBonus: '⚡ Fastest lap',
+            mostLapsLedBonus: '🔁 Most laps led', cleanRaceBonus: '🧼 Clean race', fullDistanceBonus: '🏁 Full distance' };
+        Object.entries(money).forEach(([k, label]) => { if (c[k]) out[k] = { label, value: c[k], money: true }; });
+        (c.finishBonus || []).forEach(t => { out['finish' + t.atOrBetter] = { label: `🥉 Top ${t.atOrBetter}`, value: t.amount, money: true }; });
+        (c.championshipBonus || []).forEach(t => { out['champ' + t.rank] = { label: `🏆 Champ. P${t.rank}`, value: t.amount, money: true }; });
+        if (c.minWins) out.minWins = { label: '⚠️ Mandatory wins', value: c.minWins.count, money: false };
+        if (c.minAvgFinish) out.minAvgFinish = { label: '⚠️ Required avg finish', value: 'P' + c.minAvgFinish.position, money: false };
+        return out;
+    },
+
     /* ---------------- Human-readable summary (deal rooms, contract lists) ---------------- */
     summary(c) {
         if (!c) return '';
