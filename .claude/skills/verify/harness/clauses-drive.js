@@ -164,7 +164,27 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
     await toast(/Counter sent/);
     log('✅', "Henry countered: added an $80 fastest-lap bonus, dropped exclusivity, kept the rest of Greta's sheet");
 
+    // Right after countering, the ball is in Greta's court: Henry must NOT be
+    // able to accept, decline, or withdraw — only talk. And the close() guards
+    // must hold even when the UI is bypassed.
+    const postCounter = await page.evaluate(() => ({
+        accept: !!document.getElementById('deal-accept'), decline: !!document.getElementById('deal-decline'),
+        withdraw: !!document.getElementById('deal-withdraw'),
+        waiting: /waiting on their answer/i.test(document.querySelector('.modal-card')?.innerText || '')
+    }));
+    log(!postCounter.accept && !postCounter.decline && !postCounter.withdraw && postCounter.waiting ? '✅' : '❌',
+        'Right after countering: no accept/decline/withdraw buttons — only Send Note + a waiting chip');
+    let guardMsg = await page.evaluate(async (id) => {
+        try { await Deals.close(id, 'withdraw'); return 'CLOSED'; } catch (e) { return e.message; }
+    }, negId);
+    log(/side that opened/.test(guardMsg) ? '✅' : '❌', 'close() guard: non-initiator cannot withdraw — ' + guardMsg.slice(0, 70));
+    guardMsg = await page.evaluate(async (id) => {
+        try { await Deals.close(id, 'decline'); return 'CLOSED'; } catch (e) { return e.message; }
+    }, negId);
+    log(/move is theirs/.test(guardMsg) ? '✅' : '❌', 'close() guard: cannot decline when it is not your turn — ' + guardMsg.slice(0, 70));
+
     let negAfterCounter = await page.evaluate((id) => DB.get('negotiations', id), negId);
+    log(negAfterCounter.status === 'open' ? '✅' : '❌', 'Negotiation survived the bypass attempts — still open');
     log(negAfterCounter.exclusive === false && negAfterCounter.clauses?.fastestLapBonus === 80
         && negAfterCounter.clauses?.winBonus === 400 && negAfterCounter.signOnBonus === 250 && negAfterCounter.clauses?.minWins?.count === 2
         ? '✅' : '❌',
@@ -247,6 +267,23 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
     await toast(/Welcome to the grid/);
     const ivyId = await page.evaluate(async () => (await DB.drivers({ force: true })).find(d => d.name === 'Ivy Drift').id);
     await signIn('greta@example.com');
+
+    // A pristine, un-answered offer CAN still be withdrawn by its sender —
+    // the button only vanishes once talks are live (a counter exists).
+    await page.evaluate(({ ivyId, teamId }) => Hub.offerForm(ivyId, teamId), { ivyId, teamId: ids.teamId });
+    await page.waitForSelector('#hub-offer-form');
+    await page.fill('#ho-salary', '150');
+    await page.click('#hub-offer-form button[type=submit]');
+    await toast(/Negotiation opened/);
+    const negThrowaway = await page.evaluate(async () => (await DB.list('negotiations', { force: true })).find(n => n.status === 'open' && n.personName === 'Ivy Drift').id);
+    await page.evaluate((id) => Deals.room(id), negThrowaway);
+    await page.waitForSelector('#deal-withdraw');
+    await page.click('#deal-withdraw');
+    await toast(/Offer withdrawn/);
+    const withdrawn = await page.evaluate((id) => DB.get('negotiations', id), negThrowaway);
+    log(withdrawn.status === 'withdrawn' ? '✅' : '❌', 'Initiator withdrew a pristine (never-countered) offer — that path still works');
+    await page.evaluate(() => Modal.close());
+
     await page.evaluate(({ ivyId, teamId }) => Hub.offerForm(ivyId, teamId), { ivyId, teamId: ids.teamId });
     await page.waitForSelector('#hub-offer-form');
     await page.fill('#ho-salary', '200');

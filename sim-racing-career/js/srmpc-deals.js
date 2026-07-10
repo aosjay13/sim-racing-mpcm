@@ -357,6 +357,8 @@ const Deals = {
     async sendNote(id, note) {
         const neg = await DB.get('negotiations', id);
         if (!neg || neg.status !== 'open') throw new Error('This negotiation is closed.');
+        if (neg.sideAUid !== Auth.uid() && neg.sideBUid !== Auth.uid() && !Auth.isAdmin())
+            throw new Error('Only the two parties can write in this negotiation.');
         if (!note?.trim()) return neg;
         await DB.update('negotiations', id, {
             history: [...neg.history, { byUid: Auth.uid(), byName: Auth.state.profile?.displayName || 'A player', action: 'message', note: note.trim(), at: Util.todayISO() }]
@@ -386,12 +388,33 @@ const Deals = {
         return DB.get('negotiations', id);
     },
 
-    async close(id, action) { // 'decline' (my turn) or 'withdraw' (any time)
+    // Closing a negotiation is turn-gated, like every other move:
+    //   decline  — answers the offer in front of you, so it needs to BE in
+    //              front of you (your turn).
+    //   withdraw — retracts your own un-answered offer. Once the other side
+    //              counters, these are live talks: you exit by declining on
+    //              your turn (or accepting), never by yanking the deal mid-
+    //              conversation right after you countered.
+    // The GM may always close (Global GM Override).
+    async close(id, action) {
         const neg = await DB.get('negotiations', id);
         if (!neg || neg.status !== 'open') return;
+        const uid = Auth.uid();
+        if (!Auth.isAdmin()) {
+            if (neg.sideAUid !== uid && neg.sideBUid !== uid)
+                throw new Error('Only the two parties can close this negotiation.');
+            if (action === 'decline' && neg.turnUid !== uid)
+                throw new Error("You can only decline an offer that's in front of you — right now the move is theirs.");
+            if (action === 'withdraw') {
+                if (neg.initiatorUid !== uid)
+                    throw new Error('Only the side that opened this negotiation can withdraw it.');
+                if (neg.history.some(h => h.action === 'counter'))
+                    throw new Error("They've countered — these are live talks now. Answer their number: accept, counter, or decline on your turn.");
+            }
+        }
         await DB.update('negotiations', id, {
             status: action === 'decline' ? 'declined' : 'withdrawn', turnUid: null,
-            history: [...neg.history, { byUid: Auth.uid(), byName: Auth.state.profile?.displayName || 'A player', action, at: Util.todayISO() }]
+            history: [...neg.history, { byUid: uid, byName: Auth.state.profile?.displayName || 'A player', action, at: Util.todayISO() }]
         });
     },
 
@@ -511,6 +534,10 @@ const Deals = {
         // menu the initial offer did, not just a bare salary field.
         const isFreshHire = (neg.kind === 'team-driver' || neg.kind === 'team-staff') && !neg.contractId;
         const teamStars = isFreshHire ? Prestige.teamStars(neg.teamId, await DB.loadWorld()) : null;
+        // Withdraw = retracting your own un-answered offer. It disappears the
+        // moment the other side counters (and never shows right after YOUR
+        // counter) — mirrors the guards in close().
+        const canWithdraw = !myTurn && neg.initiatorUid === uid && !neg.history.some(h => h.action === 'counter');
 
         // ---- Current state of the deal, front and center ----
         const lastMove = [...neg.history].reverse().find(h => h.action === 'offer' || h.action === 'counter');
@@ -588,7 +615,8 @@ const Deals = {
                             <button type="button" class="btn btn-danger" id="deal-decline">❌ Decline</button>`
                         : `
                             <button type="submit" class="btn btn-secondary">💬 Send Note</button>
-                            <button type="button" class="btn btn-ghost" id="deal-withdraw">🚫 Withdraw offer</button>`}
+                            ${canWithdraw ? '<button type="button" class="btn btn-ghost" id="deal-withdraw">🚫 Withdraw offer</button>'
+                                : '<span class="chip chip-dim" title="The ball is in their court — accept, counter, or decline happens on their turn. You can still talk.">⏳ Waiting on their answer</span>'}`}
                     </div>
                     <p id="deal-error" class="form-error"></p>
                 </form>`
