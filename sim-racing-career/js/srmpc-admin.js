@@ -28,7 +28,7 @@ const Admin = {
             ['overview', '🎛 Overview'], ['games', '🎮 Games'], ['series', '🏆 Series'],
             ['races', '🏁 Races'], ['teams', '🛠 Teams'], ['drivers', '🏎 Drivers'],
             ['world', '🌍 World'], ['players', '👥 Players'], ['challenges', '🎯 Challenges'],
-            ['settings', '⚙ Settings']
+            ['override', '🔧 GM Override'], ['settings', '⚙ Settings']
         ];
 
         el.innerHTML = `
@@ -338,6 +338,31 @@ const Admin = {
             await DB.update('seasons', seasonId, { ...snapshot, status: 'completed' });
             // Title prestige: champion team's staff & sponsors + the promoter bank XP.
             await Prestige.awardTitleXP(snapshot, seriesId);
+
+            // Contract clauses settle at the crowning: championship bonuses pay
+            // from the frozen standings, and termination stipulations (mandatory
+            // wins / average finish) end breached contracts for cause — the
+            // season's only non-race settlement moment.
+            const clauseContracts = (await DB.contracts({ force: true }).catch(() => []))
+                .filter(c => c.status === 'active' && c.type !== 'sponsorship' && c.clauses);
+            for (const c of clauseContracts) {
+                const prize = Clauses.championship(c, snapshot);
+                if (prize) {
+                    const paidUid = c.personUid || (c.personKind === 'driver' ? world.driversById[c.personId]?.ownerUid : null);
+                    await Economy.adjustWallet(c.ownerUid, -prize.amount, '🏆', `Clause paid: ${prize.label} — ${c.personName}`, seasonId);
+                    await Economy.adjustWallet(paidUid, prize.amount, '🏆', `${prize.label} bonus — season closed`, seasonId);
+                    News.post('🏆', `${c.personName} banks a ${Economy.fmt(prize.amount)} championship bonus (P${prize.rank}) from ${c.teamName}`);
+                }
+            }
+            for (const c of clauseContracts.filter(c => c.personKind === 'driver' && (c.clauses.minWins || c.clauses.minAvgFinish))) {
+                const { breaches } = Clauses.seasonCheck(c, world.races, world, { seasonId });
+                if (!breaches.length) continue;
+                const reason = breaches.map(b => b.detail).join('; ');
+                await DB.update('contracts', c.id, { terminationReason: reason });
+                await Hub._freeDriver(c.personId, c.personUid || world.driversById[c.personId]?.ownerUid || null, 'terminated', c.id);
+                News.post('⚖️', `${c.personName} released for cause by ${c.teamName} — ${reason}`);
+            }
+
             const champ = snapshot.championDriverId ? (world.driversById[snapshot.championDriverId]?.name || 'Champion') : null;
             Util.notify(champ ? `Season closed — 🏆 ${champ} is your champion!` : 'Season closed.');
             this.seasonsModal(seriesId);
@@ -831,19 +856,27 @@ const Admin = {
                         </select></label>
                 </div>
                 <table class="table table-tight results-table">
-                    <thead><tr><th>Pos</th><th>Driver</th><th>DNF</th></tr></thead>
+                    <thead><tr><th>Pos</th><th>Driver</th><th>DNF</th>
+                        <th title="Incident points — 0 pays clean-race clause bonuses">Inc</th>
+                        <th title="Laps led — most laps led pays clause bonuses">Led</th>
+                        <th title="Laps completed — full distance pays clause bonuses">Laps</th></tr></thead>
                     <tbody>
                         ${drivers.map(d => {
                             const ex = existing[d.id];
+                            const tv = (v) => (v === undefined || v === null) ? '' : v;
                             return `<tr data-driver="${Util.attr(d.id)}">
                                 <td><input class="input input-pos" type="number" min="1" max="99" value="${ex && !ex.dnf ? ex.position || '' : ''}" placeholder="—"></td>
                                 <td>${Util.esc(d.name)} ${signedIds.has(d.id) ? '<span class="badge badge-blue">signed up</span>' : ''}</td>
                                 <td><input type="checkbox" class="chk-dnf" ${ex?.dnf ? 'checked' : ''}></td>
+                                <td><input class="input input-inc" type="number" min="0" max="99" style="width:4rem" value="${tv(ex?.incidents)}" placeholder="—"></td>
+                                <td><input class="input input-led" type="number" min="0" max="999" style="width:4rem" value="${tv(ex?.lapsLed)}" placeholder="—"></td>
+                                <td><input class="input input-laps" type="number" min="0" max="999" style="width:4rem" value="${tv(ex?.lapsCompleted)}" placeholder="—"></td>
                             </tr>`;
                         }).join('')}
                     </tbody>
                 </table>
-                <p class="muted small">Leave position blank for drivers who didn’t race. Check DNF for drivers who started but didn’t finish (a DNF needs no position).</p>
+                <p class="muted small">Leave position blank for drivers who didn’t race. Check DNF for drivers who started but didn’t finish (a DNF needs no position).
+                    Inc / Led / Laps are optional telemetry for contract performance clauses — blank fields simply skip those clauses.</p>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
                     ${race.status === 'completed' ? `<button type="button" class="btn btn-secondary" id="res-reopen">Reopen race (clear results)</button>` : ''}
@@ -880,12 +913,17 @@ const Admin = {
                         if (seenPositions.has(position)) throw new Error(`Position ${position} is used twice.`);
                         seenPositions.add(position);
                     }
+                    // Optional telemetry — only stored when actually entered, so
+                    // clause evaluation can tell "0 incidents" from "not tracked".
+                    const telemetry = {};
+                    const tRead = (cls, key) => { const v = row.querySelector(cls).value; if (v !== '') telemetry[key] = Number(v); };
+                    tRead('.input-inc', 'incidents'); tRead('.input-led', 'lapsLed'); tRead('.input-laps', 'lapsCompleted');
                     if (!position && !dnf) {
                         // Pole/FL only, didn't finish scoring — count as entrant with no classification.
-                        results.push({ driverId, position: null, dnf: false, pole: driverId === poleId, fastestLap: driverId === flId });
+                        results.push({ driverId, position: null, dnf: false, pole: driverId === poleId, fastestLap: driverId === flId, ...telemetry });
                         return;
                     }
-                    results.push({ driverId, position, dnf, pole: driverId === poleId, fastestLap: driverId === flId });
+                    results.push({ driverId, position, dnf, pole: driverId === poleId, fastestLap: driverId === flId, ...telemetry });
                 });
 
                 if (!results.length) throw new Error('Enter at least one finishing position or DNF.');
@@ -1950,6 +1988,264 @@ const Admin = {
     },
 
     /* ---------------- Settings ---------------- */
+    /* ---------------- GM Override — total control ---------------- */
+    // The Game Master can edit ANYTHING: wallets, names, contract terms,
+    // statuses, or any raw document in any collection. These tools bypass
+    // every league rule (caps, buyouts, negotiations) on purpose — but money
+    // changes still write ledger rows so the books always balance.
+    OVERRIDE_COLLECTIONS: ['users', 'drivers', 'teams', 'staff', 'roleProfiles', 'contracts',
+        'negotiations', 'recruitment', 'races', 'series', 'seasons', 'games', 'tracks',
+        'sponsors', 'challenges', 'challengeClaims', 'raceSignups', 'news', 'ledger', 'config'],
+
+    _ovLabel(doc) {
+        return doc.name || doc.title || doc.personName || doc.displayName || doc.teamName
+            || (doc.message ? doc.message.slice(0, 40) : '') || doc.label || doc.id;
+    },
+
+    async tab_override(el) {
+        const [users, teams, drivers, contracts] = await Promise.all([
+            DB.users({ force: true }).catch(() => []),
+            DB.teams({ force: true }),
+            DB.drivers({ force: true }),
+            DB.contracts({ force: true }).catch(() => [])
+        ]);
+        const active = contracts.filter(c => c.status === 'active' && c.type !== 'sponsorship');
+        const opt = (v, label) => `<option value="${Util.attr(v)}">${Util.esc(label)}</option>`;
+
+        el.innerHTML = `
+        <div class="warn-banner">🔧 <strong>Total control.</strong> Everything here bypasses league rules — pay caps, buyouts, negotiations, ownership. Wallet changes still write ledger rows. There is no undo.</div>
+        <div class="grid-2">
+            <section class="panel">
+                <div class="panel-head"><h2>💵 Wallet Override</h2></div>
+                <div class="form-grid">
+                    <label class="field"><span>Player</span><select id="ov-wallet-user" class="input">
+                        ${users.map(u => opt(u.id, `${u.displayName || u.email || u.id} — ${Economy.fmt(Number(u.balance) || 0)}`)).join('')}</select></label>
+                    <div class="form-row">
+                        <label class="field"><span>Operation</span><select id="ov-wallet-op" class="input">
+                            <option value="adjust">± Adjust by amount</option><option value="set">= Set exact balance</option></select></label>
+                        <label class="field"><span>Amount ($)</span><input id="ov-wallet-amt" class="input" type="number" step="10" value="0"></label>
+                    </div>
+                    <label class="field"><span>Reason (goes on their ledger)</span><input id="ov-wallet-why" class="input" maxlength="80" placeholder="GM adjustment"></label>
+                    <button class="btn btn-primary" id="ov-wallet-go">Apply to wallet 💵</button>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-head"><h2>✏️ Renames</h2><span class="chip chip-dim">cascades everywhere the name is stored</span></div>
+                <div class="form-grid">
+                    <div class="form-row" style="align-items:end">
+                        <label class="field"><span>Team</span><select id="ov-team" class="input">${teams.map(t => opt(t.id, t.name)).join('')}</select></label>
+                        <label class="field"><span>New name</span><input id="ov-team-name" class="input" maxlength="40"></label>
+                        <button class="btn btn-secondary" id="ov-team-go">Rename</button>
+                    </div>
+                    <div class="form-row" style="align-items:end">
+                        <label class="field"><span>Driver</span><select id="ov-driver" class="input">${drivers.map(d => opt(d.id, d.name)).join('')}</select></label>
+                        <label class="field"><span>New name</span><input id="ov-driver-name" class="input" maxlength="40"></label>
+                        <button class="btn btn-secondary" id="ov-driver-go">Rename</button>
+                    </div>
+                    <div class="form-row" style="align-items:end">
+                        <label class="field"><span>Player account</span><select id="ov-user" class="input">${users.map(u => opt(u.id, u.displayName || u.email || u.id)).join('')}</select></label>
+                        <label class="field"><span>New display name</span><input id="ov-user-name" class="input" maxlength="40"></label>
+                        <button class="btn btn-secondary" id="ov-user-go">Rename</button>
+                    </div>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-head"><h2>📜 Contract Override</h2><span class="chip chip-dim">terms, status, buyout waivers</span></div>
+                ${active.length ? `<div class="form-grid">
+                    <label class="field"><span>Active contract</span><select id="ov-contract" class="input">
+                        ${active.map(c => opt(c.id, `${c.personName} ⇄ ${c.teamName} · ${Economy.fmt(c.salary)}/race`)).join('')}</select></label>
+                    <div class="form-row">
+                        <label class="field"><span>Salary /race</span><input id="ov-c-salary" class="input" type="number" min="0" step="10"></label>
+                        <label class="field"><span>Buyout</span><input id="ov-c-buyout" class="input" type="number" min="0" step="10"></label>
+                    </div>
+                    <div class="form-row">
+                        <label class="field"><span>Agreement</span><select id="ov-c-agreement" class="input">
+                            <option value="contracted">🔒 Contracted</option><option value="open">🤝 Open</option></select></label>
+                        <label class="field"><span>Force status</span><select id="ov-c-status" class="input">
+                            ${['active', 'ended', 'released', 'bought-out', 'terminated'].map(s => `<option value="${s}">${s}</option>`).join('')}</select></label>
+                    </div>
+                    <div class="btn-row">
+                        <button class="btn btn-primary" id="ov-c-save">Save contract terms ✓</button>
+                        <button class="btn btn-danger" id="ov-c-waive" title="End the contract immediately — no buyout changes hands, team links update">💸 Waive buyout & release now</button>
+                    </div>
+                    <p class="muted small">Forcing a non-active status on a driver contract also fixes their team links (primary team falls back to their next active deal).</p>
+                </div>` : '<p class="muted">No active contracts to override.</p>'}
+            </section>
+
+            <section class="panel">
+                <div class="panel-head"><h2>🗄 Raw Document Editor</h2><span class="chip chip-dim">any collection · any field</span></div>
+                <div class="form-grid">
+                    <div class="form-row" style="align-items:end">
+                        <label class="field"><span>Collection</span><select id="ov-coll" class="input">
+                            ${this.OVERRIDE_COLLECTIONS.map(c => opt(c, c)).join('')}</select></label>
+                        <button class="btn btn-secondary" id="ov-coll-load">Load documents</button>
+                    </div>
+                    <label class="field"><span>Document</span><select id="ov-doc" class="input"><option value="">— load a collection first —</option></select></label>
+                    <label class="field"><span>Document JSON (id and timestamps managed for you)</span>
+                        <textarea id="ov-json" class="input" rows="12" spellcheck="false" style="font-family:var(--font-mono,monospace);font-size:.78rem"></textarea></label>
+                    <div class="btn-row">
+                        <button class="btn btn-primary" id="ov-doc-save">Save document ✓</button>
+                        <button class="btn btn-danger" id="ov-doc-del">🗑 Delete document</button>
+                    </div>
+                    <p id="ov-doc-err" class="form-error"></p>
+                </div>
+            </section>
+        </div>`;
+
+        /* ---- Wallet ---- */
+        Util.$('#ov-wallet-go').addEventListener('click', async () => {
+            if (!this.guard()) return;
+            try {
+                const uid = Util.$('#ov-wallet-user').value;
+                const amt = Math.round(Number(Util.$('#ov-wallet-amt').value) || 0);
+                const user = users.find(u => u.id === uid);
+                const delta = Util.$('#ov-wallet-op').value === 'set' ? amt - (Number(user?.balance) || 0) : amt;
+                if (!delta) { Util.notify('That changes nothing.', 'info'); return; }
+                await Economy.adjustWallet(uid, delta, '🔧', `GM override: ${Util.$('#ov-wallet-why').value.trim() || 'balance adjustment'}`);
+                Util.notify(`Wallet updated (${delta > 0 ? '+' : ''}${Economy.fmt(delta)}) — ledger row written. 🔧`);
+                this.refresh();
+            } catch (e) { Util.notify(e.message, 'error'); }
+        });
+
+        /* ---- Renames (cascading) ---- */
+        Util.$('#ov-team-go').addEventListener('click', () => this.ovRenameTeam(Util.$('#ov-team').value, Util.$('#ov-team-name').value.trim()));
+        Util.$('#ov-driver-go').addEventListener('click', () => this.ovRenameDriver(Util.$('#ov-driver').value, Util.$('#ov-driver-name').value.trim()));
+        Util.$('#ov-user-go').addEventListener('click', async () => {
+            if (!this.guard()) return;
+            const name = Util.$('#ov-user-name').value.trim();
+            if (!name) { Util.notify('Enter a new display name.', 'info'); return; }
+            await DB.update('users', Util.$('#ov-user').value, { displayName: name });
+            Util.notify('Player renamed. ✏️'); this.refresh();
+        });
+
+        /* ---- Contract override ---- */
+        const pickContract = () => active.find(c => c.id === Util.$('#ov-contract')?.value);
+        const fillContract = () => {
+            const c = pickContract(); if (!c) return;
+            Util.$('#ov-c-salary').value = c.salary || 0;
+            Util.$('#ov-c-buyout').value = c.buyout || 0;
+            Util.$('#ov-c-agreement').value = c.agreement === 'open' ? 'open' : 'contracted';
+            Util.$('#ov-c-status').value = c.status;
+        };
+        Util.$('#ov-contract')?.addEventListener('change', fillContract);
+        fillContract();
+        Util.$('#ov-c-save')?.addEventListener('click', async () => {
+            if (!this.guard()) return;
+            try {
+                const c = pickContract(); if (!c) return;
+                const status = Util.$('#ov-c-status').value;
+                const patch = {
+                    salary: Math.round(Number(Util.$('#ov-c-salary').value) || 0),
+                    buyout: Math.round(Number(Util.$('#ov-c-buyout').value) || 0),
+                    agreement: Util.$('#ov-c-agreement').value
+                };
+                if (status !== c.status && status !== 'active' && c.personKind === 'driver') {
+                    await DB.update('contracts', c.id, patch);
+                    await Hub._freeDriver(c.personId, c.personUid || null, status, c.id); // fixes team links too
+                } else {
+                    await DB.update('contracts', c.id, { ...patch, status });
+                }
+                News.post('🔧', `GM override: ${c.personName} ⇄ ${c.teamName} contract updated`);
+                Util.notify('Contract updated. 🔧'); this.refresh();
+            } catch (e) { Util.notify(e.message, 'error'); }
+        });
+        Util.$('#ov-c-waive')?.addEventListener('click', async () => {
+            if (!this.guard()) return;
+            const c = pickContract(); if (!c) return;
+            if (!confirm(`End ${c.personName}'s contract with ${c.teamName} right now, buyout waived?`)) return;
+            try {
+                if (c.personKind === 'driver') await Hub._freeDriver(c.personId, c.personUid || null, 'released', c.id);
+                else {
+                    await DB.update('contracts', c.id, { status: 'released', endedAt: Util.todayISO() });
+                    const coll = c.roleProfileId ? 'roleProfiles' : 'staff';
+                    await DB.update(coll, c.personId, { teamId: null }).catch(() => {});
+                }
+                News.post('🔧', `GM override: ${c.personName} released from ${c.teamName}, buyout waived`);
+                Util.notify(`${c.personName} released — buyout waived. 🔧`); this.refresh();
+            } catch (e) { Util.notify(e.message, 'error'); }
+        });
+
+        /* ---- Raw document editor ---- */
+        let ovDocs = [];
+        const err = (m) => { Util.$('#ov-doc-err').textContent = m || ''; };
+        Util.$('#ov-coll-load').addEventListener('click', async () => {
+            err('');
+            try {
+                ovDocs = await DB.list(Util.$('#ov-coll').value, { force: true });
+                Util.$('#ov-doc').innerHTML = ovDocs.length
+                    ? ovDocs.map(d => opt(d.id, `${this._ovLabel(d)} (${d.id.slice(0, 6)}…)`)).join('')
+                    : '<option value="">— empty collection —</option>';
+                Util.$('#ov-doc').dispatchEvent(new Event('change'));
+            } catch (e) { err(e.message); }
+        });
+        Util.$('#ov-doc').addEventListener('change', () => {
+            const d = ovDocs.find(x => x.id === Util.$('#ov-doc').value);
+            if (!d) { Util.$('#ov-json').value = ''; return; }
+            const { id, createdAt, updatedAt, ...fields } = d;
+            Util.$('#ov-json').value = JSON.stringify(fields, null, 2);
+        });
+        Util.$('#ov-doc-save').addEventListener('click', async () => {
+            if (!this.guard()) return;
+            err('');
+            try {
+                const id = Util.$('#ov-doc').value;
+                if (!id) throw new Error('Pick a document first.');
+                const patch = JSON.parse(Util.$('#ov-json').value);
+                await DB.update(Util.$('#ov-coll').value, id, patch);
+                Util.notify('Document saved. 🗄');
+            } catch (e) { err(e.message); }
+        });
+        Util.$('#ov-doc-del').addEventListener('click', async () => {
+            if (!this.guard()) return;
+            const id = Util.$('#ov-doc').value;
+            if (!id || !confirm(`Delete this document from "${Util.$('#ov-coll').value}" forever?`)) return;
+            try {
+                await DB.remove(Util.$('#ov-coll').value, id);
+                Util.notify('Document deleted. 🗑');
+                Util.$('#ov-coll-load').click();
+            } catch (e) { err(e.message); }
+        });
+    },
+
+    // Rename a team everywhere its name is denormalized.
+    async ovRenameTeam(teamId, name) {
+        if (!this.guard() || !name) { if (!name) Util.notify('Enter a new team name.', 'info'); return; }
+        try {
+            await DB.update('teams', teamId, { name });
+            const [contracts, negs, rec] = await Promise.all([
+                DB.contracts({ force: true }).catch(() => []),
+                DB.list('negotiations', { force: true }).catch(() => []),
+                DB.recruitment({ force: true }).catch(() => [])
+            ]);
+            for (const c of contracts.filter(c => c.teamId === teamId)) await DB.update('contracts', c.id, { teamName: name });
+            for (const n of negs.filter(n => n.teamId === teamId)) await DB.update('negotiations', n.id, { teamName: name });
+            for (const r of rec.filter(r => r.teamId === teamId)) await DB.update('recruitment', r.id, { teamName: name });
+            News.post('🔧', `GM override: team renamed to ${name}`);
+            Util.notify(`Team renamed to ${name} — cascaded to contracts, deals, and recruitment. ✏️`);
+            this.refresh();
+        } catch (e) { Util.notify(e.message, 'error'); }
+    },
+
+    // Rename a driver everywhere their name is denormalized.
+    async ovRenameDriver(driverId, name) {
+        if (!this.guard() || !name) { if (!name) Util.notify('Enter a new driver name.', 'info'); return; }
+        try {
+            await DB.update('drivers', driverId, { name });
+            const [contracts, negs, rec] = await Promise.all([
+                DB.contracts({ force: true }).catch(() => []),
+                DB.list('negotiations', { force: true }).catch(() => []),
+                DB.recruitment({ force: true }).catch(() => [])
+            ]);
+            for (const c of contracts.filter(c => c.personId === driverId)) await DB.update('contracts', c.id, { personName: name });
+            for (const n of negs.filter(n => n.personId === driverId)) await DB.update('negotiations', n.id, { personName: name });
+            for (const r of rec.filter(r => r.driverId === driverId)) await DB.update('recruitment', r.id, { driverName: name });
+            Util.notify(`Driver renamed to ${name} — cascaded everywhere. ✏️`);
+            this.refresh();
+        } catch (e) { Util.notify(e.message, 'error'); }
+    },
+
     async tab_settings(el) {
         el.innerHTML = `
         <div class="grid-2">

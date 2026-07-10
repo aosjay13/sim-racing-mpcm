@@ -745,14 +745,25 @@ const Sim = {
         if (!finishers.length) { runners[0].dnf = false; finishers.push(runners[0]); }
         const flId = finishers[Math.floor(Math.random() * Math.min(6, finishers.length))].d.id;
 
+        // Telemetry for performance clauses: incidents, laps led, laps done.
+        // The winner and pole-sitter split most of the leading; front-runners
+        // stay cleaner than the midfield scrap.
+        const laps = Number(race.laps) || 20;
+        const ledPool = [finishers[0], finishers[1], quali[0] && finishers.find(f => f.d.id === quali[0].d.id)]
+            .filter(Boolean);
         const results = [
             ...finishers.map((r, i) => ({
                 driverId: r.d.id, position: i + 1, dnf: false,
-                pole: r.d.id === poleId, fastestLap: r.d.id === flId
+                pole: r.d.id === poleId, fastestLap: r.d.id === flId,
+                incidents: Math.random() < (i < 3 ? 0.55 : 0.35) ? 0 : 1 + Math.floor(Math.random() * 3),
+                lapsLed: ledPool.some(p => p.d.id === r.d.id) ? Math.max(1, Math.floor(laps * (i === 0 ? 0.5 : 0.2) * Math.random() + (i === 0 ? laps * 0.2 : 0))) : 0,
+                lapsCompleted: laps
             })),
             ...runners.filter(r => r.dnf).map(r => ({
                 driverId: r.d.id, position: null, dnf: true,
-                pole: r.d.id === poleId, fastestLap: false
+                pole: r.d.id === poleId, fastestLap: false,
+                incidents: 1 + Math.floor(Math.random() * 4),
+                lapsLed: 0, lapsCompleted: Math.floor(laps * Math.random() * 0.9)
             }))
         ];
 
@@ -849,6 +860,28 @@ const Sim = {
                 // crew (crew chief / mechanic / agent) via personUid on the contract.
                 const paidUid = c.personUid || (isDriver ? world.driversById[c.personId]?.ownerUid : null);
                 add(paidUid, c.salary, '💼', `Salary from ${c.teamName || 'team'} — ${raceName}`);
+            }
+
+            /* -- 3.5 Contract performance clauses: evaluated against this race's
+                  result, paid in the same settlement, one ledger row per clause.
+                  Drivers ride their own result; staff ride the team's best car.
+                  Missing telemetry ⇒ the clause simply doesn't fire. -- */
+            for (const c of hires.filter(c => c.clauses && c.status === 'active')) {
+                const isDriver = c.personKind === 'driver';
+                let payouts = [];
+                if (isDriver) {
+                    const res = results.find(r => r.driverId === c.personId);
+                    if (res) payouts = Clauses.forRace(c, race, res);
+                } else if (racedTeams.has(c.teamId)) {
+                    payouts = Clauses.forRaceStaff(c, race, world);
+                }
+                if (!payouts.length) continue;
+                const team = world.teamsById[c.teamId];
+                const paidUid = c.personUid || (isDriver ? world.driversById[c.personId]?.ownerUid : null);
+                for (const p of payouts) {
+                    add(team?.ownerUid, -p.amount, '📜', `Clause paid: ${p.label} — ${c.personName} — ${raceName}`);
+                    add(paidUid, p.amount, '📜', `${p.label} bonus — ${raceName}`);
+                }
             }
 
             /* -- 4. Sponsorship deals (negotiated): sponsor pays the target per race run -- */

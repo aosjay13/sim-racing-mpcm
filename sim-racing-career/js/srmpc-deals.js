@@ -73,10 +73,29 @@ const Deals = {
         personId = null, personKind = null, personName = '', personUid = null, roleProfileId = null,
         sponsorProfileId = null, sponsorName = '', sponsorUid = null,
         targetDriverId = null, targetDriverName = '', targetDriverUid = null,
-        contractId = null, salary, buyout = 0, exclusive = false, note = '' }) {
+        contractId = null, salary, buyout = 0, exclusive = false, note = '',
+        agreement = 'contracted', signOnBonus = null, clauses = null }) {
 
         salary = Math.round(Number(salary) || 0);
         if (salary <= 0) throw new Error('Offer a salary above zero.');
+
+        // Advanced terms only exist on FRESH hires (not renegotiations,
+        // sponsorships, or buyout talks) — validate them against the offering
+        // team's prestige and the anti-laundering caps.
+        agreement = agreement === 'open' ? 'open' : 'contracted';
+        const isFreshHire = (kind === 'team-driver' || kind === 'team-staff') && !contractId;
+        if (isFreshHire) {
+            if (signOnBonus !== null) {
+                signOnBonus = Math.round(Number(signOnBonus) || 0);
+                if (signOnBonus < 0) throw new Error('Sign-on bonus cannot be negative.');
+                if (signOnBonus > salary * Clauses.MAX_SINGLE_MULT)
+                    throw new Error(`Sign-on bonus is capped at 2× salary (${Economy.fmt(salary * Clauses.MAX_SINGLE_MULT)}) — pay is per-race in this league.`);
+            }
+            const world = await DB.loadWorld();
+            clauses = Clauses.validate(clauses, {
+                teamStars: Prestige.teamStars(teamId, world), salary, personKind, agreement
+            });
+        } else { signOnBonus = null; clauses = null; }
 
         const uid = Auth.uid();
         const myName = Auth.state.profile?.displayName || 'A player';
@@ -90,19 +109,23 @@ const Deals = {
             sponsorProfileId, sponsorName, sponsorUid,
             targetDriverId, targetDriverName, targetDriverUid,
             salary, buyout: Math.round(Number(buyout) || 0), exclusive: !!exclusive,
+            agreement, signOnBonus, clauses,
             sideAUid, sideBUid,
             initiatorUid: uid,
             turnUid: (uid === sideAUid ? sideBUid : sideAUid) || null,
             history: [{ byUid: uid, byName: myName, action: 'offer', salary, note: note || '', at: Util.todayISO() }]
         };
 
-        // Cap check up front (against the live cap).
-        const capInfo = await this.capForNeg(neg);
-        if (salary > capInfo.cap) {
-            throw new Error(`League rule: ${capInfo.who} is ${Prestige.stars(capInfo.stars)} ${Prestige.levelName(capInfo.stars)} — pay is capped at ${Economy.fmt(capInfo.cap)}/race.`);
+        // Cap check up front (against the live cap). Buyout talks are exempt —
+        // the figure on the table is an exit price, not pay.
+        if (kind !== 'buyout') {
+            const capInfo = await this.capForNeg(neg);
+            if (salary > capInfo.cap) {
+                throw new Error(`League rule: ${capInfo.who} is ${Prestige.stars(capInfo.stars)} ${Prestige.levelName(capInfo.stars)} — pay is capped at ${Economy.fmt(capInfo.cap)}/race.`);
+            }
+            neg.capStars = capInfo.stars;
+            neg.capAmount = capInfo.cap;
         }
-        neg.capStars = capInfo.stars;
-        neg.capAmount = capInfo.cap;
 
         // No duplicate open negotiations for the same subject.
         const existing = (await DB.list('negotiations', { force: true }).catch(() => []))
@@ -257,6 +280,30 @@ const Deals = {
         return DB.get('negotiations', neg.id);
     },
 
+    /* ---------------- Buyout negotiation ---------------- */
+    // The middle path between paying the full buyout and begging for a free
+    // release: the leaving driver proposes an exit figure, the owner counters
+    // or accepts in a normal deal room. Accepting moves the agreed money and
+    // ends the contract as 'bought-out'. You negotiate DOWN from the clause.
+    async startBuyout(contractId, figure, note = '') {
+        const contract = await DB.get('contracts', contractId);
+        if (!contract || contract.status !== 'active') throw new Error('That contract is no longer active.');
+        if (contract.personKind !== 'driver') throw new Error('Buyout talks are for driver contracts — crew ask the owner for a release.');
+        if (contract.personUid !== Auth.uid()) throw new Error('Only the person on this contract can open buyout talks.');
+        const payee = contract.ownerUid;
+        if (!payee) throw new Error('This contract has nobody to pay — you can leave for free.');
+        figure = Math.round(Number(figure) || 0);
+        if (figure < 10) throw new Error('Propose a figure of at least $10 — or request a free release instead.');
+        if (figure > contract.buyout) throw new Error(`The contractual buyout is ${Economy.fmt(contract.buyout)} — you negotiate DOWN from there.`);
+        return this.start({
+            kind: 'buyout', contractId,
+            teamId: contract.teamId, teamName: contract.teamName, ownerUid: payee,
+            personId: contract.personId, personKind: 'driver', personName: contract.personName,
+            personUid: contract.personUid, buyout: contract.buyout,
+            salary: figure, note
+        });
+    },
+
     /* ---------------- Player actions ---------------- */
     async counter(id, salary, note = '') {
         const neg = await DB.get('negotiations', id);
@@ -264,8 +311,12 @@ const Deals = {
         if (neg.turnUid !== Auth.uid()) throw new Error("It's not your turn — wait for their answer (you can still send a note).");
         salary = Math.round(Number(salary) || 0);
         if (salary <= 0) throw new Error('Counter with a salary above zero.');
-        const capInfo = await this.capForNeg(neg);
-        if (salary > capInfo.cap) throw new Error(`League rule: pay is capped at ${Economy.fmt(capInfo.cap)}/race (${capInfo.who} is ${Prestige.stars(capInfo.stars)} ${Prestige.levelName(capInfo.stars)}).`);
+        if (neg.kind !== 'buyout') {
+            const capInfo = await this.capForNeg(neg);
+            if (salary > capInfo.cap) throw new Error(`League rule: pay is capped at ${Economy.fmt(capInfo.cap)}/race (${capInfo.who} is ${Prestige.stars(capInfo.stars)} ${Prestige.levelName(capInfo.stars)}).`);
+        } else if (salary > (neg.buyout || Infinity)) {
+            throw new Error(`The contractual buyout is ${Economy.fmt(neg.buyout)} — you negotiate DOWN from there, not up.`);
+        }
 
         const other = neg.turnUid === neg.sideAUid ? neg.sideBUid : neg.sideAUid;
         const updated = {
@@ -295,10 +346,12 @@ const Deals = {
         if (!neg || neg.status !== 'open') throw new Error('This negotiation is closed.');
         if (neg.turnUid !== Auth.uid()) throw new Error('The current offer is yours — they have to answer it.');
         if (seenSalary !== null && Math.round(Number(seenSalary)) !== neg.salary) {
-            throw new Error(`This deal has moved to ${Economy.fmt(neg.salary)}/race since you last looked — review the updated offer before signing.`);
+            throw new Error(`This deal has moved to ${Economy.fmt(neg.salary)}${neg.kind === 'buyout' ? '' : '/race'} since you last looked — review the updated offer before signing.`);
         }
-        const capInfo = await this.capForNeg(neg);
-        if (neg.salary > capInfo.cap) throw new Error(`This deal now exceeds the prestige pay cap (${Economy.fmt(capInfo.cap)}/race) — counter with a legal number.`);
+        if (neg.kind !== 'buyout') {
+            const capInfo = await this.capForNeg(neg);
+            if (neg.salary > capInfo.cap) throw new Error(`This deal now exceeds the prestige pay cap (${Economy.fmt(capInfo.cap)}/race) — counter with a legal number.`);
+        }
         await DB.update('negotiations', id, {
             status: 'accepted', turnUid: null,
             history: [...neg.history, { byUid: Auth.uid(), byName: Auth.state.profile?.displayName || 'A player', action: 'accept', salary: neg.salary, at: Util.todayISO() }]
@@ -319,6 +372,18 @@ const Deals = {
     /* ---------------- Executing an accepted deal ---------------- */
     async execute(neg) {
         const year = new Date().getFullYear();
+
+        // Agreed buyout: move the negotiated figure, end the contract.
+        if (neg.kind === 'buyout') {
+            const contract = await DB.get('contracts', neg.contractId);
+            if (!contract || contract.status !== 'active') throw new Error('That contract is no longer active.');
+            await Economy.adjustWallet(neg.personUid, -neg.salary, '💸', `Negotiated buyout paid: ${neg.teamName}`);
+            await Economy.adjustWallet(neg.ownerUid, neg.salary, '💸', `Negotiated buyout received: ${neg.personName}`);
+            await Hub._freeDriver(contract.personId, neg.personUid, 'bought-out', contract.id);
+            News.post('💸', `${neg.personName} negotiated a ${Economy.fmt(neg.salary)} buyout to leave ${neg.teamName} (clause was ${Economy.fmt(contract.buyout)})`);
+            Util.notify(`Buyout agreed at ${Economy.fmt(neg.salary)} — contract with ${neg.teamName} ended. 💸`);
+            return;
+        }
 
         if (neg.kind === 'sponsorship') {
             await DB.create('contracts', {
@@ -370,25 +435,33 @@ const Deals = {
             if (person.ownerUid === Auth.uid()) await Auth.updateProfile({ teamId: neg.teamId });
             else await DB.update('users', person.ownerUid, { teamId: neg.teamId }).catch(() => {});
         }
+        const agreement = neg.agreement === 'open' ? 'open' : 'contracted';
+        // The sign-on bonus is the ONLY upfront payment the economy allows
+        // (everything else settles per race). Default: one race of salary.
+        const signOnBonus = Number.isFinite(neg.signOnBonus) ? Math.round(neg.signOnBonus) : neg.salary;
         await DB.create('contracts', {
             teamId: neg.teamId, teamName: neg.teamName, ownerUid: neg.ownerUid || null,
             personId: neg.personId, personKind: neg.personKind, personName: neg.personName,
             personUid: neg.personUid || null, // player talent — payroll credits their wallet
             roleProfileId: neg.roleProfileId || null,
             role: neg.personKind === 'driver' ? 'driver' : (person.role || 'staff'),
-            salary: neg.salary, buyout: Hub.buyoutFor(neg.salary), exclusive: !!neg.exclusive,
+            salary: neg.salary, exclusive: !!neg.exclusive,
+            agreement, buyout: agreement === 'open' ? 0 : Hub.buyoutFor(neg.salary),
+            signOnBonus, clauses: neg.clauses || null,
             seasonYear: year, status: 'active', signedAt: Util.todayISO()
         });
-        // Signing bonus (one race of salary): player owner pays it, player talent pockets it.
-        if (neg.ownerUid) await Economy.adjustWallet(neg.ownerUid, -neg.salary, '🤝', `Signing bonus paid: ${neg.personName}`);
-        if (neg.personUid) await Economy.adjustWallet(neg.personUid, neg.salary, '🤝', `Signing bonus from ${neg.teamName}`);
-        News.post('🤝', `${neg.personName} signed with ${neg.teamName} (${Economy.fmt(neg.salary)}/race${neg.exclusive ? ', exclusive' : ', non-exclusive'})`);
+        if (signOnBonus) {
+            if (neg.ownerUid) await Economy.adjustWallet(neg.ownerUid, -signOnBonus, '🤝', `Sign-on bonus paid: ${neg.personName}`);
+            if (neg.personUid) await Economy.adjustWallet(neg.personUid, signOnBonus, '🤝', `Sign-on bonus from ${neg.teamName}`);
+        }
+        News.post('🤝', `${neg.personName} signed with ${neg.teamName} (${Economy.fmt(neg.salary)}/race${agreement === 'open' ? ', open agreement' : (neg.exclusive ? ', exclusive' : ', non-exclusive')})`);
         Util.notify(`Contract signed: ${neg.personName} ⇄ ${neg.teamName} at ${Economy.fmt(neg.salary)}/race. 🤝`);
     },
 
     /* ---------------- The negotiation room (modal) ---------------- */
     _label(n) {
         if (n.kind === 'sponsorship') return `${n.sponsorName} → ${n.teamName || n.targetDriverName}`;
+        if (n.kind === 'buyout') return `${n.personName} ⇄ ${n.teamName} (buyout)`;
         return `${n.personName} ⇄ ${n.teamName}${n.contractId ? ' (new terms)' : ''}`;
     },
 
@@ -404,7 +477,9 @@ const Deals = {
         const uid = Auth.uid();
         const myTurn = neg.status === 'open' && neg.turnUid === uid;
         const involved = neg.sideAUid === uid || neg.sideBUid === uid;
-        const perRace = neg.kind === 'sponsorship' ? 'payout' : 'salary';
+        const isBuyout = neg.kind === 'buyout';
+        const perRace = isBuyout ? 'buyout figure' : (neg.kind === 'sponsorship' ? 'payout' : 'salary');
+        const unit = isBuyout ? ' one-time' : '/race';
 
         // ---- Current state of the deal, front and center ----
         const lastMove = [...neg.history].reverse().find(h => h.action === 'offer' || h.action === 'counter');
@@ -413,19 +488,25 @@ const Deals = {
         const statusBadge = neg.status === 'open'
             ? (myTurn ? '<span class="badge badge-amber">Your move</span>' : '<span class="badge badge-blue">Waiting on them</span>')
             : `<span class="badge ${neg.status === 'accepted' ? 'badge-green' : 'badge-dim'}">${Util.esc(neg.status)}</span>`;
+        const clauseSummary = Clauses.summary(neg.clauses);
         const offerHero = `
             <div class="panel deal-offer-hero" style="padding:.7rem .9rem;margin-bottom:.7rem">
                 <div class="chip-row" style="align-items:baseline">
-                    <span class="market-price" style="font-size:1.25rem">${Economy.fmt(neg.salary)}/race</span>
+                    <span class="market-price" style="font-size:1.25rem">${Economy.fmt(neg.salary)}${unit}</span>
                     <span class="muted small">on the table — ${neg.status === 'open'
                         ? `latest ${lastMove?.action === 'counter' ? 'counter' : 'offer'} by <strong>${Util.esc(proposedBy)}</strong>${lastMove?.at ? ` · ${Util.esc(Util.fmtDateShort(lastMove.at))}` : ''}`
                         : `${Util.esc(neg.status)}${closer ? ` by ${Util.esc(closer.byUid === uid ? 'you' : closer.byName)}` : ''}`}</span>
                 </div>
                 <div class="chip-row" style="margin-top:.35rem">
                     ${statusBadge}
+                    ${isBuyout ? `<span class="chip chip-dim" title="You negotiate DOWN from the contractual buyout clause">💸 Contract clause ${Economy.fmt(neg.buyout)}</span>` : ''}
                     ${neg.kind === 'team-driver' && !neg.contractId ? `<span class="chip chip-dim">${neg.exclusive ? '🔒 Exclusive' : '🔓 Non-exclusive (multi-team OK)'}</span>` : ''}
-                    <span class="chip chip-dim" title="League rule: pay can never exceed the paid party's prestige level">⭐ Cap ${Economy.fmt(neg.capAmount || Economy.payCap(neg.capStars || 1))}/race</span>
+                    ${!isBuyout && (neg.kind === 'team-driver' || neg.kind === 'team-staff') && !neg.contractId
+                        ? `<span class="chip chip-dim">${neg.agreement === 'open' ? '🤝 Open agreement — leave anytime, no buyout' : `🔒 Contracted — buyout ${Economy.fmt(Hub.buyoutFor(neg.salary))}`}</span>
+                           ${Number.isFinite(neg.signOnBonus) ? `<span class="chip chip-dim">🎁 Sign-on ${Economy.fmt(neg.signOnBonus)}</span>` : ''}` : ''}
+                    ${isBuyout ? '' : `<span class="chip chip-dim" title="League rule: pay can never exceed the paid party's prestige level">⭐ Cap ${Economy.fmt(neg.capAmount || Economy.payCap(neg.capStars || 1))}/race</span>`}
                 </div>
+                ${clauseSummary ? `<div class="chip-row" style="margin-top:.35rem"><span class="chip chip-dim" title="Performance clauses — bonuses settle per race, ⚠️ stipulations are checked at season close">📜 ${Util.esc(clauseSummary)}</span></div>` : ''}
             </div>`;
 
         // ---- The thread: newest highlighted, counters show what changed ----
@@ -457,14 +538,14 @@ const Deals = {
                 <form id="deal-act" class="form-grid" style="margin-top:.8rem">
                     ${myTurn ? `
                         <div class="form-row">
-                            <label class="field"><span>Counter ${perRace} ($/race)</span>
+                            <label class="field"><span>Counter ${perRace} ($${isBuyout ? ', one-time' : '/race'})</span>
                                 <input id="deal-salary" class="input" type="number" min="10" step="10" value="${neg.salary}"></label>
                         </div>` : ''}
                     <label class="field"><span>Message ${myTurn ? '(sent with your counter)' : 'to the other side'}</span>
                         <input id="deal-note" class="input" maxlength="200" placeholder="e.g. Final offer — podium bonuses when we renegotiate next season."></label>
                     <div class="modal-actions">
                         ${myTurn ? `
-                            <button type="button" class="btn btn-primary" id="deal-accept">✅ Accept ${Economy.fmt(neg.salary)}/race</button>
+                            <button type="button" class="btn btn-primary" id="deal-accept">✅ Accept ${Economy.fmt(neg.salary)}${unit}</button>
                             <button type="submit" class="btn btn-secondary">↩️ Send Counter</button>
                             <button type="button" class="btn btn-danger" id="deal-decline">❌ Decline</button>`
                         : `

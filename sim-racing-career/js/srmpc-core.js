@@ -395,6 +395,7 @@ const Auth = {
         this._saveAdminSession();
         this.state.mode = 'admin';
         await this._ensureAdminFirebaseAuth();
+        this._registerGm();
         this._emit();
     },
 
@@ -403,7 +404,24 @@ const Auth = {
         if (!(await this.verifyPasscode(passcode))) throw new Error('Incorrect passcode.');
         this._saveAdminSession();
         this.state.mode = 'admin';
+        this._registerGm();
         this._emit();
+    },
+
+    // Register this session's auth uid in config/admin.gmUids so the deployed
+    // firestore.rules isGM() grants it the global override. Fire-and-forget:
+    // if the write fails, only rules that key off isGM are affected, and the
+    // GM sees it the moment such a write is rejected.
+    async _registerGm() {
+        try {
+            const uid = this.uid();
+            if (!uid || !fbDb) return;
+            const snap = await fbDb.collection('config').doc('admin').get();
+            const uids = (snap.exists && Array.isArray(snap.data().gmUids)) ? snap.data().gmUids : [];
+            if (!uids.includes(uid)) {
+                await fbDb.collection('config').doc('admin').set({ gmUids: [...uids, uid] }, { merge: true });
+            }
+        } catch (e) { console.warn('GM registry update failed (rules override may not apply):', e); }
     },
 
     // Drop Game Master powers without a full sign-out: an elevated player

@@ -217,7 +217,9 @@ const Career = {
                         <div class="race-row-main">
                             <span class="race-title">${Util.esc(c.teamName || 'Team')}
                                 ${c.teamId === driver.teamId ? '<span class="chip chip-dim" title="Your points count for this team">⭐ Primary</span>' : ''}
-                                ${c.exclusive !== false ? '<span class="chip chip-dim">🔒 Exclusive</span>' : '<span class="chip chip-dim">🔓 Non-exclusive</span>'}</span>
+                                ${c.agreement === 'open' ? '<span class="chip chip-dim" title="Handshake deal — leave anytime, no buyout">🤝 Open agreement</span>'
+                                    : (c.exclusive !== false ? '<span class="chip chip-dim">🔒 Exclusive</span>' : '<span class="chip chip-dim">🔓 Non-exclusive</span>')}
+                                ${c.clauses ? `<span class="chip chip-dim" title="${Util.attr(Clauses.summary(c.clauses))}">📜 Clauses</span>` : ''}</span>
                             <span class="race-sub">${Economy.fmt(c.salary)}/race — paid automatically every race you run${Number(c.buyout) ? ` · buyout ${Economy.fmt(c.buyout)}` : ''}</span>
                         </div>
                         <button class="btn btn-ghost btn-sm" onclick="Hub.leaveTeamFlow('${Util.attr(c.id)}')">🚪 Leave</button>

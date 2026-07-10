@@ -5,6 +5,25 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Game Masters register their auth uid in config/admin.gmUids when they
+    // unlock with the passcode (see Auth._registerGm in js/srmpc-core.js).
+    // GM sessions get UNRESTRICTED read/write to every collection below via
+    // the wildcard match — total control, bypassing any per-collection rule.
+    //
+    // Trust note: this app's security model is passcode + authenticated
+    // writes (a friends-league, not a bank). The gmUids registry is what
+    // future per-field validation rules key off — any rule you tighten for
+    // normal players below must stay open for isGM().
+    function isGM() {
+      return request.auth != null
+        && request.auth.uid in get(/databases/$(database)/documents/config/admin).data.get('gmUids', []);
+    }
+
+    // ----- Global GM override: the Game Master may edit ANYTHING -----
+    match /{document=**} {
+      allow read, write: if isGM();
+    }
+
     // ----- Public-read league data (guests can browse; members write) -----
     match /games/{doc}    { allow read: if true; allow write: if isAuthenticated(); }
     match /series/{doc}   { allow read: if true; allow write: if isAuthenticated(); }
@@ -14,13 +33,43 @@ service cloud.firestore {
     match /drivers/{doc}  { allow read: if true; allow write: if isAuthenticated(); }
     match /challenges/{doc} { allow read: if true; allow write: if isAuthenticated(); }
     match /staff/{doc}      { allow read: if true; allow write: if isAuthenticated(); }
-    match /contracts/{doc}  { allow read: if true; allow write: if isAuthenticated(); }
     match /news/{doc}       { allow read: if true; allow write: if isAuthenticated(); }
     match /tracks/{doc}     { allow read: if true; allow write: if isAuthenticated(); }
     match /sponsors/{doc}   { allow read: if true; allow write: if isAuthenticated(); }
     match /recruitment/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
-    match /negotiations/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
     match /ledger/{doc}       { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
+
+    // Contracts: everyone may read and create (signings happen through
+    // negotiations), but an ACTIVE contract's core terms can only be
+    // rewritten by a GM or a party to the contract — a random member
+    // can't edit someone else's salary/buyout/status.
+    match /contracts/{doc} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow delete: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        // parties to the deal (talent, paying owner, or sponsor)…
+        resource.data.get('personUid', '') == request.auth.uid
+        || resource.data.get('ownerUid', '') == request.auth.uid
+        || resource.data.get('sponsorUid', '') == request.auth.uid
+        // …or league-owned contracts (no player owner) stay member-editable
+        // so race-day settlement and GM-proxy flows keep working
+        || resource.data.get('ownerUid', null) == null
+      );
+    }
+
+    // Negotiations: only the two sides may move an open deal.
+    match /negotiations/{doc} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow delete: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        resource.data.get('sideAUid', null) == request.auth.uid
+        || resource.data.get('sideBUid', null) == request.auth.uid
+        || resource.data.get('sideAUid', null) == null
+        || resource.data.get('sideBUid', null) == null
+      );
+    }
 
     // ----- Member-only data -----
     match /users/{userId}        { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
@@ -28,7 +77,7 @@ service cloud.firestore {
     match /challengeClaims/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
     match /raceSignups/{doc}     { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
 
-    // ----- App config (admin passcode hash, future settings) -----
+    // ----- App config (admin passcode hash, GM registry, future settings) -----
     match /config/{doc}          { allow read: if true; allow write: if isAuthenticated(); }
   }
 }

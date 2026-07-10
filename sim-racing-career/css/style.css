@@ -190,6 +190,13 @@ a:hover { text-decoration: underline; }
 }
 .nav-badge.hidden { display: none; }
 
+/* Advanced-terms sheet in offer forms (agreement type, sign-on bonus,
+   performance clauses) — collapsed by default so simple deals stay simple. */
+.clause-sheet { border: 1px solid var(--border); border-radius: var(--r-sm); padding: .55rem .7rem; }
+.clause-sheet summary { cursor: pointer; font-weight: 600; color: var(--text-dim); }
+.clause-sheet summary:hover { color: var(--text); }
+.clause-sheet[open] summary { margin-bottom: .2rem; color: var(--text); }
+
 /* Deal room: the newest move in the thread glows so the current state is
    unmissable; the offer hero card frames the number actually on the table. */
 .deal-offer-hero { border-left: 3px solid var(--accent); }

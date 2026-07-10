@@ -560,7 +560,8 @@ const Hub = {
                     🔒 Exclusive contract — they drive for you and nobody else (uncheck to allow multi-team)</label>
                 <label class="field"><span>Message with your offer</span>
                     <input id="ho-note" class="input" maxlength="200" placeholder="Why should they sign with you?"></label>
-                <p class="muted small" id="ho-buyout-note">Buyout clause: ${Economy.fmt(this.buyoutFor(this.STANDARD_SALARY))} (10× salary, min ${Economy.fmt(1000)}). Signing bonus (one race of salary) is paid when the deal closes.</p>
+                ${Clauses.formSection({ teamStars: Prestige.teamStars(teamId, world), salary: this.STANDARD_SALARY, personKind: 'driver' })}
+                <p class="muted small" id="ho-buyout-note">Buyout clause: ${Economy.fmt(this.buyoutFor(this.STANDARD_SALARY))} (10× salary, min ${Economy.fmt(1000)}). Sign-on bonus (default: one race of salary) is paid when the deal closes.</p>
                 <p id="ho-error" class="form-error"></p>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
@@ -581,7 +582,8 @@ const Hub = {
                     personId: driverId, personKind: 'driver', personName: driver.name, personUid: driver.ownerUid || null,
                     salary, buyout: this.buyoutFor(salary),
                     exclusive: Util.$('#ho-exclusive').checked,
-                    note: Util.$('#ho-note').value
+                    note: Util.$('#ho-note').value,
+                    ...Clauses.readForm()
                 });
                 Modal.close();
                 Util.notify(`Negotiation opened with ${driver.name} — follow it in your Deals panel. ✍️`);
@@ -638,9 +640,16 @@ const Hub = {
             ownerUid: team?.ownerUid || null,
             personId: driverId, personKind: 'driver', personName: driver.name,
             personUid: driverUid || null,
-            role: 'driver', salary, buyout: this.buyoutFor(salary), exclusive: !!exclusive,
+            role: 'driver', salary, exclusive: !!exclusive,
+            agreement: 'contracted', buyout: this.buyoutFor(salary),
+            signOnBonus: salary, clauses: null,
             seasonYear: new Date().getFullYear(), status: 'active', signedAt: Util.todayISO()
         });
+        // Sign-on bonus — same one-off payment Deals.execute makes (unified rule).
+        if (salary) {
+            if (team?.ownerUid) await Economy.adjustWallet(team.ownerUid, -salary, '🤝', `Sign-on bonus paid: ${driver.name}`);
+            if (driverUid) await Economy.adjustWallet(driverUid, salary, '🤝', `Sign-on bonus from ${team?.name || 'team'}`);
+        }
         News.post('🤝', `${driver.name} signed with ${team?.name || 'a team'} (${Economy.fmt(salary)}/race${exclusive ? ', exclusive' : ''})`);
     },
 
@@ -813,11 +822,12 @@ const Hub = {
     // Team → player staff (crew chief / mechanic / agent): opens a negotiation
     // exactly like driver offers; nothing signs until they accept.
     async staffOfferForm(profileId, teamId) {
-        const [p, team] = await Promise.all([DB.get('roleProfiles', profileId), DB.get('teams', teamId)]);
+        const [p, team, world] = await Promise.all([DB.get('roleProfiles', profileId), DB.get('teams', teamId), DB.loadWorld()]);
         if (!p) { Util.notify('That profile no longer exists.', 'info'); this.refresh(); return; }
         const info = this._recruitRoleInfo(p.role);
         const stars = Prestige.stored(p);
         const cap = Economy.payCap(stars);
+        const teamStars = Prestige.teamStars(teamId, world);
         Modal.open(`
             ${Modal.header(`✍️ Recruit — ${Util.esc(p.name)}`, `${info.label} · a contract offer from ${Util.esc(team.name)}. They accept, counter, or decline in the deal room.`)}
             <form id="staff-offer-form" class="form-grid">
@@ -827,6 +837,7 @@ const Hub = {
                     <input id="so-salary" class="input" type="number" min="10" max="${cap}" step="10" value="${Math.min(this.STANDARD_SALARY, cap)}" required></label>
                 <label class="field"><span>Message with your offer</span>
                     <input id="so-note" class="input" maxlength="200" placeholder="Why your garage?"></label>
+                ${Clauses.formSection({ teamStars, salary: this.STANDARD_SALARY, personKind: 'staff' })}
                 <p id="so-error" class="form-error"></p>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
@@ -842,7 +853,8 @@ const Hub = {
                     teamId, teamName: team.name, ownerUid: Auth.uid(),
                     personId: profileId, roleProfileId: profileId, personKind: 'staff',
                     personName: p.name, personUid: p.uid,
-                    salary: Util.$('#so-salary').value, note: Util.$('#so-note').value
+                    salary: Util.$('#so-salary').value, note: Util.$('#so-note').value,
+                    ...Clauses.readForm()
                 });
                 Modal.close();
                 Util.notify(`Offer sent — ${p.name} answers in their Deals panel. 📨`);
@@ -856,7 +868,7 @@ const Hub = {
     async acceptStaffApplication(id) {
         const app = await DB.get('recruitment', id);
         if (!app || app.status !== 'pending') { this.refresh(); return; }
-        const p = await DB.get('roleProfiles', app.profileId);
+        const [p, world] = await Promise.all([DB.get('roleProfiles', app.profileId), DB.loadWorld()]);
         if (!p) { Util.notify('That profile no longer exists.', 'error'); return; }
         const info = this._recruitRoleInfo(app.role);
         const stars = Prestige.stored(p);
@@ -869,6 +881,7 @@ const Hub = {
                 <label class="field"><span>Salary per race</span>
                     <input id="ss-salary" class="input" type="number" min="10" max="${cap}" step="10" value="${Math.min(this.STANDARD_SALARY, cap)}" required></label>
                 <label class="field"><span>Message</span><input id="ss-note" class="input" maxlength="200" placeholder="Welcome aboard — here's the deal."></label>
+                ${Clauses.formSection({ teamStars: Prestige.teamStars(app.teamId, world), salary: this.STANDARD_SALARY, personKind: 'staff' })}
                 <p id="ss-error" class="form-error"></p>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
@@ -886,7 +899,8 @@ const Hub = {
                     sideAProxyUid: app.ownerUid ? null : Auth.uid(),
                     personId: app.profileId, roleProfileId: app.profileId, personKind: 'staff',
                     personName: app.applicantName, personUid: app.applicantUid,
-                    salary: Util.$('#ss-salary').value, note: Util.$('#ss-note').value
+                    salary: Util.$('#ss-salary').value, note: Util.$('#ss-note').value,
+                    ...Clauses.readForm()
                 });
                 await DB.update('recruitment', id, { status: 'accepted' });
                 Modal.close();
@@ -925,7 +939,8 @@ const Hub = {
                 <label class="check"><input id="hs-exclusive" type="checkbox" checked>
                     🔒 Exclusive contract (uncheck to allow them to drive for other teams too)</label>
                 <label class="field"><span>Message</span><input id="hs-note" class="input" maxlength="200" placeholder="Welcome aboard — here's the deal."></label>
-                <p class="muted small">Buyout clause is 10× salary (min ${Economy.fmt(1000)}).</p>
+                ${Clauses.formSection({ teamStars: Prestige.teamStars(app.teamId, world), salary: this.STANDARD_SALARY, personKind: 'driver' })}
+                <p class="muted small">Buyout clause is 10× salary (min ${Economy.fmt(1000)}) — unless you offer an open agreement above.</p>
                 <p id="hs-error" class="form-error"></p>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
@@ -945,7 +960,8 @@ const Hub = {
                     personId: app.driverId, personKind: 'driver', personName: app.driverName, personUid: app.driverUid || null,
                     salary, buyout: this.buyoutFor(salary),
                     exclusive: Util.$('#hs-exclusive').checked,
-                    note: Util.$('#hs-note').value
+                    note: Util.$('#hs-note').value,
+                    ...Clauses.readForm()
                 });
                 await DB.update('recruitment', id, { status: 'accepted', salary });
                 Modal.close();
@@ -1034,11 +1050,25 @@ const Hub = {
             <div class="stack" style="margin-top:.8rem">
                 <button class="btn btn-primary" id="lv-pay" ${Economy.balance() < buyout ? 'disabled title="Not enough funds"' : ''}>
                     💸 Pay the ${Economy.fmt(buyout)} buyout & leave now</button>
+                <div class="form-row" style="align-items:end">
+                    <label class="field"><span>…or propose a lower exit figure</span>
+                        <input id="lv-figure" class="input" type="number" min="10" max="${buyout}" step="10" value="${Math.max(10, Math.round(buyout / 2 / 10) * 10)}"></label>
+                    <button class="btn btn-secondary" id="lv-negotiate" title="Opens a deal room — the owner accepts, counters, or declines">🤝 Negotiate buyout</button>
+                </div>
                 <button class="btn btn-secondary" id="lv-request" ${pendingReq ? 'disabled' : ''}>
                     📨 ${pendingReq ? 'Release request already pending' : 'Request release (owner may waive the buyout)'}</button>
                 <button class="btn btn-ghost" onclick="Modal.close()">Stay with the team</button>
             </div>
         `);
+
+        Util.$('#lv-negotiate')?.addEventListener('click', async () => {
+            try {
+                const n = await Deals.startBuyout(contract.id, Util.$('#lv-figure').value,
+                    'Proposing an early exit — here is my number.');
+                Util.notify(`Buyout talks opened at ${Economy.fmt(n.salary)} — the owner answers in the deal room. 🤝`);
+                Deals.room(n.id);
+            } catch (e) { Util.notify(e.message, 'error'); }
+        });
 
         Util.$('#lv-pay')?.addEventListener('click', async () => {
             try {

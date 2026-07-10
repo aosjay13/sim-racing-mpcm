@@ -1,7 +1,10 @@
 # Recruitment & Advanced Contract Negotiation — System Logic & Architecture
 
-**Status:** Design. Sections marked ✅ SHIPPED exist in the codebase today (v0.5.4–0.5.5);
-sections marked 🔷 NEW are specified here for implementation.
+**Status:** ✅ IMPLEMENTED (v0.5.6). Everything marked 🔷 NEW below shipped in
+`js/srmpc-clauses.js` + edits to deals/hub/sim/admin/core; a Global GM Override
+(Admin → 🔧 GM Override + `firestore.rules` `isGM()`) landed alongside.
+Verified by `clauses-drive.js` (20 steps) and `gm-drive.js` (8 steps).
+⚠️ The updated `firestore.rules` must be deployed for the GM rules override to be live.
 **Companion doc:** `CONTRACT_SIGNING_DESIGN.md` (the pending-contract / signature model).
 
 ---
