@@ -63,6 +63,22 @@ const Deals = {
         return { ok: true };
     },
 
+    // Shared sign-on-bonus + clause-sheet validation for fresh-hire terms —
+    // used both when a deal is opened (start) and whenever either side
+    // counters with revised terms (counter), so the same rules apply no
+    // matter which side is proposing the sheet.
+    async _validateOfferTerms({ teamId, personKind, salary, agreement, signOnBonus, clauses }) {
+        if (signOnBonus !== null && signOnBonus !== undefined) {
+            signOnBonus = Math.round(Number(signOnBonus) || 0);
+            if (signOnBonus < 0) throw new Error('Sign-on bonus cannot be negative.');
+            if (signOnBonus > salary * Clauses.MAX_SINGLE_MULT)
+                throw new Error(`Sign-on bonus is capped at 2× salary (${Economy.fmt(salary * Clauses.MAX_SINGLE_MULT)}) — pay is per-race in this league.`);
+        } else signOnBonus = null;
+        const world = await DB.loadWorld();
+        clauses = Clauses.validate(clauses, { teamStars: Prestige.teamStars(teamId, world), salary, personKind, agreement });
+        return { signOnBonus, clauses };
+    },
+
     /* ---------------- Starting a negotiation ---------------- */
     // Creates the negotiation and, when the other side is AI, resolves their
     // answer immediately. Returns the negotiation doc (post-resolution).
@@ -85,16 +101,7 @@ const Deals = {
         agreement = agreement === 'open' ? 'open' : 'contracted';
         const isFreshHire = (kind === 'team-driver' || kind === 'team-staff') && !contractId;
         if (isFreshHire) {
-            if (signOnBonus !== null) {
-                signOnBonus = Math.round(Number(signOnBonus) || 0);
-                if (signOnBonus < 0) throw new Error('Sign-on bonus cannot be negative.');
-                if (signOnBonus > salary * Clauses.MAX_SINGLE_MULT)
-                    throw new Error(`Sign-on bonus is capped at 2× salary (${Economy.fmt(salary * Clauses.MAX_SINGLE_MULT)}) — pay is per-race in this league.`);
-            }
-            const world = await DB.loadWorld();
-            clauses = Clauses.validate(clauses, {
-                teamStars: Prestige.teamStars(teamId, world), salary, personKind, agreement
-            });
+            ({ signOnBonus, clauses } = await this._validateOfferTerms({ teamId, personKind, salary, agreement, signOnBonus, clauses }));
         } else { signOnBonus = null; clauses = null; }
 
         const uid = Auth.uid();
@@ -305,7 +312,12 @@ const Deals = {
     },
 
     /* ---------------- Player actions ---------------- */
-    async counter(id, salary, note = '') {
+    // `terms` (optional): { exclusive, agreement, signOnBonus, clauses } — the
+    // same menu offered on the initial offer form. Only applies to fresh-hire
+    // negotiations (team-driver / team-staff, no contractId yet); ignored for
+    // buyouts, sponsorships, and pay renegotiations on an already-signed
+    // contract, none of which carry those fields.
+    async counter(id, salary, note = '', terms = null) {
         const neg = await DB.get('negotiations', id);
         if (!neg || neg.status !== 'open') throw new Error('This negotiation is closed.');
         if (neg.turnUid !== Auth.uid()) throw new Error("It's not your turn — wait for their answer (you can still send a note).");
@@ -318,12 +330,26 @@ const Deals = {
             throw new Error(`The contractual buyout is ${Economy.fmt(neg.buyout)} — you negotiate DOWN from there, not up.`);
         }
 
+        const isFreshHire = (neg.kind === 'team-driver' || neg.kind === 'team-staff') && !neg.contractId;
+        const patch = { salary };
+        if (isFreshHire && terms) {
+            const agreement = terms.agreement === 'open' ? 'open' : 'contracted';
+            const validated = await this._validateOfferTerms({
+                teamId: neg.teamId, personKind: neg.personKind, salary, agreement,
+                signOnBonus: terms.signOnBonus, clauses: terms.clauses
+            });
+            patch.exclusive = neg.kind === 'team-driver' ? !!terms.exclusive : neg.exclusive;
+            patch.agreement = agreement;
+            patch.signOnBonus = validated.signOnBonus;
+            patch.clauses = validated.clauses;
+        }
+
         const other = neg.turnUid === neg.sideAUid ? neg.sideBUid : neg.sideAUid;
         const updated = {
-            ...neg, salary, turnUid: other || null,
+            ...neg, ...patch, turnUid: other || null,
             history: [...neg.history, { byUid: Auth.uid(), byName: Auth.state.profile?.displayName || 'A player', action: 'counter', salary, note: note || '', at: Util.todayISO() }]
         };
-        await DB.update('negotiations', id, { salary, turnUid: updated.turnUid, history: updated.history });
+        await DB.update('negotiations', id, { ...patch, turnUid: updated.turnUid, history: updated.history });
         if (updated.turnUid === null) await this._npcRespond(updated);
         return DB.get('negotiations', id);
     },
@@ -480,6 +506,11 @@ const Deals = {
         const isBuyout = neg.kind === 'buyout';
         const perRace = isBuyout ? 'buyout figure' : (neg.kind === 'sponsorship' ? 'payout' : 'salary');
         const unit = isBuyout ? ' one-time' : '/race';
+        // Fresh hires carry the full advanced-terms menu (exclusivity, agreement
+        // type, sign-on bonus, clauses) — countering one should offer the same
+        // menu the initial offer did, not just a bare salary field.
+        const isFreshHire = (neg.kind === 'team-driver' || neg.kind === 'team-staff') && !neg.contractId;
+        const teamStars = isFreshHire ? Prestige.teamStars(neg.teamId, await DB.loadWorld()) : null;
 
         // ---- Current state of the deal, front and center ----
         const lastMove = [...neg.history].reverse().find(h => h.action === 'offer' || h.action === 'counter');
@@ -501,7 +532,7 @@ const Deals = {
                     ${statusBadge}
                     ${isBuyout ? `<span class="chip chip-dim" title="You negotiate DOWN from the contractual buyout clause">💸 Contract clause ${Economy.fmt(neg.buyout)}</span>` : ''}
                     ${neg.kind === 'team-driver' && !neg.contractId ? `<span class="chip chip-dim">${neg.exclusive ? '🔒 Exclusive' : '🔓 Non-exclusive (multi-team OK)'}</span>` : ''}
-                    ${!isBuyout && (neg.kind === 'team-driver' || neg.kind === 'team-staff') && !neg.contractId
+                    ${!isBuyout && isFreshHire
                         ? `<span class="chip chip-dim">${neg.agreement === 'open' ? '🤝 Open agreement — leave anytime, no buyout' : `🔒 Contracted — buyout ${Economy.fmt(Hub.buyoutFor(neg.salary))}`}</span>
                            ${Number.isFinite(neg.signOnBonus) ? `<span class="chip chip-dim">🎁 Sign-on ${Economy.fmt(neg.signOnBonus)}</span>` : ''}` : ''}
                     ${isBuyout ? '' : `<span class="chip chip-dim" title="League rule: pay can never exceed the paid party's prestige level">⭐ Cap ${Economy.fmt(neg.capAmount || Economy.payCap(neg.capStars || 1))}/race</span>`}
@@ -540,7 +571,14 @@ const Deals = {
                         <div class="form-row">
                             <label class="field"><span>Counter ${perRace} ($${isBuyout ? ', one-time' : '/race'})</span>
                                 <input id="deal-salary" class="input" type="number" min="10" step="10" value="${neg.salary}"></label>
-                        </div>` : ''}
+                        </div>
+                        ${isFreshHire ? `
+                            ${neg.kind === 'team-driver' ? `<label class="check"><input id="deal-exclusive" type="checkbox" ${neg.exclusive ? 'checked' : ''}>
+                                🔒 Exclusive contract — they drive for you and nobody else (uncheck to allow multi-team)</label>` : ''}
+                            ${Clauses.formSection({
+                                teamStars, salary: neg.salary, personKind: neg.personKind,
+                                current: { agreement: neg.agreement, signOnBonus: neg.signOnBonus, clauses: neg.clauses }
+                            })}` : ''}` : ''}
                     <label class="field"><span>Message ${myTurn ? '(sent with your counter)' : 'to the other side'}</span>
                         <input id="deal-note" class="input" maxlength="200" placeholder="e.g. Final offer — podium bonuses when we renegotiate next season."></label>
                     <div class="modal-actions">
@@ -574,7 +612,11 @@ const Deals = {
             try {
                 const note = Util.$('#deal-note').value;
                 if (myTurn) {
-                    const n = await this.counter(id, Util.$('#deal-salary').value, note);
+                    const terms = isFreshHire ? {
+                        exclusive: neg.kind === 'team-driver' ? !!Util.$('#deal-exclusive')?.checked : neg.exclusive,
+                        ...Clauses.readForm()
+                    } : null;
+                    const n = await this.counter(id, Util.$('#deal-salary').value, note, terms);
                     await rerender(n.status === 'accepted' ? null : 'Counter sent. ↩️');
                 } else {
                     await this.sendNote(id, note);

@@ -140,13 +140,46 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
     const roomText = await page.evaluate(() => document.querySelector('.modal-card').innerText);
     log(/Sign-on \$250/.test(roomText) && /2\+ wins required/.test(roomText) && /win \$400/.test(roomText) ? '✅' : '❌',
         'Deal room shows the full term sheet: sign-on bonus + 📜 clause summary + ⚠️ stipulation');
+
+    // The counter form must offer the SAME menu the initial offer did (not just
+    // a bare salary box), pre-filled with Greta's numbers so an untouched field
+    // doesn't silently get wiped out on submit.
+    const counterMenu = await page.evaluate(() => ({
+        hasWin: !!document.getElementById('cl-win'), hasSignon: !!document.getElementById('cl-signon'),
+        hasExclusive: !!document.getElementById('deal-exclusive'),
+        signon: document.getElementById('cl-signon').value, win: document.getElementById('cl-win').value,
+        minwins: document.getElementById('cl-minwins').value, exclusive: document.getElementById('deal-exclusive').checked
+    }));
+    log(counterMenu.hasWin && counterMenu.hasSignon && counterMenu.hasExclusive ? '✅' : '❌',
+        'Counter form offers the full advanced-terms menu (clauses, sign-on bonus, exclusivity) — not just salary');
+    log(counterMenu.signon === '250' && counterMenu.win === '400' && counterMenu.minwins === '2' && counterMenu.exclusive === true ? '✅' : '❌',
+        `Counter form pre-fills Greta's sheet (sign-on $${counterMenu.signon}, win $${counterMenu.win}, minWins ${counterMenu.minwins}, exclusive ${counterMenu.exclusive})`);
+
+    // Henry counters: revises one clause (fastest-lap bonus, untouched by
+    // Greta's offer) and drops exclusivity, while leaving the pre-filled
+    // salary/sign-on/win-bonus/minWins figures exactly as offered.
+    await page.fill('#cl-flap', '80');
+    await page.uncheck('#deal-exclusive');
+    await page.click('#deal-act button[type=submit]');
+    await toast(/Counter sent/);
+    log('✅', "Henry countered: added an $80 fastest-lap bonus, dropped exclusivity, kept the rest of Greta's sheet");
+
+    let negAfterCounter = await page.evaluate((id) => DB.get('negotiations', id), negId);
+    log(negAfterCounter.exclusive === false && negAfterCounter.clauses?.fastestLapBonus === 80
+        && negAfterCounter.clauses?.winBonus === 400 && negAfterCounter.signOnBonus === 250 && negAfterCounter.clauses?.minWins?.count === 2
+        ? '✅' : '❌',
+        `Counter persisted the edit AND the untouched terms (exclusive ${negAfterCounter.exclusive}, fastest-lap $${negAfterCounter.clauses?.fastestLapBonus}, win $${negAfterCounter.clauses?.winBonus}, sign-on $${negAfterCounter.signOnBonus}, minWins ${negAfterCounter.clauses?.minWins?.count})`);
+
+    await signIn('greta@example.com');
+    await page.evaluate((id) => Deals.room(id), negId);
+    await page.waitForSelector('#deal-accept');
     await page.click('#deal-accept');
     await toast(/Contract signed/);
     await shot('25-clause-contract');
     let c = await page.evaluate(async () => (await DB.contracts({ force: true })).find(x => x.personName === 'Henry Flash'));
-    log(c.agreement === 'contracted' && c.signOnBonus === 250 && c.buyout === 5000
-        && c.clauses?.minWins?.count === 2 && c.clauses?.winBonus === 400 ? '✅' : '❌',
-        `Contract stores the sheet (sign-on $${c.signOnBonus}, buyout $${c.buyout}, minWins ${c.clauses?.minWins?.count})`);
+    log(c.agreement === 'contracted' && c.signOnBonus === 250 && c.buyout === 5000 && c.exclusive === false
+        && c.clauses?.minWins?.count === 2 && c.clauses?.winBonus === 400 && c.clauses?.fastestLapBonus === 80 ? '✅' : '❌',
+        `Contract stores the countered sheet (sign-on $${c.signOnBonus}, buyout $${c.buyout}, exclusive ${c.exclusive}, minWins ${c.clauses?.minWins?.count}, flap $${c.clauses?.fastestLapBonus})`);
     let bal = await balances();
     log(bal.Henry === 75250 && bal.Greta === 74750 ? '✅' : '❌',
         `Sign-on bonus (and ONLY it) moved upfront: Henry $${bal.Henry}, Greta $${bal.Greta}`);

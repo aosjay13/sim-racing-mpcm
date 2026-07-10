@@ -179,37 +179,44 @@ const Clauses = {
     /* ---------------- Offer-form section (shared by all offer/terms modals) ---------------- */
     // Renders agreement type + sign-on bonus + the clause sheet, gated live by
     // the offering team's prestige. Read back with Clauses.readForm().
-    formSection({ teamStars, salary, personKind = 'driver' }) {
+    // `current` (optional): { agreement, signOnBonus, clauses } to pre-fill — used
+    // when countering an existing negotiation so the sheet isn't silently wiped
+    // (blank fields would read back as "no clauses" via readForm()) and the
+    // section opens expanded so the terms are visible, not buried in <details>.
+    formSection({ teamStars, salary, personKind = 'driver', current = null }) {
         const gate = this.gate(teamStars);
-        const num = (id, label, ph = '0') => `
+        const c = current?.clauses || {};
+        const num = (id, label, v, ph = '0') => `
             <label class="field"><span>${label}</span>
-                <input id="cl-${id}" class="input" type="number" min="0" step="10" placeholder="${ph}"></label>`;
+                <input id="cl-${id}" class="input" type="number" min="0" step="10" placeholder="${ph}" value="${v || ''}"></label>`;
+        const tierAmt = (n) => (c.finishBonus || []).find(t => t.atOrBetter === n)?.amount;
+        const champAmt = (n) => (c.championshipBonus || []).find(t => t.rank === n)?.amount;
         return `
-        <details class="clause-sheet">
+        <details class="clause-sheet"${current ? ' open' : ''}>
             <summary>📜 Advanced terms & performance clauses <span class="chip chip-dim">team ${Prestige.stars(teamStars)}</span></summary>
             <div class="form-grid" style="margin-top:.6rem">
                 <div class="form-row">
                     <label class="field"><span>Agreement type</span>
                         <select id="cl-agreement" class="input">
-                            <option value="contracted">🔒 Contracted — buyout clause on exit</option>
-                            <option value="open">🤝 Open agreement — leave anytime, no buyout</option>
+                            <option value="contracted"${current?.agreement !== 'open' ? ' selected' : ''}>🔒 Contracted — buyout clause on exit</option>
+                            <option value="open"${current?.agreement === 'open' ? ' selected' : ''}>🤝 Open agreement — leave anytime, no buyout</option>
                         </select></label>
                     <label class="field"><span>Sign-on bonus (paid once at signing)</span>
-                        <input id="cl-signon" class="input" type="number" min="0" step="10" placeholder="default: one race of salary"></label>
+                        <input id="cl-signon" class="input" type="number" min="0" step="10" placeholder="default: one race of salary" value="${current && Number.isFinite(current.signOnBonus) ? current.signOnBonus : ''}"></label>
                 </div>
                 <p class="section-label" style="margin:0">💰 Per-race bonuses (owner pays when it happens)</p>
-                <div class="form-row">${num('win', '🏆 Race win')}${num('top3', '🥉 Top 3')}${num('top5', 'Top 5')}${num('top10', 'Top 10')}</div>
-                <div class="form-row">${num('pole', '🅿️ Pole position')}${num('flap', '⚡ Fastest lap')}${num('led', '🔁 Most laps led')}</div>
-                <div class="form-row">${num('clean', '🧼 Clean race (0 incidents)')}${num('fulldist', '🏁 100% distance')}</div>
+                <div class="form-row">${num('win', '🏆 Race win', c.winBonus)}${num('top3', '🥉 Top 3', tierAmt(3))}${num('top5', 'Top 5', tierAmt(5))}${num('top10', 'Top 10', tierAmt(10))}</div>
+                <div class="form-row">${num('pole', '🅿️ Pole position', c.poleBonus)}${num('flap', '⚡ Fastest lap', c.fastestLapBonus)}${num('led', '🔁 Most laps led', c.mostLapsLedBonus)}</div>
+                <div class="form-row">${num('clean', '🧼 Clean race (0 incidents)', c.cleanRaceBonus)}${num('fulldist', '🏁 100% distance', c.fullDistanceBonus)}</div>
                 <p class="section-label" style="margin:0">🏆 Championship bonuses (paid when the season is crowned)</p>
-                <div class="form-row">${num('champ1', 'Champion (P1)')}${num('champ3', 'Top 3 overall')}${num('champ10', 'Top 10 overall')}</div>
+                <div class="form-row">${num('champ1', 'Champion (P1)', champAmt(1))}${num('champ3', 'Top 3 overall', champAmt(3))}${num('champ10', 'Top 10 overall', champAmt(10))}</div>
                 ${personKind === 'driver' && (gate.minWins || gate.minAvgFinish) ? `
                     <p class="section-label" style="margin:0">⚠️ Termination stipulations — breach at season close ends the contract for cause</p>
                     <div class="form-row">
                         ${gate.minWins ? `<label class="field"><span>Mandatory wins per season (max ${gate.minWins})</span>
-                            <input id="cl-minwins" class="input" type="number" min="0" max="${gate.minWins}" placeholder="0 = none"></label>` : ''}
+                            <input id="cl-minwins" class="input" type="number" min="0" max="${gate.minWins}" placeholder="0 = none" value="${c.minWins?.count || ''}"></label>` : ''}
                         ${gate.minAvgFinish ? `<label class="field"><span>Required avg finish (best allowed: P${gate.minAvgFinish}, min ${this.MIN_AVG_STARTS} starts)</span>
-                            <input id="cl-avgfinish" class="input" type="number" min="${gate.minAvgFinish}" max="30" placeholder="blank = none"></label>` : ''}
+                            <input id="cl-avgfinish" class="input" type="number" min="${gate.minAvgFinish}" max="30" placeholder="blank = none" value="${c.minAvgFinish?.position || ''}"></label>` : ''}
                     </div>` : `<p class="muted small">⚠️ Termination stipulations unlock at 3★ team prestige${personKind !== 'driver' ? ' and apply to driver contracts only' : ''}.</p>`}
                 <p class="muted small">League caps: one bonus ≤ 2× salary, a perfect race ≤ 5× salary, championship tiers ≤ 25× salary.
                     Bonuses settle per race through the ledger — never upfront. Open agreements can't carry termination clauses.</p>
