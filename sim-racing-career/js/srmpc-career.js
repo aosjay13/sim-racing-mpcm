@@ -270,14 +270,12 @@ const Career = {
             ${Modal.header(startMode === 'scratch' ? '🌱 Fresh Career' : '🏢 Join an Established Team', 'Create your driver profile')}
             <form id="ob-driver-form" class="form-grid">
                 <label class="field"><span>Driver name *</span><input id="ob-name" class="input" required value="${Util.esc(Auth.state.profile?.displayName || '')}" maxlength="40"></label>
-                <div class="form-row">
-                    <label class="field"><span>Race number</span><input id="ob-number" class="input" type="number" min="0" max="999" placeholder="e.g. 13"></label>
-                    <label class="field"><span>Country</span><input id="ob-country" class="input" placeholder="e.g. USA" maxlength="30"></label>
-                </div>
+                <label class="field"><span>Country</span><input id="ob-country" class="input" placeholder="e.g. USA" maxlength="30"></label>
                 ${teamsHtml}
                 <label class="field"><span>Bio (optional)</span><textarea id="ob-bio" class="input" rows="2" maxlength="300" placeholder="Tell the league who you are…"></textarea></label>
                 <p class="muted small">⭐ Every career begins at <strong>1 ★ ${Prestige.levelName(1)}</strong> (${Prestige.stars(1)}). Points, wins, poles, and championships
                     earn prestige XP that climbs the ladder — ${Prestige.LEVELS.map(l => l.name).join(' → ')} — and the higher your prestige, the more money you're worth.</p>
+                <p class="muted small">🔢 No race number yet — car numbers are won or leased through the league's Number Registry, not picked at signup. You'll race under <strong>🏎️</strong> until you land one.</p>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
                     <button type="submit" class="btn btn-primary">Start Career 🏁</button>
@@ -297,7 +295,7 @@ const Career = {
                 const teamId = Util.$('#ob-team')?.value || null;
                 const driverId = await DB.create('drivers', {
                     name,
-                    number: Util.$('#ob-number').value ? Number(Util.$('#ob-number').value) : null,
+                    number: null,   // never player-picked — won or leased via the Number Registry
                     country: Util.$('#ob-country').value.trim(),
                     bio: Util.$('#ob-bio').value.trim(),
                     teamId: null,
@@ -337,10 +335,10 @@ const Career = {
             ${Modal.header('Edit Driver Profile')}
             <form id="edit-driver-form" class="form-grid">
                 <label class="field"><span>Driver name *</span><input id="ed-name" class="input" required value="${Util.esc(driver.name)}" maxlength="40"></label>
-                <div class="form-row">
-                    <label class="field"><span>Race number</span><input id="ed-number" class="input" type="number" min="0" max="999" value="${driver.number ?? ''}"></label>
-                    <label class="field"><span>Country</span><input id="ed-country" class="input" value="${Util.esc(driver.country || '')}" maxlength="30"></label>
-                </div>
+                <label class="field"><span>Country</span><input id="ed-country" class="input" value="${Util.esc(driver.country || '')}" maxlength="30"></label>
+                <label class="field"><span>Race number</span>
+                    <input class="input" disabled value="${driver.number ? '#' + Util.esc(String(driver.number)) : '— unassigned —'}">
+                    <span class="muted small">🔢 Won or leased through the Number Registry — not editable here.</span></label>
                 <label class="field"><span>Bio</span><textarea id="ed-bio" class="input" rows="3" maxlength="300">${Util.esc(driver.bio || '')}</textarea></label>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
@@ -353,7 +351,6 @@ const Career = {
             try {
                 await DB.update('drivers', driver.id, {
                     name: Util.$('#ed-name').value.trim(),
-                    number: Util.$('#ed-number').value ? Number(Util.$('#ed-number').value) : null,
                     country: Util.$('#ed-country').value.trim(),
                     bio: Util.$('#ed-bio').value.trim()
                 });
