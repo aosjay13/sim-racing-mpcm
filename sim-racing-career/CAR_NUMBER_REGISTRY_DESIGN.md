@@ -256,6 +256,45 @@ row when both leases exist: a `🔢 Race number` selector (team's # vs. driver's
 time into `numberChoice`. If the player doesn't touch it, it defaults to the team's number —
 so this is additive, not a blocking prompt for the common case.
 
+### 4.3 Closing the free-pick gap at career start
+
+The whole registry is pointless if a player can just type the number they want when they join —
+and today, they can. `drivers.number` is currently a plain player-editable text field with no
+tie to ownership at all. Two live paths write it directly:
+
+| # | Path | Location | Problem |
+|---|------|----------|---------|
+| 1 | Career onboarding | `js/srmpc-career.js:274` (`#ob-number` input) → `js/srmpc-career.js:300` (`DB.create('drivers', { number: ... })`) | A brand-new rookie picks any number 0–999 for free, no series scoping, no ownership record — the exact free-for-all this whole system exists to replace. |
+| 2 | Edit driver profile | `js/srmpc-career.js:341` (`#ed-number` input) → `js/srmpc-career.js:356` (`DB.update('drivers', ..., { number: ... })`) | An existing driver can change their number at any time, unilaterally, with no lease, no auction, no fee. |
+
+**The fix: `drivers.number` stops being a form field.** It becomes a read-only cache, written
+only by `Numbers.resolveForEntry()` (§4.2) when a lease resolves, and by the GM admin panel
+(`js/srmpc-admin.js:1082`, `#adf-number`) — the GM override already bypasses every other asset
+gate in this app (contracts, salaries, team ownership; `firestore.rules:17-25`), so it's the one
+legitimate "just set it" path, same as everywhere else. A player never gets one.
+
+- **`driverOnboarding()` (`js/srmpc-career.js:253-330`):** delete the `#ob-number` input
+  entirely. A rookie starts with `number: null` (renders as `🏎️`, already handled everywhere —
+  `srmpc-profile.js:317`, `srmpc-views.js:834,900`, `srmpc-market.js:510`) and picks up a real
+  number only by winning an auction, leasing one, or receiving a GM grant. Replace the field
+  with a static note: *"🔢 No race number yet — win or lease one once you're racing. Check the
+  Number Registry in your series."*
+- **`editDriverModal()` (`js/srmpc-career.js:332-365`):** delete the `#ed-number` input. Replace
+  with a read-only display of the driver's currently resolved number (via `Numbers.resolveForEntry`
+  against their active contract, or "— unassigned —") plus a link into the number-registry /
+  auction browser, not an editable field.
+- **Founding or taking over a team (`Career.teamForm()`, `Career.takeoverModal()`,
+  `js/srmpc-career.js:413-436`):** no change needed — teams have never had a `number` field of
+  their own (a team's number lives on its `numberLeases` doc, not the `teams` doc), so there is
+  no equivalent free-pick path to close here. Worth stating explicitly so nobody "helpfully"
+  adds a number input to the team-creation form later: **any future team field named `number`
+  is the bug this section exists to prevent.**
+
+This closes the loop with §4.2: the *only* way a number ever lands in `drivers.number` is
+`Numbers` resolving an actual `numberLeases` doc, or a GM's explicit override. There is no third
+path, and the design should be reviewed against that invariant whenever a new UI surface touches
+driver or team creation.
+
 ---
 
 ## 5. Auction engine
@@ -482,6 +521,7 @@ Numbers.validateRaceEntry = async function ({ driverId, teamId, seriesId, world 
 ```
 
 **Where this plugs in:**
+
 - `js/srmpc-views.js:588` (`DB.create('raceSignups', { raceId, uid, driverId })`) — call
   `Numbers.validateRaceEntry` first; on `ok:false`, block the signup with `Util.notify(reason,
   'error')` (same pattern as every other guarded write in this app). On success, stamp the
@@ -640,7 +680,7 @@ New collections need the same "member-write, GM-override-everything" shape as `c
 by `bidderUid` may create/overwrite their own bid doc, mirroring the contracts rule's "only the
 named party can flip pending→active" pattern (`CONTRACT_SIGNING_DESIGN.md §8`).
 
-```
+```js
 match /numberRegistry/{doc} {
   allow read: if true;
   allow write: if isAuthenticated();   // status transitions are all gated in app logic;
@@ -675,22 +715,27 @@ write fails," not as an obvious error.
 ## 9. Integration changes, file by file
 
 ### `js/srmpc-numbers.js` — 🔷 NEW
+
 The full `Numbers` module (§4.2, §5, §6, §7).
 
 ### `js/srmpc-core.js`
+
 Add `Util.isoAddDays` (§1) — not yet present despite being flagged as needed in
 `CONTRACT_SIGNING_DESIGN.md`.
 
 ### `js/srmpc-data.js`
+
 Add `DB.set()` and `DB.transact()` (§1).
 
 ### `js/srmpc-admin.js`
+
 - `closeSeason()` (`:330`): five-line rollover hook (§7.4).
 - `seriesForm()` (`:395+`): two new inputs for `numberFormat.min/max`.
 - New `Admin.numbersModal(seriesId)`: registry browser (available/auction/leased/retired), open
   auction / retire / gm-grant actions — same shape as `Admin.teamForm`/`seasonsModal`.
 
 ### `js/srmpc-contracts.js` (per `CONTRACT_SIGNING_DESIGN.md`)
+
 - `_validate()`: no change needed — number conflicts are resolved, not blocking.
 - `sign()`: after `_applyMembership`, call `Numbers.resolveForEntry` and persist `numberChoice`
   if the review modal set one.
@@ -698,20 +743,28 @@ Add `DB.set()` and `DB.transact()` (§1).
   (§4.2).
 
 ### `js/srmpc-views.js`
+
 - `:588` free-agent race signup: call `Numbers.validateRaceEntry` before `DB.create`
   (§6).
 
 ### `js/srmpc-sim.js`
+
 - `gridFor()`: no blocking change — simulation must never stop for a lapsed lease (§6).
 - `simulateRace()`: results display can show `Numbers.resolveForEntry` output live in the UI
   layer (`srmpc-views.js` race-result rendering) rather than the sim engine itself.
 
-### `js/srmpc-career.js` / `js/srmpc-admin.js` driver forms (`:341`, `:1082`)
-The free-text `number` input becomes read-only, sourced from `Numbers.resolveForEntry` — a
-driver no longer types their own number, they win or lease it. Keep `drivers.number` as the
-denormalized cache of the last-resolved value (same pattern as `drivers.teamId` being a cache
-that only `Contracts` writes) so every existing display site (`srmpc-profile.js:317`,
-`srmpc-views.js:834,900`, `srmpc-market.js:510`) keeps working unmodified.
+### `js/srmpc-career.js` (§4.3 — closing the free-pick gap)
+
+- `driverOnboarding()` (`:274`, `:300`): delete `#ob-number`; rookies start with `number: null`.
+- `editDriverModal()` (`:341`, `:356`): delete `#ed-number`; show the resolved number read-only.
+- `Career.teamForm()` / `takeoverModal()`: confirmed no equivalent field exists to remove — flag
+  in code review if one is ever added outside the lease/auction path.
+
+`drivers.number` becomes a denormalized cache written only by `Numbers.resolveForEntry` and the
+GM admin form (`js/srmpc-admin.js:1082`, `#adf-number` — GM override, unchanged) — same pattern
+as `drivers.teamId` being a cache only `Contracts` writes. Every existing display site
+(`srmpc-profile.js:317`, `srmpc-views.js:834,900`, `srmpc-market.js:510`) keeps working
+unmodified since they all already handle `number: null` as `🏎️`.
 
 ---
 
