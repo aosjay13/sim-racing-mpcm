@@ -47,10 +47,11 @@ const Hub = {
 
     /* ---------------- Recruitment profiles (per-role attributes) ---------------- */
     // What teams filter candidates by, per position. num = 1-10 self-rating.
+    // Drivers are the exception: Pace and Safety are NOT self-rated — they're
+    // derived live from race results (Stats.driverPace/driverSafety) so a
+    // rookie can't just type in a 10. See recruitChips().
     RECRUIT_ATTRS: {
         'driver': [
-            { id: 'pace', label: 'Pace', type: 'num' },
-            { id: 'safety', label: 'Safety rating', type: 'num' },
             { id: 'disciplines', label: 'Preferred disciplines', type: 'text', ph: 'GT3, ovals, endurance…' },
             { id: 'availability', label: 'Schedule availability', type: 'text', ph: 'Weeknights EU, Sunday races…' }
         ],
@@ -76,14 +77,25 @@ const Hub = {
     },
 
     // Compact chips for scouting lists / applications: "Pace 8/10 · GT3, ovals".
-    recruitChips(role, recruit) {
+    // `live` = { pace, safety } for role 'driver' — computed by the caller via
+    // Stats.driverPace/driverSafety (needs `world`, which chip-building call
+    // sites already have loaded). Never reads a self-reported pace/safety.
+    recruitChips(role, recruit, live = null) {
+        const chips = [];
+        if (role === 'driver') {
+            const pace = live?.pace ?? 0, safety = live?.safety ?? 0;
+            chips.push(`<span class="chip chip-dim" title="Derived live from race results — not self-reported">Pace: ${pace}/10</span>`);
+            chips.push(`<span class="chip chip-dim" title="Derived live from incident data — not self-reported">Safety: ${safety}/10</span>`);
+        }
         const defs = this.RECRUIT_ATTRS[role];
-        if (!defs || !recruit) return '';
-        return defs.map(a => {
-            const v = recruit[a.id];
-            if (v === undefined || v === null || v === '') return '';
-            return `<span class="chip chip-dim" title="${Util.esc(a.label)}">${Util.esc(a.label)}: ${a.type === 'num' ? `${Number(v)}/10` : Util.esc(String(v).slice(0, 40))}</span>`;
-        }).join('');
+        if (defs && recruit) {
+            defs.forEach(a => {
+                const v = recruit[a.id];
+                if (v === undefined || v === null || v === '') return;
+                chips.push(`<span class="chip chip-dim" title="${Util.esc(a.label)}">${Util.esc(a.label)}: ${a.type === 'num' ? `${Number(v)}/10` : Util.esc(String(v).slice(0, 40))}</span>`);
+            });
+        }
+        return chips.join('');
     },
 
     // Edit MY recruitment profile for my active role. Drivers store it on
@@ -105,11 +117,21 @@ const Hub = {
         }
         const cur = doc.recruit || {};
         const info = this._recruitRoleInfo(role);
+        let liveChips = '';
+        if (role === 'driver') {
+            const world = await DB.loadWorld();
+            liveChips = this.recruitChips('driver', null, {
+                pace: Stats.driverPace(doc.id, world.races, world),
+                safety: Stats.driverSafety(doc.id, world.races, world)
+            });
+        }
         Modal.open(`
             ${Modal.header(`🧲 Recruitment Profile — ${Util.esc(doc.name)}`, `What teams see when scouting a ${info.label}. Honest numbers get better offers.`)}
             <form id="recruit-form" class="form-grid">
                 <label class="check"><input id="rc-open" type="checkbox" ${doc.openToOffers === false ? '' : 'checked'}>
                     🟢 Open to offers — show me on the free agent / scouting lists</label>
+                ${role === 'driver' ? `<div class="chip-row">${liveChips}</div>
+                <p class="muted small">🔢 Pace and Safety are no longer self-rated — they're tracked automatically from your race results (finishing position and on-track incidents) and rise or fall as you race.</p>` : ''}
                 ${defs.map(a => a.type === 'num'
                     ? `<label class="field"><span>${Util.esc(a.label)} (1–10)</span>
                         <input id="rc-${a.id}" class="input" type="number" min="1" max="10" value="${Number(cur[a.id]) || 5}"></label>`
@@ -359,7 +381,9 @@ const Hub = {
                 sub = (vac ? `Vacancy: “${vac.title}” — ` : '') + (unowned
                     ? '🤖 This team has no player owner — negotiate the deal yourself as GM' + (isStaff ? '' : ', or send in the AI team principal')
                     : 'Accepting opens a contract form where you set their pay');
-                chips = this.recruitChips(r.role || 'driver', r.attrs);
+                chips = this.recruitChips(r.role || 'driver', r.attrs, !isStaff && r.driverId
+                    ? { pace: Stats.driverPace(r.driverId, world.races, world), safety: Stats.driverSafety(r.driverId, world.races, world) }
+                    : null);
                 actions = `<button class="btn btn-primary btn-sm" onclick="Hub.${isStaff ? 'acceptStaffApplication' : 'acceptApplication'}('${Util.attr(r.id)}')">✍️ ${unowned ? 'Negotiate as GM' : 'Sign them'}</button>
                     ${unowned && !isStaff ? `<button class="btn btn-secondary btn-sm" onclick="Hub.aiPrincipal('${Util.attr(r.id)}')">🤖 AI Principal</button>` : ''}
                     <button class="btn btn-danger btn-sm" onclick="Hub.actApplication('${Util.attr(r.id)}',false)">✕ Decline</button>`;
@@ -488,7 +512,7 @@ const Hub = {
                             <div class="race-row-main">
                                 <span class="race-title">🏎️ ${Util.esc(p.name)} <span class="badge badge-blue">Player</span></span>
                                 <span class="race-sub">${act.length ? `${Util.plural(act.length, 'team')} (non-exclusive) — open to another seat` : Util.esc(p.country || 'Free agent')}</span>
-                                <span class="chip-row" style="margin-top:.2rem">${this.recruitChips('driver', p.recruit)}</span>
+                                <span class="chip-row" style="margin-top:.2rem">${this.recruitChips('driver', p.recruit, { pace: Stats.driverPace(p.id, world.races, world), safety: Stats.driverSafety(p.id, world.races, world) })}</span>
                             </div>
                             <button class="btn btn-primary btn-sm" onclick="Hub.offerForm('${Util.attr(p.id)}','${Util.attr(myTeam.id)}')">✍️ Offer</button>
                         </div>`;

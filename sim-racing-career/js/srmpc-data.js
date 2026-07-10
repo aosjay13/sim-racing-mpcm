@@ -373,6 +373,36 @@ const Stats = {
         return rows;
     },
 
+    // Live-derived recruitment ratings (Hub.recruitChips) — never self-reported.
+    // Both start at 0 with no race history and move as results come in, so a
+    // rookie can't just type "Pace 10, Safety 10" on day one.
+
+    // Average finishing percentile across starts: 1.0 = always wins, 0 = always
+    // last. Scaled to 0–10. DNFs and single-car "races" don't count either way.
+    driverPace(driverId, races, world) {
+        const scored = this.driverHistory(driverId, races, world)
+            .filter(h => !h.result.dnf && Number(h.result.position) && h.race.results.length > 1);
+        if (!scored.length) return 0;
+        const sum = scored.reduce((s, h) => {
+            const gridSize = h.race.results.length;
+            const pos = Number(h.result.position);
+            return s + (gridSize - pos) / (gridSize - 1);
+        }, 0);
+        return Math.round((sum / scored.length) * 100) / 10;
+    },
+
+    // Inverse of average incidents/race (same `incidents` telemetry Clauses
+    // reads for clean-race bonuses): 0 incidents/race → 10, 5+ → 0. Races
+    // where incidents were never recorded are skipped, not punished — missing
+    // telemetry never hurts a driver (same rule Clauses.forRace follows).
+    driverSafety(driverId, races, world) {
+        const tracked = this.driverHistory(driverId, races, world)
+            .filter(h => h.result.incidents !== undefined && h.result.incidents !== null);
+        if (!tracked.length) return 0;
+        const avgIncidents = tracked.reduce((s, h) => s + Number(h.result.incidents), 0) / tracked.length;
+        return Math.max(0, Math.round((10 - avgIncidents * 2) * 10) / 10);
+    },
+
     // Cumulative points per driver across the (round-ordered) races in a filter.
     // Returns { labels:['R1','R2',…], series:[{driverId,name,values:[y,…]}] }.
     pointsProgression(races, world, filter, driverIds) {
