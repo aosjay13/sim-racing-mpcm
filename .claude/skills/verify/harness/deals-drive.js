@@ -67,7 +67,6 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
     await registerPlayer('Bob', 'bob@example.com', 'Driver');
     await page.click('.onboard-card:has-text("Start from scratch")');
     await page.fill('#ob-name', 'Bob Racer');
-    await page.fill('#ob-number', '7');
     await page.click('#ob-driver-form button[type=submit]');
     await toast(/Welcome to the grid/);
     log('✅', 'Bob registered as driver "Bob Racer" ($75,000)');

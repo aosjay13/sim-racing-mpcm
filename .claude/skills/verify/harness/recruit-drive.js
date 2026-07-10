@@ -87,8 +87,7 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
     await toast(/Welcome to the grid/);
     await page.click('#view-root button:has-text("Recruitment Profile")');
     await page.waitForSelector('#recruit-form');
-    await page.fill('#rc-pace', '9');
-    await page.fill('#rc-safety', '7');
+    // Pace/safety are auto-tracked from race results now (0.5.8.1), not self-rated fields.
     await page.fill('#rc-disciplines', 'GT3, endurance');
     await page.fill('#rc-availability', 'Weeknights EU');
     await page.click('#recruit-form button[type=submit]');
@@ -187,7 +186,9 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
     await page.click('#hub-body .chip-btn:has-text("Drivers")');
     await page.waitForSelector('#hub-body .panel');
     const scout = await page.evaluate(() => document.getElementById('hub-body').innerText);
-    log(/Scout Free Agents/i.test(scout) && /Eve Quick/i.test(scout) && /Pace: 9\/10/i.test(scout) && /GT3, endurance/i.test(scout) ? '✅' : '❌',
+    // Pace/safety are auto-tracked from race results (0.5.8.1) — Eve hasn't raced, so just
+    // confirm the live chip renders (not a stale self-rated number) alongside her free-text attrs.
+    log(/Scout Free Agents/i.test(scout) && /Eve Quick/i.test(scout) && /Pace: \d+\/10/i.test(scout) && /GT3, endurance/i.test(scout) ? '✅' : '❌',
         'Scout list shows Eve with her recruitment attributes under the Drivers filter');
     await shot('23-scout-free-agents');
     await page.click('#hub-body .race-row:has-text("Eve Quick") button:has-text("Offer")');

@@ -292,14 +292,12 @@ const Hub = {
     // postings, not decisions.
     _forMe(r, uid) {
         if (r.kind === 'vacancy') return false;
-        if (r.kind === 'offer') return r.driverUid === uid;
         return r.ownerUid ? r.ownerUid === uid : Auth.isAdmin();
     },
 
-    // Did I send this item? (For "your offer/application was answered" events.)
+    // Did I send this item? (For "your application was answered" events.)
     _sentByMe(r, uid) {
         if (r.kind === 'vacancy') return false;
-        if (r.kind === 'offer') return r.ownerUid === uid;
         return r.driverUid === uid || r.applicantUid === uid;
     },
 
@@ -360,17 +358,12 @@ const Hub = {
                 .then(() => App.refreshHubBadge());
         }
 
-        const kindLabel = { offer: 'Contract offer', application: 'Application', 'release-request': 'Release request' };
+        const kindLabel = { application: 'Application', 'release-request': 'Release request' };
         const statusBadge = (s) => `<span class="badge ${s === 'pending' ? 'badge-amber' : s === 'accepted' ? 'badge-green' : 'badge-dim'}">${Util.esc(s)}</span>`;
 
         const inboxRow = (r) => {
             let text = '', sub = '', actions = '', chips = '';
-            if (r.kind === 'offer') {
-                text = `${r.teamName} offers you a seat`;
-                sub = `${Economy.fmt(r.salary)}/race · buyout ${Economy.fmt(r.buyout)}`;
-                actions = `<button class="btn btn-primary btn-sm" onclick="Hub.actOffer('${Util.attr(r.id)}',true)">✓ Accept</button>
-                    <button class="btn btn-danger btn-sm" onclick="Hub.actOffer('${Util.attr(r.id)}',false)">✕ Decline</button>`;
-            } else if (r.kind === 'application') {
+            if (r.kind === 'application') {
                 const unowned = !r.ownerUid;
                 const isStaff = !!r.profileId;
                 const roleInfo = this._recruitRoleInfo(r.role || 'driver');
@@ -462,7 +455,7 @@ const Hub = {
                 ${outbox.length ? `<h3 class="section-label" style="margin-top:1rem">📤 Sent</h3>
                     ${outbox.map(r => `<div class="race-row ${unseen.has(r.id) ? 'deal-latest' : ''}">
                         <div class="race-row-main">
-                            <span class="race-title">${Util.esc(kindLabel[r.kind] || r.kind)} — ${Util.esc(r.kind === 'offer' ? r.driverName : r.teamName)}
+                            <span class="race-title">${Util.esc(kindLabel[r.kind] || r.kind)} — ${Util.esc(r.teamName)}
                                 ${r.role && r.role !== 'driver' ? `<span class="chip chip-dim">${Util.esc(this._recruitRoleInfo(r.role).label)}</span>` : ''}
                                 ${unseen.has(r.id) ? '<span class="badge badge-red">new</span>' : ''}</span>
                             ${r.salary ? `<span class="race-sub">${Economy.fmt(r.salary)}/race</span>` : ''}
@@ -638,59 +631,6 @@ const Hub = {
                 ? `Application sent to ${team.name}. 🤞`
                 : `Application sent to ${team.name} — the league office (Game Master) will open contract talks. 🏛️`);
             this.refresh();
-        } catch (e) { Util.notify(e.message, 'error'); }
-    },
-
-    // Puts a player driver on a team with a signed contract. Shared by
-    // accepted applications and instant joins. Multi-team aware: the first
-    // team a driver signs with becomes their primary (points-scoring) team.
-    async signPlayerDriver({ driverId, driverUid, teamId, salary, exclusive = false }) {
-        const team = await DB.get('teams', teamId);
-        const driver = await DB.get('drivers', driverId);
-        if (!driver) throw new Error('Driver profile not found.');
-        const can = await Deals.canSignWithTeam(driverId, teamId, exclusive);
-        if (!can.ok) throw new Error(can.reason);
-        salary = Math.round(Number(salary) || 0);
-        const world = await DB.loadWorld();
-        const cap = Economy.payCap(Prestige.driverStars(driverId, world));
-        if (salary > cap) throw new Error(`League rule: pay is capped at ${Economy.fmt(cap)}/race at their prestige level.`);
-        if (!driver.teamId) {
-            await DB.update('drivers', driverId, { teamId });
-            if (driverUid === Auth.uid()) await Auth.updateProfile({ teamId });
-            else if (driverUid) await DB.update('users', driverUid, { teamId }).catch(() => {});
-        }
-        await DB.create('contracts', {
-            teamId, teamName: team?.name || '',
-            ownerUid: team?.ownerUid || null,
-            personId: driverId, personKind: 'driver', personName: driver.name,
-            personUid: driverUid || null,
-            role: 'driver', salary, exclusive: !!exclusive,
-            agreement: 'contracted', buyout: this.buyoutFor(salary),
-            signOnBonus: salary, clauses: null,
-            seasonYear: new Date().getFullYear(), status: 'active', signedAt: Util.todayISO()
-        });
-        // Sign-on bonus — same one-off payment Deals.execute makes (unified rule).
-        if (salary) {
-            if (team?.ownerUid) await Economy.adjustWallet(team.ownerUid, -salary, '🤝', `Sign-on bonus paid: ${driver.name}`);
-            if (driverUid) await Economy.adjustWallet(driverUid, salary, '🤝', `Sign-on bonus from ${team?.name || 'team'}`);
-        }
-        News.post('🤝', `${driver.name} signed with ${team?.name || 'a team'} (${Economy.fmt(salary)}/race${exclusive ? ', exclusive' : ''})`);
-    },
-
-    async actOffer(id, accept) {
-        try {
-            const offer = await DB.get('recruitment', id);
-            if (!offer || offer.status !== 'pending') { this.refresh(); return; }
-            if (!accept) {
-                await DB.update('recruitment', id, { status: 'declined' });
-                Util.notify('Offer declined.');
-                this.refresh();
-                return;
-            }
-            await this.signPlayerDriver({ driverId: offer.driverId, driverUid: offer.driverUid, teamId: offer.teamId, salary: offer.salary, exclusive: offer.exclusive !== false });
-            await DB.update('recruitment', id, { status: 'accepted' });
-            Util.notify(`Welcome to ${offer.teamName}! Contract signed. 🤝`);
-            App.go('career');
         } catch (e) { Util.notify(e.message, 'error'); }
     },
 

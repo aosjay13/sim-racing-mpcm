@@ -1,11 +1,39 @@
 # Contract Signing System — Design & Architecture
 
-**Status:** Design (not yet implemented)
+**Status:** ⚠️ SUPERSEDED — resolved differently than originally proposed. See §0.
 **Scope:** Every path by which a player joins a team — driver, crew, or any other position — must end in an explicit, player-performed signature on a pending contract. No auto-assignment, ever, including onboarding.
 
 ---
 
-## 1. The rule
+## 0. Resolution (2026-07-10 audit)
+
+This doc originally proposed a dedicated `js/srmpc-contracts.js` module with its own
+`draft → pending → sign()` state machine, layered on top of the negotiation system. That
+module was **never built** — instead, the double-opt-in requirement was satisfied by routing
+every hiring path through the existing `recruitment` (applications/vacancies) and
+`negotiations` (`Deals.start/counter/accept`) collections, which already require an explicit
+action from both parties before `Deals.execute()` writes an active contract. A negotiation
+`accept()` is only valid from whichever side's *turn* it is, and the terms being accepted are
+always exactly what the other party last proposed (an offer or their own counter) — so both
+sides always perform an explicit action agreeing to the identical final numbers. That satisfies
+"formal offer + explicit acceptance" without a separate signature ceremony.
+
+Re-audit of the six gaps below against current code (see `RECRUITMENT_CONTRACTS_DESIGN.md` for
+the shipped architecture):
+
+| # | Gap | Status |
+|---|-----|--------|
+| 1 | Onboarding team picker | **Fixed.** `Career.driverOnboarding` now always creates the driver with `teamId: null`; picking a team only files a `recruitment` application. |
+| 2 | Instant "Join a Team" | **Fixed.** Routes through `Hub.apply()` → pending application, not an instant write. |
+| 3 | Recruitment offer accept (`Hub.actOffer`) | **Removed (2026-07-10).** Nothing created `recruitment` docs with `kind: 'offer'` anymore — team→player offers go through `Deals.start`. The dead `Hub.actOffer`/`Hub.signPlayerDriver` instant-sign bypass (and its unreachable render branches) has been deleted from `js/srmpc-hub.js` so it can't be reconnected by accident. |
+| 4 | Negotiation accept → `Deals.execute()` | **Not a gap** — see resolution above. Whoever's turn it is accepts exactly the terms the other side proposed; this is a legitimate double opt-in, just not a separate "signature" step. |
+| 5 | Free-agent market hire | **Mitigated by exclusion.** `Market`'s hireable pool filters out any driver with `ownerUid` set (`js/srmpc-market.js`) — player-owned talent is never reachable through `Market.negotiate`'s direct write; only AI free agents are. |
+| 6 | Staff / role-profile assignment (`_setRoleTeam`) | **Removed.** That function no longer exists; staff hiring goes through `Hub.applyStaff`/`Deals.execute`, inheriting the same negotiation double opt-in as driver hires. |
+
+The sections below are kept for historical/design reference only — the `Contracts` module they
+describe was not implemented and should not be assumed to exist.
+
+## 1. The rule (as originally proposed — not implemented)
 
 > A player's team membership (`drivers.teamId`, `staff.teamId`, `users.teamId`) may only ever
 > be written by **`Contracts.sign()`**, and `Contracts.sign()` may only be called by the player
@@ -14,7 +42,7 @@
 Everything upstream — negotiations, recruitment offers, instant joins, onboarding — only ever
 produces a `contracts` document with `status: 'pending'`.
 
-## 2. Current gaps (paths that assign a team without a signature)
+## 2. Original gap list (historical — see §0 for current status)
 
 | # | Path | Location | Problem |
 |---|------|----------|---------|
