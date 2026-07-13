@@ -206,7 +206,9 @@ const Auth = {
         mode: 'guest',          // 'guest' | 'player' | 'admin'
         user: null,             // firebase user
         profile: null,          // users/{uid} doc for players
-        adminLocalOnly: false   // admin unlocked but Firebase anon auth unavailable
+        adminLocalOnly: false,  // admin unlocked but Firebase anon auth unavailable
+        owner: false            // GM unlocked via the default ("main") career passcode
+                                // → the league owner, who approves new-career requests
     },
     _listeners: [],
     _readyResolve: null,
@@ -215,6 +217,9 @@ const Auth = {
     _emit() { this._listeners.forEach(fn => { try { fn(this.state); } catch (e) { console.error(e); } }); },
 
     isAdmin() { return this.state.mode === 'admin'; },
+    // The owner = a GM who unlocked with the default career's passcode. Only the
+    // owner may approve requests to create new careers / GMs.
+    isOwner() { return this.state.mode === 'admin' && this.state.owner; },
     isPlayer() { return this.state.mode === 'player'; },
     isSignedIn() { return this.state.mode !== 'guest'; },
     uid() { return this.state.user?.uid || null; },
@@ -237,9 +242,11 @@ const Auth = {
                 // admin at the gate saves the session and THEN signs in
                 // anonymously — a stale captured value made this listener treat
                 // that fresh anon session as orphaned and sign the GM back out.
-                if (this._loadAdminSession()) {
+                const adminSession = this._loadAdminSession();
+                if (adminSession) {
                     // Valid admin session — make sure we hold a Firebase session too.
                     this.state.mode = 'admin';
+                    this.state.owner = !!adminSession.owner; // survives reloads
                     if (!user) await this._ensureAdminFirebaseAuth();
                 } else if (user && user.isAnonymous) {
                     // Anonymous session without an admin unlock is stale — drop it.
@@ -371,8 +378,8 @@ const Auth = {
         await Careers.changePasscode(Careers.activeId, currentPasscode, newPasscode);
     },
 
-    _saveAdminSession() {
-        localStorage.setItem(this._ADMIN_SESSION_KEY, JSON.stringify({ expiresAt: Date.now() + this._ADMIN_TTL_MS }));
+    _saveAdminSession(owner = false) {
+        localStorage.setItem(this._ADMIN_SESSION_KEY, JSON.stringify({ expiresAt: Date.now() + this._ADMIN_TTL_MS, owner: !!owner }));
     },
 
     _loadAdminSession() {
@@ -403,8 +410,10 @@ const Auth = {
 
     async unlockAdmin(passcode) {
         if (!(await this.verifyPasscode(passcode))) throw new Error('Incorrect passcode.');
-        this._saveAdminSession();
+        const owner = Careers.activeId === Careers.DEFAULT_ID;
+        this._saveAdminSession(owner);
         this.state.mode = 'admin';
+        this.state.owner = owner;
         await this._ensureAdminFirebaseAuth();
         this._registerGm();
         this._emit();
@@ -413,8 +422,10 @@ const Auth = {
     // Elevate a signed-in player to admin (keeps their player account signed in).
     async elevateToAdmin(passcode) {
         if (!(await this.verifyPasscode(passcode))) throw new Error('Incorrect passcode.');
-        this._saveAdminSession();
+        const owner = Careers.activeId === Careers.DEFAULT_ID;
+        this._saveAdminSession(owner);
         this.state.mode = 'admin';
+        this.state.owner = owner;
         this._registerGm();
         this._emit();
     },
@@ -440,6 +451,7 @@ const Auth = {
     // session has no player account underneath, so it signs out to the gate.
     async dropAdmin() {
         localStorage.removeItem(this._ADMIN_SESSION_KEY);
+        this.state.owner = false;
         const user = fbAuth?.currentUser;
         if (user && !user.isAnonymous) {
             this.state.mode = 'player';
@@ -456,6 +468,7 @@ const Auth = {
         this.state.mode = 'guest';
         this.state.profile = null;
         this.state.adminLocalOnly = false;
+        this.state.owner = false;
         if (fbAuth?.currentUser) {
             try { await fbAuth.signOut(); } catch (e) { console.warn('Sign-out error:', e); }
         } else {
@@ -561,21 +574,79 @@ const Careers = {
         return null;
     },
 
-    async create(name, passcode) {
-        const nm = String(name || '').trim();
-        if (!nm) throw new Error('Give the career mode a name.');
-        const pass = String(passcode || '').trim();
-        if (pass.length < 6) throw new Error('The GM passcode must be at least 6 characters.');
+    // Write a career registry doc from an already-hashed passcode. Shared by
+    // create() (owner, direct) and approveRequest() (owner approving a request).
+    async _persistCareer(name, passcodeHash) {
         if (!fbDb) throw new Error('Database is not connected.');
         const id = Util.uid();
         await fbDb.collection('careers').doc(id).set({
-            name: nm,
-            passcodeHash: await Util.sha256(pass),
+            name,
+            passcodeHash,
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         });
         await this.list({ force: true });
         return id;
+    },
+
+    _validateNewCareer(name, passcode) {
+        const nm = String(name || '').trim();
+        if (!nm) throw new Error('Give the career mode a name.');
+        const pass = String(passcode || '').trim();
+        if (pass.length < 6) throw new Error('The GM passcode must be at least 6 characters.');
+        return { nm, pass };
+    },
+
+    // Owner-only direct create.
+    async create(name, passcode) {
+        const { nm, pass } = this._validateNewCareer(name, passcode);
+        return this._persistCareer(nm, await Util.sha256(pass));
+    },
+
+    /* ---- New-career REQUEST queue (owner approval) ----
+       Anyone signed in can request a new career/GM; it does not exist until the
+       owner approves. Requests live in the global `careerRequests` collection:
+       { name, passcodeHash, requestedBy, requestedByLabel, status, createdAt }. */
+    async requestCreate(name, passcode) {
+        const { nm, pass } = this._validateNewCareer(name, passcode);
+        if (!fbDb) throw new Error('Database is not connected.');
+        await fbDb.collection('careerRequests').add({
+            name: nm,
+            passcodeHash: await Util.sha256(pass),
+            requestedBy: Auth.uid() || null,
+            requestedByLabel: Auth.state.profile?.displayName || Auth.state.user?.email || 'A league member',
+            status: 'pending',
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+    },
+
+    async listRequests() {
+        if (!fbDb) return [];
+        const snap = await fbDb.collection('careerRequests').get();
+        const docs = [];
+        snap.forEach(d => docs.push({ id: d.id, ...d.data() }));
+        docs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        return docs;
+    },
+
+    async approveRequest(reqId) {
+        if (!fbDb) throw new Error('Database is not connected.');
+        const snap = await fbDb.collection('careerRequests').doc(reqId).get();
+        if (!snap.exists) throw new Error('Request not found.');
+        const req = snap.data();
+        if (req.status !== 'pending') throw new Error('This request has already been decided.');
+        const id = await this._persistCareer(req.name, req.passcodeHash);
+        await fbDb.collection('careerRequests').doc(reqId).set(
+            { status: 'approved', careerId: id, decidedAt: firebase.firestore.FieldValue.serverTimestamp() },
+            { merge: true });
+        return id;
+    },
+
+    async denyRequest(reqId) {
+        if (!fbDb) throw new Error('Database is not connected.');
+        await fbDb.collection('careerRequests').doc(reqId).set(
+            { status: 'denied', decidedAt: firebase.firestore.FieldValue.serverTimestamp() },
+            { merge: true });
     },
 
     async rename(id, name) {

@@ -135,6 +135,11 @@ service cloud.firestore {
     // secret the rules enforce (same friends-league trust model as config/admin).
     match /careers/{doc}         { allow read: if true; allow write: if isAuthenticated(); }
 
+    // Requests to create a new career / GM. Any signed-in member may create a
+    // pending request; the owner approves/denies it (client-side gate — see
+    // Auth.isOwner + Careers.approveRequest). Same friends-league trust model.
+    match /careerRequests/{doc}  { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
+
     // ----- Namespaced career worlds -----
     // Every non-default career stores its world in collections named
     // `c__{careerId}__{collection}` (careerId is base36, no underscores). One

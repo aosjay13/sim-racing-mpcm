@@ -31,8 +31,20 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
     };
     const gmSignIn = async () => {
         await signOut();
+        // Always unlock the default career (owner) — select it if the picker is up.
+        if (await page.locator('#gate-career-field:not(.hidden)').count()) await page.selectOption('#gate-career', 'main');
         await page.click('.gate-tab[data-pane="admin"]');
         await page.fill('#gate-passcode', 'phoenix13!');
+        await page.click('#gate-admin-submit');
+        await page.waitForSelector('#app-shell:not(.hidden)');
+        await toast(/Welcome back/).catch(() => {});
+    };
+    const gmSignInCareer = async (careerId, passcode) => {
+        await signOut();
+        await page.waitForSelector('#gate-career-field:not(.hidden)');
+        await page.selectOption('#gate-career', careerId);
+        await page.click('.gate-tab[data-pane="admin"]');
+        await page.fill('#gate-passcode', passcode);
         await page.click('#gate-admin-submit');
         await page.waitForSelector('#app-shell:not(.hidden)');
         await toast(/Welcome back/).catch(() => {});
@@ -135,6 +147,69 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
     }, newId);
     log(deleted.gone && deleted.mainSafe ? '✅' : '❌',
         'Deleting Test League removed its registry doc; the default career is untouched');
+
+    /* ---- 9. Owner flag: main-career GM is the owner ---- */
+    await gmSignIn();
+    const ownerFlag = await page.evaluate(() => Auth.isOwner());
+    log(ownerFlag ? '✅' : '❌', 'Unlocking the default career makes this GM the league owner (Auth.isOwner)');
+
+    /* ---- 10. Owner creates a sub-career; its GM is NOT the owner ---- */
+    const subId = await page.evaluate(async () => Careers.create('Sub League', 'league9'));
+    await gmSignInCareer(subId, 'league9');
+    const subOwner = await page.evaluate(() => ({ isOwner: Auth.isOwner(), isAdmin: Auth.isAdmin() }));
+    log(!subOwner.isOwner && subOwner.isAdmin ? '✅' : '❌', 'A sub-career GM is a Game Master but NOT the owner');
+
+    /* ---- 11. Sub-GM Settings shows the REQUEST form, not a direct create ---- */
+    await page.evaluate(() => App.go('admin'));
+    await page.waitForSelector('[data-admin-tab="settings"]');
+    await page.click('[data-admin-tab="settings"]');
+    await page.waitForSelector('#career-create-form');
+    const formMode = await page.evaluate(() => document.getElementById('career-create-form').dataset.mode);
+    log(formMode === 'request' ? '✅' : '❌', 'Sub-GM sees "Request a new career mode" (approval-gated), not a direct create');
+
+    /* ---- 12. Sub-GM submits a request — no career is created yet ---- */
+    await page.fill('#cc-name', 'Requested League');
+    await page.fill('#cc-pass', 'req1234');
+    await page.fill('#cc-pass2', 'req1234');
+    await page.click('#career-create-form button[type=submit]');
+    await toast(/owner will review/);
+    const afterRequest = await page.evaluate(async () => {
+        const reqs = await Careers.listRequests();
+        const list = await Careers.list({ force: true });
+        return {
+            pending: reqs.filter(r => r.status === 'pending' && r.name === 'Requested League').length,
+            careerExists: list.some(c => c.name === 'Requested League')
+        };
+    });
+    log(afterRequest.pending === 1 && !afterRequest.careerExists ? '✅' : '❌',
+        'Request is pending and the career does NOT exist until the owner approves');
+
+    /* ---- 13. Owner approves — the career now exists ---- */
+    await gmSignIn();
+    const approved = await page.evaluate(async () => {
+        const req = (await Careers.listRequests()).find(r => r.name === 'Requested League' && r.status === 'pending');
+        const id = await Careers.approveRequest(req.id);
+        const list = await Careers.list({ force: true });
+        const reqs = await Careers.listRequests();
+        return {
+            careerExists: list.some(c => c.id === id && c.name === 'Requested League'),
+            reqApproved: reqs.find(r => r.id === req.id)?.status === 'approved'
+        };
+    });
+    log(approved.careerExists && approved.reqApproved ? '✅' : '❌',
+        'Owner approval creates the career and marks the request approved');
+
+    /* ---- 14. Owner denies a request — no career is created ---- */
+    const denied = await page.evaluate(async () => {
+        await Careers.requestCreate('Rejected League', 'nope123');
+        const req = (await Careers.listRequests()).find(r => r.name === 'Rejected League' && r.status === 'pending');
+        await Careers.denyRequest(req.id);
+        const list = await Careers.list({ force: true });
+        const status = (await Careers.listRequests()).find(r => r.id === req.id)?.status;
+        return { created: list.some(c => c.name === 'Rejected League'), status };
+    });
+    log(!denied.created && denied.status === 'denied' ? '✅' : '❌',
+        'Denying a request creates no career and marks it denied');
 
     await browser.close();
     const fails = steps.filter(s => s.startsWith('❌'));

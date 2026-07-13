@@ -2276,8 +2276,32 @@ const Admin = {
     async tab_settings(el) {
         const careers = await Careers.list({ force: true });
         const activeName = Careers.nameFor(Careers.activeId);
+        const isOwner = Auth.isOwner();
+        const requests = isOwner ? await Careers.listRequests() : [];
+        const pending = requests.filter(r => r.status === 'pending');
+        const decided = requests.filter(r => r.status !== 'pending').slice(0, 6);
 
         el.innerHTML = `
+        ${isOwner ? `
+        <section class="panel">
+            <div class="panel-head"><h2>📩 New-career requests${pending.length ? ` <span class="badge badge-admin">${pending.length}</span>` : ''}</h2></div>
+            <p class="muted">Players and other Game Masters can request a new career mode. Nothing is created until you approve it here.</p>
+            ${pending.length ? `<table class="table">
+                <thead><tr><th>Requested career</th><th>By</th><th></th></tr></thead>
+                <tbody>
+                    ${pending.map(r => `<tr>
+                        <td><strong>${Util.esc(r.name)}</strong></td>
+                        <td class="muted">${Util.esc(r.requestedByLabel || 'A league member')}</td>
+                        <td class="right">
+                            <button class="btn btn-primary btn-sm" onclick="Admin.careerApprove('${Util.attr(r.id)}')">Approve</button>
+                            <button class="btn btn-danger btn-sm" onclick="Admin.careerDeny('${Util.attr(r.id)}')">Deny</button>
+                        </td>
+                    </tr>`).join('')}
+                </tbody></table>`
+                : '<p class="muted small">No pending requests.</p>'}
+            ${decided.length ? `<hr class="sep"><p class="muted small">Recently: ${decided.map(r => `${Util.esc(r.name)} — ${Util.esc(r.status)}`).join(' · ')}</p>` : ''}
+        </section>` : ''}
+
         <section class="panel">
             <div class="panel-head"><h2>🏁 Career Modes</h2></div>
             <p class="muted">Each career mode is a completely separate world — its own players, teams, drivers, results, money, and Game Master passcode. Nothing crosses between them. You're currently running <strong>${Util.esc(activeName)}</strong>.</p>
@@ -2304,13 +2328,15 @@ const Admin = {
                 </tbody>
             </table>
             <hr class="sep">
-            <h3>➕ New career mode</h3>
-            <p class="muted small">Creates a fresh, empty career. Players can join it from the sign-in screen; it gets its own Game Master passcode.</p>
-            <form id="career-create-form" class="form-grid">
+            <h3>➕ ${isOwner ? 'New career mode' : 'Request a new career mode'}</h3>
+            <p class="muted small">${isOwner
+                ? 'Creates a fresh, empty career. Players can join it from the sign-in screen; it gets its own Game Master passcode.'
+                : 'Only the league owner can create a career directly. Submit a request and the owner will approve it before it goes live.'}</p>
+            <form id="career-create-form" class="form-grid" data-mode="${isOwner ? 'create' : 'request'}">
                 <label class="field"><span>Name</span><input id="cc-name" class="input" type="text" maxlength="60" placeholder="e.g. Season 2 · GT3 League" required></label>
                 <label class="field"><span>Game Master passcode (min 6 chars)</span><input id="cc-pass" class="input" type="password" autocomplete="new-password" required></label>
                 <label class="field"><span>Confirm passcode</span><input id="cc-pass2" class="input" type="password" autocomplete="new-password" required></label>
-                <button type="submit" class="btn btn-primary">Create Career Mode</button>
+                <button type="submit" class="btn btn-primary">${isOwner ? 'Create Career Mode' : 'Submit request'}</button>
             </form>
         </section>
 
@@ -2343,8 +2369,13 @@ const Admin = {
             const btn = e.target.querySelector('button[type=submit]');
             btn.disabled = true;
             try {
-                await Careers.create(name, pass);
-                Util.notify(`Career “${name.trim()}” created. Players can now join it from sign-in. 🏁`);
+                if (e.target.dataset.mode === 'create') {
+                    await Careers.create(name, pass);
+                    Util.notify(`Career “${name.trim()}” created. Players can now join it from sign-in. 🏁`);
+                } else {
+                    await Careers.requestCreate(name, pass);
+                    Util.notify('Request submitted — the league owner will review it. 📩');
+                }
                 this.render(el);
             } catch (err) { Util.notify(err.message, 'error'); btn.disabled = false; }
         });
@@ -2377,6 +2408,22 @@ const Admin = {
 
     /* ---------------- Career mode management ---------------- */
     careerSwitch(id) { App.switchCareer(id); },
+
+    async careerApprove(reqId) {
+        try {
+            const id = await Careers.approveRequest(reqId);
+            Util.notify(`Approved — “${Careers.nameFor(id)}” is live. Players can join it from sign-in. 🏁`);
+            this.refresh();
+        } catch (err) { Util.notify(err.message, 'error'); }
+    },
+
+    async careerDeny(reqId) {
+        try {
+            await Careers.denyRequest(reqId);
+            Util.notify('Request denied.');
+            this.refresh();
+        } catch (err) { Util.notify(err.message, 'error'); }
+    },
 
     careerRename(id) {
         const current = Careers.nameFor(id);

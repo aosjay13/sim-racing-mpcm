@@ -116,6 +116,9 @@ const App = {
 
     async showCareerMenu() {
         const list = await Careers.list({ force: true });
+        // Owners create careers directly (Admin → Settings); everyone else can
+        // REQUEST a new career/GM, which the owner must approve first.
+        const canRequest = !Auth.isOwner();
         Modal.open(`
             ${Modal.header('🏁 Career Modes', 'Each career is a separate world — players, teams, results, and money never mix.')}
             <div class="career-menu">
@@ -127,10 +130,44 @@ const App = {
                             : '<span class="muted small">Switch →</span>'}
                     </button>`).join('')}
             </div>
+            ${canRequest
+                ? '<button id="career-request-btn" class="btn btn-secondary btn-block">➕ Request a new career mode</button>'
+                : '<p class="muted small">Create new careers in Admin → Settings.</p>'}
             <div class="modal-actions"><button class="btn btn-ghost" onclick="Modal.close()">Close</button></div>
         `);
         Util.$$('[data-career]').forEach(b =>
             b.addEventListener('click', () => this.switchCareer(b.dataset.career)));
+        document.getElementById('career-request-btn')?.addEventListener('click', () => this.showCareerRequestForm());
+    },
+
+    // A player or sub-GM asks the owner to open a new career/GM. It doesn't
+    // exist until the owner approves it in Admin → Settings.
+    showCareerRequestForm() {
+        Modal.open(`
+            ${Modal.header('➕ Request a new career mode', 'The league owner has to approve this before the career and its Game Master passcode go live.')}
+            <form id="career-request-form" class="form-grid">
+                <label class="field"><span>Career name</span><input id="crq-name" class="input" type="text" maxlength="60" placeholder="e.g. GT3 Sundays" required autofocus></label>
+                <label class="field"><span>Desired Game Master passcode (min 6 chars)</span><input id="crq-pass" class="input" type="password" autocomplete="new-password" required></label>
+                <label class="field"><span>Confirm passcode</span><input id="crq-pass2" class="input" type="password" autocomplete="new-password" required></label>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Submit request</button>
+                </div>
+            </form>`);
+        document.getElementById('career-request-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('crq-name').value;
+            const pass = document.getElementById('crq-pass').value;
+            const pass2 = document.getElementById('crq-pass2').value;
+            if (pass !== pass2) { Util.notify('The two passcodes do not match.', 'error'); return; }
+            const btn = e.target.querySelector('button[type=submit]');
+            btn.disabled = true;
+            try {
+                await Careers.requestCreate(name, pass);
+                Modal.close();
+                Util.notify('Request submitted — the league owner will review it. 📩');
+            } catch (err) { Util.notify(err.message, 'error'); btn.disabled = false; }
+        });
     },
 
     onAuthChange() {
