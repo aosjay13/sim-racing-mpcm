@@ -940,6 +940,13 @@ const Sim = {
                   batched separately), one ledger row per line, every row
                   tagged with the wallet it actually moved. -- */
             await Wallet.applyBatch(tx);
+
+            // Post-race solvency check: any team whose budget moved this race is
+            // re-evaluated (a completed race advances the repossession fuse).
+            const touchedTeams = [...new Set(tx.filter(l => l.wallet?.type === 'team').map(l => l.wallet.id))];
+            for (const id of touchedTeams) {
+                try { await Insolvency.evaluate(id, { raceCompleted: true }); } catch (e) { console.warn('Solvency eval failed:', e); }
+            }
         } catch (e) { console.warn('Race payout failed:', e); }
     },
 

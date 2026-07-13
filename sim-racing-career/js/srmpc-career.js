@@ -609,6 +609,8 @@ const Career = {
         el.innerHTML = `
         ${this._workspaceHead('team-owner', `<button class="btn btn-secondary" onclick="Career.teamForm('${Util.attr(team.id)}')">✎ Edit Team</button>`, team.id)}
 
+        ${Insolvency.isInsolvent(team) ? Insolvency.warningPanel(team) : ''}
+
         <div class="driver-hero panel">
             ${C.logoBox(team, 'logo-xl')}
             <div class="driver-hero-info">

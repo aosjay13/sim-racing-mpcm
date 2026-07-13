@@ -49,7 +49,11 @@ service cloud.firestore {
         || changed.hasOnly(['budget', 'updatedAt'])
         || changed.hasOnly(['budget', 'tier', 'updatedAt'])
         || changed.hasOnly(['budget', 'ownerUid', 'isEstablished', 'updatedAt'])
-        || changed.hasOnly(['budget', 'ownerUid', 'isEstablished', 'marketValue', 'tier', 'updatedAt']);
+        || changed.hasOnly(['budget', 'ownerUid', 'isEstablished', 'marketValue', 'tier', 'updatedAt'])
+        // Bankruptcy/repossession: a budget change bundled with the solvency
+        // state fields (js/srmpc-insolvency.js). State-only writes (no budget)
+        // already pass via the first clause.
+        || changed.hasOnly(['budget', 'financialState', 'insolventAt', 'insolventRaces', 'updatedAt']);
     }
 
     // ----- Global GM override: the Game Master may edit ANYTHING -----

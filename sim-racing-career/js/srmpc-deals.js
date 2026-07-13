@@ -101,6 +101,8 @@ const Deals = {
         agreement = agreement === 'open' ? 'open' : 'contracted';
         const isFreshHire = (kind === 'team-driver' || kind === 'team-staff') && !contractId;
         if (isFreshHire) {
+            // An insolvent team is frozen from extending new offers / acquiring talent.
+            if (teamId && ownerUid) await Insolvency.assertSolvent(teamId);
             ({ signOnBonus, clauses } = await this._validateOfferTerms({ teamId, personKind, salary, agreement, signOnBonus, clauses }));
         } else { signOnBonus = null; clauses = null; }
 

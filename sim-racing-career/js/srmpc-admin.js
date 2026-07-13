@@ -2086,6 +2086,22 @@ const Admin = {
             </section>
 
             <section class="panel">
+                <div class="panel-head"><h2>🧯 Team Solvency</h2><span class="chip chip-dim">bankruptcy · debt · repossession</span></div>
+                <div class="form-grid">
+                    <label class="field"><span>Team</span><select id="ov-solv-team" class="input">${teams.map(t => opt(t.id, `${t.name}${t.financialState === 'insolvent' ? ' · INSOLVENT' : ''}`)).join('')}</select></label>
+                    <div class="btn-row">
+                        <button class="btn btn-secondary" id="ov-solv-flag" title="Force the INSOLVENT flag on now">Flag insolvent</button>
+                        <button class="btn btn-primary" id="ov-solv-forgive" title="Zero any debt and lift the flag">🧯 Forgive debt &amp; restore</button>
+                        <button class="btn btn-danger" id="ov-solv-repo" title="Free all contracts (no buyout), strip ownership, relist">🏦 Force repossession</button>
+                    </div>
+                    <ul class="checkered-list">
+                        <li>Forgive: writes off debt to $0 and clears the insolvent flag.</li>
+                        <li>Repossession: nullifies contracts to open agreements, strips the owner (personal wallet untouched), recomputes marketValue, and relists the team.</li>
+                    </ul>
+                </div>
+            </section>
+
+            <section class="panel">
                 <div class="panel-head"><h2>🗄 Raw Document Editor</h2><span class="chip chip-dim">any collection · any field</span></div>
                 <div class="form-grid">
                     <div class="form-row" style="align-items:end">
@@ -2135,6 +2151,11 @@ const Admin = {
                 this.refresh();
             } catch (e) { Util.notify(e.message, 'error'); }
         });
+
+        /* ---- Team Solvency ---- */
+        Util.$('#ov-solv-flag')?.addEventListener('click', () => this.gmFlagInsolvent(Util.$('#ov-solv-team').value));
+        Util.$('#ov-solv-forgive')?.addEventListener('click', () => this.gmForgiveDebt(Util.$('#ov-solv-team').value));
+        Util.$('#ov-solv-repo')?.addEventListener('click', () => this.gmRepossess(Util.$('#ov-solv-team').value));
 
         /* ---- Renames (cascading) ---- */
         Util.$('#ov-team-go').addEventListener('click', () => this.ovRenameTeam(Util.$('#ov-team').value, Util.$('#ov-team-name').value.trim()));
@@ -2421,6 +2442,40 @@ const Admin = {
         try {
             await Careers.denyRequest(reqId);
             Util.notify('Request denied.');
+            this.refresh();
+        } catch (err) { Util.notify(err.message, 'error'); }
+    },
+
+    /* ---------------- Team solvency (bankruptcy override) ---------------- */
+    async gmFlagInsolvent(teamId) {
+        if (!this.guard() || !teamId) return;
+        try {
+            await DB.update('teams', teamId, { financialState: 'insolvent', insolventAt: Util.todayISO() });
+            const t = await DB.get('teams', teamId);
+            News.post('🧯', `${t?.name || 'A team'} flagged insolvent by the league office.`);
+            Util.notify('Team flagged insolvent.'); this.refresh();
+        } catch (err) { Util.notify(err.message, 'error'); }
+    },
+
+    async gmForgiveDebt(teamId) {
+        if (!this.guard() || !teamId) return;
+        try {
+            const t = await DB.get('teams', teamId, { force: true });
+            const debt = Number(t?.budget) || 0;
+            if (debt < 0) await Wallet.adjustTeamWallet(teamId, -debt, '🧯', 'GM: debt forgiven');
+            await DB.update('teams', teamId, { financialState: 'solvent', insolventAt: null, insolventRaces: 0 });
+            News.post('🧯', `${t?.name || 'A team'}'s debt was forgiven by the league office.`);
+            Util.notify('Debt forgiven — solvency restored.'); this.refresh();
+        } catch (err) { Util.notify(err.message, 'error'); }
+    },
+
+    async gmRepossess(teamId) {
+        if (!this.guard() || !teamId) return;
+        const t = await DB.get('teams', teamId);
+        if (!t?.ownerUid) { Util.notify('That team has no owner to repossess from.', 'info'); return; }
+        if (!confirm(`Force repossession of ${t.name}? Contracts are freed without penalty, the owner is stripped, and the team is relisted.`)) return;
+        try {
+            await Insolvency.repossess(teamId, { reason: 'GM action' });
             this.refresh();
         } catch (err) { Util.notify(err.message, 'error'); }
     },
