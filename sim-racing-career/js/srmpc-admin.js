@@ -2274,11 +2274,50 @@ const Admin = {
     },
 
     async tab_settings(el) {
+        const careers = await Careers.list({ force: true });
+        const activeName = Careers.nameFor(Careers.activeId);
+
         el.innerHTML = `
+        <section class="panel">
+            <div class="panel-head"><h2>🏁 Career Modes</h2></div>
+            <p class="muted">Each career mode is a completely separate world — its own players, teams, drivers, results, money, and Game Master passcode. Nothing crosses between them. You're currently running <strong>${Util.esc(activeName)}</strong>.</p>
+            <table class="table">
+                <thead><tr><th>Career mode</th><th></th></tr></thead>
+                <tbody>
+                    ${careers.map(c => {
+                        const isActive = c.id === Careers.activeId;
+                        const isMain = c.id === Careers.DEFAULT_ID;
+                        return `<tr>
+                            <td>
+                                <strong>${Util.esc(c.name)}</strong>
+                                ${isActive ? '<span class="badge badge-admin" style="margin-left:.5rem">Current</span>' : ''}
+                                ${isMain ? '<span class="muted small" style="margin-left:.5rem">default</span>' : ''}
+                            </td>
+                            <td class="right">
+                                ${!isActive ? `<button class="btn btn-ghost btn-sm" onclick="Admin.careerSwitch('${Util.attr(c.id)}')">Switch to</button>` : ''}
+                                <button class="btn btn-ghost btn-sm" onclick="Admin.careerRename('${Util.attr(c.id)}')">Rename</button>
+                                <button class="btn btn-ghost btn-sm" onclick="Admin.careerReset('${Util.attr(c.id)}')">Reset</button>
+                                ${(!isMain && !isActive) ? `<button class="btn btn-danger btn-sm" onclick="Admin.careerDelete('${Util.attr(c.id)}')">Delete</button>` : ''}
+                            </td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>
+            <hr class="sep">
+            <h3>➕ New career mode</h3>
+            <p class="muted small">Creates a fresh, empty career. Players can join it from the sign-in screen; it gets its own Game Master passcode.</p>
+            <form id="career-create-form" class="form-grid">
+                <label class="field"><span>Name</span><input id="cc-name" class="input" type="text" maxlength="60" placeholder="e.g. Season 2 · GT3 League" required></label>
+                <label class="field"><span>Game Master passcode (min 6 chars)</span><input id="cc-pass" class="input" type="password" autocomplete="new-password" required></label>
+                <label class="field"><span>Confirm passcode</span><input id="cc-pass2" class="input" type="password" autocomplete="new-password" required></label>
+                <button type="submit" class="btn btn-primary">Create Career Mode</button>
+            </form>
+        </section>
+
         <div class="grid-2">
             <section class="panel">
-                <div class="panel-head"><h2>🔑 Admin Passcode</h2></div>
-                <p class="muted">The passcode is stored (hashed) in this browser. Anyone with the passcode can unlock Game Master on their own device.</p>
+                <div class="panel-head"><h2>🔑 Passcode — ${Util.esc(activeName)}</h2></div>
+                <p class="muted">This changes the Game Master passcode for the <strong>${Util.esc(activeName)}</strong> career only. Anyone with it can unlock Game Master for that career on their own device.</p>
                 <form id="passcode-form" class="form-grid">
                     <label class="field"><span>Current passcode</span><input id="pc-current" class="input" type="password" autocomplete="current-password"></label>
                     <label class="field"><span>New passcode (min 6 chars)</span><input id="pc-new" class="input" type="password" autocomplete="new-password"></label>
@@ -2287,28 +2326,42 @@ const Admin = {
             </section>
 
             <section class="panel">
-                <div class="panel-head"><h2>💾 Data</h2></div>
-                <p class="muted">Download a full JSON backup of every league collection.</p>
-                <button class="btn btn-secondary" id="export-btn">⬇ Export League Backup</button>
+                <div class="panel-head"><h2>💾 Data — ${Util.esc(activeName)}</h2></div>
+                <p class="muted">Download a full JSON backup of every collection in this career.</p>
+                <button class="btn btn-secondary" id="export-btn">⬇ Export Career Backup</button>
                 <hr class="sep">
                 <p class="muted small">Standings and statistics are always computed live from race results — there is nothing to rebuild and nothing that can drift out of sync.</p>
             </section>
         </div>`;
 
+        Util.$('#career-create-form', el).addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = Util.$('#cc-name').value;
+            const pass = Util.$('#cc-pass').value;
+            const pass2 = Util.$('#cc-pass2').value;
+            if (pass !== pass2) { Util.notify('The two passcodes do not match.', 'error'); return; }
+            const btn = e.target.querySelector('button[type=submit]');
+            btn.disabled = true;
+            try {
+                await Careers.create(name, pass);
+                Util.notify(`Career “${name.trim()}” created. Players can now join it from sign-in. 🏁`);
+                this.render(el);
+            } catch (err) { Util.notify(err.message, 'error'); btn.disabled = false; }
+        });
+
         Util.$('#passcode-form', el).addEventListener('submit', async (e) => {
             e.preventDefault();
             try {
                 await Auth.changePasscode(Util.$('#pc-current').value, Util.$('#pc-new').value);
-                Util.notify('Passcode changed on this device.');
+                Util.notify(`Passcode changed for ${Careers.nameFor(Careers.activeId)}.`);
                 e.target.reset();
             } catch (err) { Util.notify(err.message, 'error'); }
         });
 
         Util.$('#export-btn', el).addEventListener('click', async () => {
             try {
-                const collections = ['games', 'series', 'seasons', 'races', 'teams', 'drivers', 'users', 'challenges', 'challengeClaims', 'raceSignups', 'roleProfiles', 'staff', 'contracts', 'tracks', 'sponsors', 'news', 'recruitment'];
-                const backup = { exportedAt: new Date().toISOString() };
-                for (const c of collections) {
+                const backup = { exportedAt: new Date().toISOString(), career: Careers.nameFor(Careers.activeId) };
+                for (const c of DB.WORLD_COLLECTIONS) {
                     try { backup[c] = await DB.list(c, { force: true }); } catch (err) { backup[c] = { error: err.message }; }
                 }
                 const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
@@ -2319,6 +2372,87 @@ const Admin = {
                 URL.revokeObjectURL(a.href);
                 Util.notify('Backup downloaded.');
             } catch (e) { Util.notify(e.message, 'error'); }
+        });
+    },
+
+    /* ---------------- Career mode management ---------------- */
+    careerSwitch(id) { App.switchCareer(id); },
+
+    careerRename(id) {
+        const current = Careers.nameFor(id);
+        Modal.open(`
+            ${Modal.header('✏️ Rename career mode', '')}
+            <form id="career-rename-form" class="form-grid">
+                <label class="field"><span>Name</span><input id="cr-name" class="input" type="text" maxlength="60" value="${Util.esc(current)}" required autofocus></label>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>`);
+        document.getElementById('career-rename-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            try {
+                await Careers.rename(id, document.getElementById('cr-name').value);
+                Modal.close();
+                Util.notify('Career renamed.');
+                App.updateHeader();
+                this.refresh();
+            } catch (err) { Util.notify(err.message, 'error'); }
+        });
+    },
+
+    // Wipe a career's world but keep the shell (name + passcode). Confirm by
+    // typing the exact name — this is irreversible.
+    careerReset(id) {
+        const name = Careers.nameFor(id);
+        Modal.open(`
+            ${Modal.header('♻️ Reset career', `This permanently deletes every series, race, team, driver, result, contract, and wallet in <strong>${Util.esc(name)}</strong>. Player logins are kept — they simply re-join a blank career. The career itself and its passcode stay. This cannot be undone.`)}
+            <form id="career-reset-form" class="form-grid">
+                <label class="field"><span>Type <strong>${Util.esc(name)}</strong> to confirm</span><input id="cx-name" class="input" type="text" autocomplete="off" required autofocus></label>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Reset career</button>
+                </div>
+            </form>`);
+        document.getElementById('career-reset-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (document.getElementById('cx-name').value.trim() !== name) { Util.notify('Name did not match.', 'error'); return; }
+            const btn = e.target.querySelector('button[type=submit]');
+            btn.disabled = true; btn.textContent = 'Resetting…';
+            try {
+                const n = await DB.wipeCareer(id);
+                Modal.close();
+                Util.notify(`Reset “${name}” — cleared ${n} record${n === 1 ? '' : 's'}.`);
+                if (id === Careers.activeId) App.go('dashboard');
+                else this.refresh();
+            } catch (err) { Util.notify(err.message, 'error'); btn.disabled = false; btn.textContent = 'Reset career'; }
+        });
+    },
+
+    // Delete a career entirely: wipe its world then remove the registry doc.
+    careerDelete(id) {
+        const name = Careers.nameFor(id);
+        Modal.open(`
+            ${Modal.header('🗑 Delete career', `This deletes <strong>${Util.esc(name)}</strong> and all of its data forever. This cannot be undone.`)}
+            <form id="career-delete-form" class="form-grid">
+                <label class="field"><span>Type <strong>${Util.esc(name)}</strong> to confirm</span><input id="cd-name" class="input" type="text" autocomplete="off" required autofocus></label>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Delete career</button>
+                </div>
+            </form>`);
+        document.getElementById('career-delete-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (document.getElementById('cd-name').value.trim() !== name) { Util.notify('Name did not match.', 'error'); return; }
+            const btn = e.target.querySelector('button[type=submit]');
+            btn.disabled = true; btn.textContent = 'Deleting…';
+            try {
+                await DB.wipeCareer(id);
+                await Careers.deleteCareer(id);
+                Modal.close();
+                Util.notify(`Deleted “${name}”.`);
+                this.refresh();
+            } catch (err) { Util.notify(err.message, 'error'); btn.disabled = false; btn.textContent = 'Delete career'; }
         });
     }
 };

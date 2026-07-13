@@ -83,7 +83,9 @@ const Wallet = {
     async executeRoleTransaction({ from = null, to = null, amount, icon = '💵', label = '', fromLabel = null, toLabel = null, refId = null }) {
         amount = Math.round(Number(amount) || 0);
         if (!amount || (!from && !to)) return null;
-        const collFor = (w) => w.type === 'team' ? 'teams' : 'users';
+        // Route to the ACTIVE career's physical collections so wallet transfers
+        // stay inside the current career (see Careers in js/srmpc-core.js).
+        const collFor = (w) => Careers.collName(w.type === 'team' ? 'teams' : 'users');
         const fieldFor = (w) => w.type === 'team' ? 'budget' : 'balance';
         const pairId = Util.uid();
         const at = Util.todayISO();
@@ -107,7 +109,7 @@ const Wallet = {
             if (from) apply(from, -amount);
             if (to) apply(to, amount);
 
-            const ledgerCol = fs.collection('ledger');
+            const ledgerCol = fs.collection(Careers.collName('ledger'));
             const row = (w, delta, rowLabel) => ({
                 walletType: w.type, walletId: w.id, uid: w.type === 'player' ? w.id : null,
                 amount: delta, icon, label: String(rowLabel || label || '').slice(0, 140), refId, pairId, at,

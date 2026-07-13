@@ -127,5 +127,29 @@ service cloud.firestore {
 
     // ----- App config (admin passcode hash, GM registry, future settings) -----
     match /config/{doc}          { allow read: if true; allow write: if isAuthenticated(); }
+
+    // ----- Career-mode registry (js/srmpc-core.js Careers) -----
+    // One doc per career: { name, passcodeHash, createdAt, updatedAt }. Names
+    // are public (shown on the sign-in career picker). The passcodeHash only
+    // gates who can UNLOCK Game Master for that career client-side; it is not a
+    // secret the rules enforce (same friends-league trust model as config/admin).
+    match /careers/{doc}         { allow read: if true; allow write: if isAuthenticated(); }
+
+    // ----- Namespaced career worlds -----
+    // Every non-default career stores its world in collections named
+    // `c__{careerId}__{collection}` (careerId is base36, no underscores). One
+    // generic rule mirrors the top-level league-data posture (public read,
+    // authenticated write) for all of them, and preserves the isolated-wallet
+    // SHAPE checks on the per-career users/teams collections. This does NOT
+    // loosen the unprefixed collections above — every clause is gated on the
+    // `c__…` prefix, which those never match. The isGM() wildcard override
+    // still covers everything.
+    match /{coll}/{doc} {
+      allow read:           if coll.matches('^c__[a-z0-9]+__.*');
+      allow create, delete: if coll.matches('^c__[a-z0-9]+__.*') && isAuthenticated();
+      allow update:         if coll.matches('^c__[a-z0-9]+__.*') && isAuthenticated()
+        && (!coll.matches('^c__[a-z0-9]+__users$') || userWriteOk())
+        && (!coll.matches('^c__[a-z0-9]+__teams$') || teamWriteOk());
+    }
   }
 }

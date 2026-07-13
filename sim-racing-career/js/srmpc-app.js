@@ -85,11 +85,52 @@ const App = {
             return;
         }
 
+        // Careers must resolve BEFORE auth: which career is active decides which
+        // members / passcode Auth reads.
+        await Careers.init();
+
         this.wireAuthGate();
         this.wireHeader();
 
         Auth.onChange(() => this.onAuthChange());
         await Auth.init();
+    },
+
+    /* ---------------- Career mode switching ---------------- */
+    // Hop to another fully-isolated career without signing out. The login
+    // (Firebase Auth) is global; the profile / role / world all reload from the
+    // newly-active career's namespaced collections.
+    async switchCareer(id) {
+        if (!id || id === Careers.activeId) { Modal.close(); return; }
+        const name = Careers.nameFor(id);
+        Careers.setActive(id, name);          // repoints collection namespace + clears DB cache
+        Modal.close();
+        if (Auth.state.user && !Auth.state.user.isAnonymous) await Auth.reloadProfile();
+        this.updateHeader();
+        this.refreshHubBadge();
+        Util.notify(`Now in “${name}”. 🏁`);
+        // Players with no role yet in this career land on the role picker.
+        if (Auth.isPlayer() && !Auth.state.profile?.activeRole) this.go('career');
+        else this.go('dashboard');
+    },
+
+    async showCareerMenu() {
+        const list = await Careers.list({ force: true });
+        Modal.open(`
+            ${Modal.header('🏁 Career Modes', 'Each career is a separate world — players, teams, results, and money never mix.')}
+            <div class="career-menu">
+                ${list.map(c => `
+                    <button class="career-menu-item ${c.id === Careers.activeId ? 'active' : ''}" data-career="${Util.attr(c.id)}">
+                        <span class="career-menu-name">${Util.esc(c.name)}</span>
+                        ${c.id === Careers.activeId
+                            ? '<span class="career-pill">Current</span>'
+                            : '<span class="muted small">Switch →</span>'}
+                    </button>`).join('')}
+            </div>
+            <div class="modal-actions"><button class="btn btn-ghost" onclick="Modal.close()">Close</button></div>
+        `);
+        Util.$$('[data-career]').forEach(b =>
+            b.addEventListener('click', () => this.switchCareer(b.dataset.career)));
     },
 
     onAuthChange() {
@@ -108,6 +149,9 @@ const App = {
             else this.go('dashboard');
         } else if (!signedIn) {
             this._started = false;
+            // Refresh the gate's career picker — a career may have been created,
+            // renamed, or deleted during the last session.
+            Careers.list({ force: true }).then(() => this._renderGateCareers()).catch(() => {});
         }
     },
 
@@ -123,6 +167,7 @@ const App = {
 
         document.getElementById('gm-elevate-btn').addEventListener('click', () => this.showGmModal());
         document.getElementById('player-return-btn').addEventListener('click', () => this.returnToPlayer());
+        document.getElementById('career-switch-btn')?.addEventListener('click', () => this.showCareerMenu());
 
         // The role badge doubles as a switcher: players get the role picker,
         // an elevated Game Master drops back to their player career.
@@ -192,6 +237,14 @@ const App = {
             userName.textContent = '';
         }
 
+        // Career switcher: always available once signed in, so players and the
+        // GM can hop between separate careers.
+        const careerBtn = document.getElementById('career-switch-btn');
+        if (careerBtn) {
+            careerBtn.classList.toggle('hidden', !Auth.isSignedIn());
+            careerBtn.querySelector('.career-switch-name').textContent = Careers.activeName || Careers.nameFor(Careers.activeId);
+        }
+
         gmBtn.classList.toggle('hidden', !Auth.isPlayer());
         playerBtn.classList.toggle('hidden', !this._canReturnToPlayer());
         adminNav.classList.toggle('hidden', !Auth.isAdmin());
@@ -253,6 +306,14 @@ const App = {
     _gateMode: 'signin', // 'signin' | 'register'
 
     wireAuthGate() {
+        // Career selector — which world you sign in to / unlock GM for.
+        this._renderGateCareers();
+        const careerSel = document.getElementById('gate-career');
+        if (careerSel) careerSel.addEventListener('change', () => {
+            Careers.setActive(careerSel.value, Careers.nameFor(careerSel.value));
+            this._updateGateAdminHint();
+        });
+
         // Tabs
         Util.$$('.gate-tab').forEach(tab => tab.addEventListener('click', () => {
             Util.$$('.gate-tab').forEach(t => t.classList.toggle('active', t === tab));
@@ -359,6 +420,24 @@ const App = {
             }
         });
         setTimeout(() => document.getElementById('gm-pass')?.focus(), 50);
+    },
+
+    _renderGateCareers() {
+        const sel = document.getElementById('gate-career');
+        if (!sel) return;
+        const list = Careers._list || [];
+        // A single "main" career means multi-career hasn't been used yet — hide
+        // the selector to keep the gate clean until the GM makes a second one.
+        const field = document.getElementById('gate-career-field');
+        if (field) field.classList.toggle('hidden', list.length <= 1);
+        sel.innerHTML = list.map(c =>
+            `<option value="${Util.attr(c.id)}" ${c.id === Careers.activeId ? 'selected' : ''}>${Util.esc(c.name)}</option>`).join('');
+        this._updateGateAdminHint();
+    },
+
+    _updateGateAdminHint() {
+        const hint = document.getElementById('gate-admin-career');
+        if (hint) hint.textContent = Careers.nameFor(Careers.activeId);
     },
 
     _gateError(msg) {

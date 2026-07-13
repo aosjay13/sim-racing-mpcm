@@ -72,31 +72,40 @@ const DB = {
         return SRMPC.db;
     },
 
+    // Logical → physical collection name for the ACTIVE career. Everything in
+    // the app routes through here, so career isolation is transparent to callers
+    // (see Careers in js/srmpc-core.js). Falls back to the raw name if Careers
+    // is somehow unavailable (e.g. the verify harness before it loads).
+    _phys(collection) { return window.Careers ? Careers.collName(collection) : collection; },
+    _c(collection) { return this._fs().collection(this._phys(collection)); },
+
+    // Cache is keyed by PHYSICAL name so two careers never share cached rows.
     invalidate(collection) {
-        if (collection) delete this._cache[collection];
+        if (collection) delete this._cache[this._phys(collection)];
         else this._cache = {};
     },
 
     async list(collection, { force = false } = {}) {
-        if (!force && this._cache[collection]) return this._cache[collection];
-        const snap = await this._fs().collection(collection).get();
+        const key = this._phys(collection);
+        if (!force && this._cache[key]) return this._cache[key];
+        const snap = await this._fs().collection(key).get();
         const docs = [];
         snap.forEach(d => docs.push({ id: d.id, ...d.data() }));
-        this._cache[collection] = docs;
+        this._cache[key] = docs;
         return docs;
     },
 
     async get(collection, id, { force = false } = {}) {
         if (!force) {
-            const cached = this._cache[collection]?.find(d => d.id === id);
+            const cached = this._cache[this._phys(collection)]?.find(d => d.id === id);
             if (cached) return cached;
         }
-        const snap = await this._fs().collection(collection).doc(id).get();
+        const snap = await this._c(collection).doc(id).get();
         return snap.exists ? { id: snap.id, ...snap.data() } : null;
     },
 
     async create(collection, data) {
-        const ref = await this._fs().collection(collection).add({
+        const ref = await this._c(collection).add({
             ...data,
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -106,7 +115,7 @@ const DB = {
     },
 
     async update(collection, id, patch) {
-        await this._fs().collection(collection).doc(id).update({
+        await this._c(collection).doc(id).update({
             ...patch,
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         });
@@ -114,7 +123,7 @@ const DB = {
     },
 
     async remove(collection, id) {
-        await this._fs().collection(collection).doc(id).delete();
+        await this._c(collection).doc(id).delete();
         this.invalidate(collection);
     },
 
@@ -122,9 +131,10 @@ const DB = {
     async batchUpdate(collection, updates) {
         if (!updates.length) return;
         const fs = this._fs();
+        const phys = this._phys(collection);
         const batch = fs.batch();
         updates.forEach(({ id, patch }) => {
-            batch.update(fs.collection(collection).doc(id), {
+            batch.update(fs.collection(phys).doc(id), {
                 ...patch,
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             });
@@ -144,9 +154,10 @@ const DB = {
 
     async batchCreate(collection, items) {
         const fs = this._fs();
+        const phys = this._phys(collection);
         const batch = fs.batch();
         items.forEach(item => {
-            const ref = fs.collection(collection).doc();
+            const ref = fs.collection(phys).doc();
             batch.set(ref, {
                 ...item,
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -155,6 +166,39 @@ const DB = {
         });
         await batch.commit();
         this.invalidate(collection);
+    },
+
+    // Every collection that makes up one career's world. Used by wipeCareer and
+    // the Settings backup export.
+    WORLD_COLLECTIONS: [
+        'games', 'series', 'seasons', 'races', 'teams', 'drivers', 'users',
+        'challenges', 'challengeClaims', 'raceSignups', 'roleProfiles', 'staff',
+        'contracts', 'tracks', 'sponsors', 'news', 'recruitment',
+        'negotiations', 'ledger'
+    ],
+
+    // Delete every document in a career's world (all WORLD_COLLECTIONS), in
+    // batched chunks. Does NOT touch Firebase Auth accounts, the global
+    // config/admin GM registry, or the careers registry doc — so a reset clears
+    // the world while players keep their logins and the career shell survives.
+    // Targets a SPECIFIC career id (not necessarily the active one).
+    async wipeCareer(id) {
+        const fs = this._fs();
+        let deleted = 0;
+        for (const logical of this.WORLD_COLLECTIONS) {
+            const phys = Careers.collNameFor(id, logical);
+            const snap = await fs.collection(phys).get();
+            const ids = [];
+            snap.forEach(d => ids.push(d.id));
+            for (let i = 0; i < ids.length; i += 450) {
+                const batch = fs.batch();
+                ids.slice(i, i + 450).forEach(docId => batch.delete(fs.collection(phys).doc(docId)));
+                await batch.commit();
+            }
+            deleted += ids.length;
+        }
+        this.invalidate();
+        return deleted;
     },
 
     /* --- convenience loaders used all over the UI --- */

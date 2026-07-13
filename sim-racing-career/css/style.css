@@ -947,3 +947,29 @@ select.input { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
     * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }
+
+/* ---------------- Career modes (multi-tenant) ---------------- */
+.gate-career-field { margin-bottom: .25rem; }
+
+.career-switch { display: inline-flex; align-items: center; gap: .35rem; max-width: 12rem; }
+.career-switch .career-switch-name {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 8.5rem;
+}
+
+.career-menu { display: flex; flex-direction: column; gap: .5rem; margin: .5rem 0 1rem; }
+.career-menu-item {
+    display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+    width: 100%; padding: .75rem 1rem; text-align: left;
+    background: var(--bg-3); border: 1px solid var(--panel-border); border-radius: 10px;
+    color: var(--text); cursor: pointer; font: inherit; transition: border-color .15s, background .15s;
+}
+.career-menu-item:hover { border-color: var(--accent-2); }
+.career-menu-item.active { border-color: var(--accent); cursor: default; }
+.career-menu-name { font-weight: 600; }
+.career-pill {
+    font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--accent); background: rgba(255,59,59,.12); padding: .15rem .5rem; border-radius: 999px;
+}
+
+/* Right-align a table cell (career-mode action buttons) */
+td.right, th.right { text-align: right; }

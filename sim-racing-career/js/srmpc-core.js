@@ -261,8 +261,28 @@ const Auth = {
 
     async _loadProfile(user) {
         try {
-            const snap = await fbDb.collection('users').doc(user.uid).get();
-            this.state.profile = snap.exists ? { id: snap.id, ...snap.data() } : null;
+            // Profiles are per-career: a player's role / driver / team / wallet
+            // live in the ACTIVE career's members collection, so the same login
+            // is a fresh, separate identity in every career.
+            const coll = Careers.collName('users');
+            const snap = await fbDb.collection(coll).doc(user.uid).get();
+            if (snap.exists) {
+                this.state.profile = { id: snap.id, ...snap.data() };
+            } else if (user && !user.isAnonymous) {
+                // First time this player has entered THIS career — seed a fresh,
+                // roleless profile (named from their login) so they land on the
+                // role picker instead of a nameless void.
+                const seed = {
+                    displayName: user.displayName || (user.email || '').split('@')[0] || 'Player',
+                    email: user.email || '',
+                    activeRole: null, driverId: null, teamId: null,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                try { await fbDb.collection(coll).doc(user.uid).set(seed, { merge: true }); } catch (e) { /* rules/offline — role picker still works */ }
+                this.state.profile = { id: user.uid, ...seed };
+            } else {
+                this.state.profile = null;
+            }
         } catch (e) {
             console.error('Could not load user profile:', e);
             this.state.profile = null;
@@ -279,7 +299,7 @@ const Auth = {
     async updateProfile(patch) {
         const uid = this.uid();
         if (!uid) throw new Error('Not signed in.');
-        await fbDb.collection('users').doc(uid).set({
+        await fbDb.collection(Careers.collName('users')).doc(uid).set({
             ...patch,
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
@@ -293,7 +313,7 @@ const Auth = {
         if (displayName?.trim()) {
             try { await cred.user.updateProfile({ displayName: displayName.trim() }); } catch (e) { /* non-fatal */ }
         }
-        await fbDb.collection('users').doc(cred.user.uid).set({
+        await fbDb.collection(Careers.collName('users')).doc(cred.user.uid).set({
             displayName: displayName?.trim() || email.split('@')[0],
             email: email.trim(),
             activeRole: null,
@@ -337,27 +357,18 @@ const Auth = {
         return remote || localStorage.getItem(this._HASH_KEY) || this._DEFAULT_HASH;
     },
 
+    // Verify against the ACTIVE career's passcode (each career has its own).
     async verifyPasscode(passcode) {
         const hash = await Util.sha256(String(passcode || '').trim());
-        return hash === (await this._activeHash());
+        const target = await Careers.passcodeHashFor(Careers.activeId);
+        return !!target && hash === target;
     },
 
+    // Change the ACTIVE career's passcode. Careers.changePasscode keeps the
+    // legacy config/admin hash in sync for the default ("main") career so old
+    // fallbacks still agree.
     async changePasscode(currentPasscode, newPasscode) {
-        if (!(await this.verifyPasscode(currentPasscode))) throw new Error('Current passcode is incorrect.');
-        const trimmed = String(newPasscode || '').trim();
-        if (trimmed.length < 6) throw new Error('New passcode must be at least 6 characters.');
-        const newHash = await Util.sha256(trimmed);
-        localStorage.setItem(this._HASH_KEY, newHash); // local cache
-        if (fbDb) {
-            try {
-                await fbDb.collection('config').doc('admin').set({
-                    passcodeHash: newHash,
-                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                }, { merge: true });
-            } catch (e) {
-                throw new Error('Passcode updated on this device, but syncing to the cloud failed (' + e.message + '). Other devices will keep the old passcode until you retry.');
-            }
-        }
+        await Careers.changePasscode(Careers.activeId, currentPasscode, newPasscode);
     },
 
     _saveAdminSession() {
@@ -453,3 +464,170 @@ const Auth = {
     }
 };
 window.Auth = Auth;
+
+/* ============================================================
+   Careers — multiple isolated career modes.
+
+   Each career is a fully separate world: series, races, teams, drivers,
+   members (roles/wallets), deals, ledger — everything. Isolation is by
+   COLLECTION-NAME NAMESPACING, so the whole app keeps funnelling through
+   DB._fs().collection(name):
+
+     • the default career ("main") uses UNPREFIXED names (`series`, `races`…)
+       — the existing live world simply IS career "main", no migration.
+     • every other career `cid` uses `c__{cid}__{name}` (cid is base36, no
+       underscores, so the firestore.rules prefix regex is unambiguous).
+
+   The `careers` registry (global, unprefixed) holds one doc per career:
+   { name, passcodeHash, createdAt, updatedAt }. "main" is VIRTUAL until the
+   GM renames it or changes its passcode — that way nothing is written to
+   Firestore at boot (guests can't write) and the current passcode keeps
+   working via the legacy config/admin fallback chain.
+
+   GM security is intentionally SHARED (see firestore.rules isGM()): unlocking
+   any career's passcode registers the uid globally and grants the wildcard
+   override across all careers. Per-career passcodes gate who can UNLOCK GM for
+   a career; the app only ever shows one career's data at a time.
+   ============================================================ */
+const Careers = {
+    KEY: 'srmpc_active_career',
+    DEFAULT_ID: 'main',
+    DEFAULT_NAME: 'Phoenix SRMPC',
+    activeId: 'main',
+    activeName: 'Phoenix SRMPC',
+    _list: null,
+
+    // Physical collection name for a given career + logical name.
+    collNameFor(id, name) {
+        return (!id || id === this.DEFAULT_ID) ? name : `c__${id}__${name}`;
+    },
+    // Physical collection name for the ACTIVE career.
+    collName(name) { return this.collNameFor(this.activeId, name); },
+
+    async init() {
+        try {
+            const saved = localStorage.getItem(this.KEY);
+            if (saved) this.activeId = saved;
+        } catch (e) { /* private mode */ }
+        await this.list({ force: true }).catch(() => {});
+        // A saved career that no longer exists falls back to the default.
+        if (!(this._list || []).some(c => c.id === this.activeId)) {
+            this.activeId = this.DEFAULT_ID;
+            try { localStorage.setItem(this.KEY, this.activeId); } catch (e) { /* */ }
+        }
+        this.activeName = this.nameFor(this.activeId);
+    },
+
+    async list({ force = false } = {}) {
+        if (this._list && !force) return this._list;
+        const docs = [];
+        try {
+            if (fbDb) {
+                const snap = await fbDb.collection('careers').get();
+                snap.forEach(d => docs.push({ id: d.id, ...d.data() }));
+            }
+        } catch (e) { console.warn('Could not load careers registry:', e); }
+        // "main" always exists — virtual until persisted.
+        if (!docs.some(c => c.id === this.DEFAULT_ID)) {
+            docs.push({ id: this.DEFAULT_ID, name: this.DEFAULT_NAME, virtual: true });
+        }
+        // Default career first, then alphabetical.
+        docs.sort((a, b) =>
+            a.id === this.DEFAULT_ID ? -1 : b.id === this.DEFAULT_ID ? 1
+            : (a.name || '').localeCompare(b.name || ''));
+        this._list = docs;
+        return docs;
+    },
+
+    nameFor(id) {
+        const c = (this._list || []).find(x => x.id === id);
+        return c?.name || (id === this.DEFAULT_ID ? this.DEFAULT_NAME : id);
+    },
+
+    setActive(id, name) {
+        this.activeId = id;
+        this.activeName = name || this.nameFor(id);
+        try { localStorage.setItem(this.KEY, id); } catch (e) { /* */ }
+        if (window.DB) DB.invalidate(); // never let one career's cache bleed into another
+    },
+
+    // The passcode hash that unlocks GM for a career. "main" with no persisted
+    // doc falls back to the legacy config/admin → localStorage → default chain,
+    // so the current league passcode keeps working untouched.
+    async passcodeHashFor(id) {
+        const c = (this._list || []).find(x => x.id === id);
+        if (c && c.passcodeHash) return c.passcodeHash;
+        if (id === this.DEFAULT_ID) return await Auth._activeHash();
+        return null;
+    },
+
+    async create(name, passcode) {
+        const nm = String(name || '').trim();
+        if (!nm) throw new Error('Give the career mode a name.');
+        const pass = String(passcode || '').trim();
+        if (pass.length < 6) throw new Error('The GM passcode must be at least 6 characters.');
+        if (!fbDb) throw new Error('Database is not connected.');
+        const id = Util.uid();
+        await fbDb.collection('careers').doc(id).set({
+            name: nm,
+            passcodeHash: await Util.sha256(pass),
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        await this.list({ force: true });
+        return id;
+    },
+
+    async rename(id, name) {
+        const nm = String(name || '').trim();
+        if (!nm) throw new Error('Enter a name.');
+        if (!fbDb) throw new Error('Database is not connected.');
+        const patch = { name: nm, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+        // First time we persist "main", carry its passcode + createdAt so nothing regresses.
+        const existing = (this._list || []).find(c => c.id === id);
+        if (id === this.DEFAULT_ID && (!existing || existing.virtual)) {
+            patch.passcodeHash = await Auth._activeHash();
+            patch.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+        }
+        await fbDb.collection('careers').doc(id).set(patch, { merge: true });
+        await this.list({ force: true });
+        if (id === this.activeId) this.activeName = nm;
+    },
+
+    async changePasscode(id, currentPasscode, newPasscode) {
+        const activeHash = await this.passcodeHashFor(id);
+        const currentHash = await Util.sha256(String(currentPasscode || '').trim());
+        if (activeHash && currentHash !== activeHash) throw new Error('Current passcode is incorrect.');
+        const trimmed = String(newPasscode || '').trim();
+        if (trimmed.length < 6) throw new Error('New passcode must be at least 6 characters.');
+        const newHash = await Util.sha256(trimmed);
+        if (!fbDb) throw new Error('Database is not connected.');
+        const patch = { passcodeHash: newHash, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+        const existing = (this._list || []).find(c => c.id === id);
+        if (id === this.DEFAULT_ID && (!existing || existing.virtual)) {
+            patch.name = existing?.name || this.DEFAULT_NAME;
+            patch.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+        }
+        await fbDb.collection('careers').doc(id).set(patch, { merge: true });
+        // Keep the legacy admin hash in sync for the default career.
+        if (id === this.DEFAULT_ID) {
+            try { localStorage.setItem(Auth._HASH_KEY, newHash); } catch (e) { /* */ }
+            try {
+                await fbDb.collection('config').doc('admin').set(
+                    { passcodeHash: newHash, updatedAt: firebase.firestore.FieldValue.serverTimestamp() },
+                    { merge: true });
+            } catch (e) { /* non-fatal: registry doc is the source of truth now */ }
+        }
+        await this.list({ force: true });
+    },
+
+    // Remove the registry doc only. Call DB.wipeCareer(id) first to clear the
+    // career's world data. The default career cannot be deleted.
+    async deleteCareer(id) {
+        if (id === this.DEFAULT_ID) throw new Error('The default career cannot be deleted.');
+        if (!fbDb) throw new Error('Database is not connected.');
+        await fbDb.collection('careers').doc(id).delete();
+        await this.list({ force: true });
+    }
+};
+window.Careers = Careers;

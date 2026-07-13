@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=3.18.0">
+    <link rel="stylesheet" href="css/style.css?v=3.19.0">
     <!-- Apply saved theme before paint to avoid a flash -->
     <script>
         (function () {
@@ -50,6 +50,10 @@
                 </div>
             </div>
 
+            <label id="gate-career-field" class="field gate-career-field hidden"><span>Career mode</span>
+                <select id="gate-career" class="input"></select>
+            </label>
+
             <div class="gate-tabs">
                 <button class="gate-tab active" data-pane="player">🏎️ Player</button>
                 <button class="gate-tab" data-pane="admin">⚙️ Game Master</button>
@@ -85,7 +89,7 @@
                     </label>
                     <p id="gate-admin-error" class="form-error"></p>
                     <button id="gate-admin-submit" class="btn btn-primary btn-block" type="submit">Unlock Game Master</button>
-                    <p class="muted small">The Game Master runs the league: games, series, schedules, results, and challenges.</p>
+                    <p class="muted small">Unlocking Game Master for <strong id="gate-admin-career">Phoenix SRMPC</strong> — runs that career: games, series, schedules, results, and challenges.</p>
                 </form>
             </div>
         </div>
@@ -118,6 +122,7 @@
                 <div class="header-user">
                     <span id="header-username" class="header-username"></span>
                     <span id="role-badge" class="role-badge"></span>
+                    <button id="career-switch-btn" class="btn btn-ghost btn-sm career-switch hidden" title="Switch career mode">🏁 <span class="career-switch-name">Career</span></button>
                     <button id="theme-toggle" class="icon-btn" title="Toggle light / dark" aria-label="Toggle theme">🌙</button>
                     <button id="gm-elevate-btn" class="btn btn-ghost btn-sm hidden" title="Unlock Game Master controls">GM</button>
                     <button id="player-return-btn" class="btn btn-ghost btn-sm hidden" title="Switch back to your player career">⇄ Player Mode</button>
@@ -136,18 +141,18 @@
     </div>
 
     <!-- App scripts -->
-    <script src="js/srmpc-core.js?v=3.18.0"></script>
-    <script src="js/srmpc-data.js?v=3.18.0"></script>
-    <script src="js/srmpc-wallet.js?v=3.18.0"></script>
-    <script src="js/srmpc-clauses.js?v=3.18.0"></script>
-    <script src="js/srmpc-market.js?v=3.18.0"></script>
-    <script src="js/srmpc-deals.js?v=3.18.0"></script>
-    <script src="js/srmpc-sim.js?v=3.18.0"></script>
-    <script src="js/srmpc-hub.js?v=3.18.0"></script>
-    <script src="js/srmpc-views.js?v=3.18.0"></script>
-    <script src="js/srmpc-career.js?v=3.18.0"></script>
-    <script src="js/srmpc-profile.js?v=3.18.0"></script>
-    <script src="js/srmpc-admin.js?v=3.18.0"></script>
-    <script src="js/srmpc-app.js?v=3.18.0"></script>
+    <script src="js/srmpc-core.js?v=3.19.0"></script>
+    <script src="js/srmpc-data.js?v=3.19.0"></script>
+    <script src="js/srmpc-wallet.js?v=3.19.0"></script>
+    <script src="js/srmpc-clauses.js?v=3.19.0"></script>
+    <script src="js/srmpc-market.js?v=3.19.0"></script>
+    <script src="js/srmpc-deals.js?v=3.19.0"></script>
+    <script src="js/srmpc-sim.js?v=3.19.0"></script>
+    <script src="js/srmpc-hub.js?v=3.19.0"></script>
+    <script src="js/srmpc-views.js?v=3.19.0"></script>
+    <script src="js/srmpc-career.js?v=3.19.0"></script>
+    <script src="js/srmpc-profile.js?v=3.19.0"></script>
+    <script src="js/srmpc-admin.js?v=3.19.0"></script>
+    <script src="js/srmpc-app.js?v=3.19.0"></script>
 </body>
 </html>
