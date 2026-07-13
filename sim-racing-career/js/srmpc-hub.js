@@ -575,6 +575,8 @@ const Hub = {
                 </div>
                 <label class="check"><input id="ho-exclusive" type="checkbox" checked>
                     🔒 Exclusive contract — they drive for you and nobody else (uncheck to allow multi-team)</label>
+                ${(driver.number && team.number) ? `<label class="check"><input id="ho-driver-number" type="checkbox">
+                    🔢 Let them keep their personal #${Util.esc(String(driver.number))} (unchecked: they run the team's #${Util.esc(String(team.number))})</label>` : ''}
                 <label class="field"><span>Message with your offer</span>
                     <input id="ho-note" class="input" maxlength="200" placeholder="Why should they sign with you?"></label>
                 ${Clauses.formSection({ teamStars: Prestige.teamStars(teamId, world), salary: this.STANDARD_SALARY, personKind: 'driver' })}
@@ -599,6 +601,7 @@ const Hub = {
                     personId: driverId, personKind: 'driver', personName: driver.name, personUid: driver.ownerUid || null,
                     salary, buyout: this.buyoutFor(salary),
                     exclusive: Util.$('#ho-exclusive').checked,
+                    numberPreference: Util.$('#ho-driver-number')?.checked ? 'driver' : 'team',
                     note: Util.$('#ho-note').value,
                     ...Clauses.readForm()
                 });

@@ -90,7 +90,7 @@ const Deals = {
         sponsorProfileId = null, sponsorName = '', sponsorUid = null,
         targetDriverId = null, targetDriverName = '', targetDriverUid = null,
         contractId = null, salary, buyout = 0, exclusive = false, note = '',
-        agreement = 'contracted', signOnBonus = null, clauses = null }) {
+        agreement = 'contracted', signOnBonus = null, clauses = null, numberPreference = 'team' }) {
 
         salary = Math.round(Number(salary) || 0);
         if (salary <= 0) throw new Error('Offer a salary above zero.');
@@ -118,7 +118,7 @@ const Deals = {
             sponsorProfileId, sponsorName, sponsorUid,
             targetDriverId, targetDriverName, targetDriverUid,
             salary, buyout: Math.round(Number(buyout) || 0), exclusive: !!exclusive,
-            agreement, signOnBonus, clauses,
+            agreement, signOnBonus, clauses, numberPreference: numberPreference === 'driver' ? 'driver' : 'team',
             sideAUid, sideBUid,
             initiatorUid: uid,
             turnUid: (uid === sideAUid ? sideBUid : sideAUid) || null,
@@ -535,6 +535,9 @@ const Deals = {
             salary: neg.salary, exclusive: !!neg.exclusive,
             agreement, buyout: agreement === 'open' ? 0 : Hub.buyoutFor(neg.salary),
             signOnBonus, clauses: neg.clauses || null,
+            // Car-number primary/secondary: which number this driver runs when
+            // both they and the team own one (see Numbers.effectiveNumber).
+            numberPreference: neg.numberPreference === 'driver' ? 'driver' : 'team',
             seasonYear: year, status: 'active', signedAt: Util.todayISO()
         });
         // The team's budget pays the bonus; the hire's PERSONAL wallet

@@ -348,6 +348,7 @@ const Views = {
         const teamStandings = Stats.teamTable(world.races, world, { seriesId: s.id });
         const isAdmin = Auth.isAdmin();
         const sys = POINTS_SYSTEMS[s.pointsSystem || 'f1'];
+        const numbersPanel = await Numbers.seriesPanel(s.id, world).catch(() => '');
 
         el.innerHTML = `
         <button class="btn btn-ghost btn-sm" onclick="App.go('series')">← All series</button>
@@ -413,7 +414,8 @@ const Views = {
                         </tbody></table>` : ''}`
                     : C.empty('🏆', 'No standings yet', 'Standings build automatically as race results come in.')}
             </section>
-        </div>`;
+        </div>
+        ${numbersPanel}`;
     },
 
     /* ---------------- Races ---------------- */

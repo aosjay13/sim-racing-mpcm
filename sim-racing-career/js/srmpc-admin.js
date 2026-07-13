@@ -28,7 +28,7 @@ const Admin = {
             ['overview', '🎛 Overview'], ['games', '🎮 Games'], ['series', '🏆 Series'],
             ['races', '🏁 Races'], ['teams', '🛠 Teams'], ['drivers', '🏎 Drivers'],
             ['world', '🌍 World'], ['players', '👥 Players'], ['challenges', '🎯 Challenges'],
-            ['override', '🔧 GM Override'], ['settings', '⚙ Settings']
+            ['numbers', '🔢 Numbers'], ['override', '🔧 GM Override'], ['settings', '⚙ Settings']
         ];
 
         el.innerHTML = `
@@ -368,6 +368,14 @@ const Admin = {
                 News.post('⚖️', `${c.personName} released for cause by ${c.teamName} — ${reason}`);
             }
 
+            // Car numbers: season close is the ONLY rollover moment — revoke
+            // numbers never fielded this season, move the rest into a first-
+            // right-of-refusal renewal window (see js/srmpc-numbers.js).
+            try {
+                const roll = await Numbers.processSeasonRollover(seriesId);
+                if (roll.revoked || roll.renewals) News.post('🔢', `Number rollover for the series: ${roll.revoked} revoked, ${roll.renewals} up for renewal.`);
+            } catch (e) { console.warn('Number rollover failed:', e); }
+
             const champ = snapshot.championDriverId ? (world.driversById[snapshot.championDriverId]?.name || 'Champion') : null;
             Util.notify(champ ? `Season closed — 🏆 ${champ} is your champion!` : 'Season closed.');
             this.seasonsModal(seriesId);
@@ -428,6 +436,8 @@ const Admin = {
                     <input id="sf-custom" class="input" value="${Util.esc((series?.customPoints || []).join(', '))}" placeholder="e.g. 30, 25, 20, 16, 12, 10, 8, 6, 4, 2"></label>
                 <label class="field"><span>Series logo ${series?.logo ? '(current logo kept unless you choose a new one)' : '(optional)'}</span>
                     <input id="sf-logo" class="input" type="file" accept="image/*"></label>
+                <label class="field"><span>Highest car number (0–999)</span>
+                    <input id="sf-nummax" class="input" type="number" min="0" max="999" value="${Number(series?.numberMax) || 99}"></label>
                 <label class="field"><span>Description</span><textarea id="sf-desc" class="input" rows="2" maxlength="400">${Util.esc(series?.description || '')}</textarea></label>
                 <div class="modal-actions">
                     ${series?.logo ? `<button type="button" class="btn btn-ghost" id="sf-remove-logo">Remove logo</button>` : ''}
@@ -457,6 +467,7 @@ const Admin = {
                     season: Number(Util.$('#sf-season').value) || new Date().getFullYear(),
                     pointsSystem: Util.$('#sf-points').value,
                     status: Util.$('#sf-status').value,
+                    numberMax: Math.min(999, Math.max(0, Number(Util.$('#sf-nummax').value) || 99)),
                     description: Util.$('#sf-desc').value.trim()
                 };
                 if (!data.name) throw new Error('Series name is required.');
@@ -2005,6 +2016,81 @@ const Admin = {
     _ovLabel(doc) {
         return doc.name || doc.title || doc.personName || doc.displayName || doc.teamName
             || (doc.message ? doc.message.slice(0, 40) : '') || doc.label || doc.id;
+    },
+
+    /* ---------------- Car Numbers (GM auction control) ---------------- */
+    _numSeriesId: null,
+    async tab_numbers(el) {
+        const series = (await DB.series({ force: true }).catch(() => [])).filter(s => (s.status || 'active') === 'active');
+        if (!series.length) { el.innerHTML = C.empty('🔢', 'No active series', 'Create a series first — car numbers are scoped to a series.'); return; }
+        const sid = this._numSeriesId && series.find(s => s.id === this._numSeriesId) ? this._numSeriesId : series[0].id;
+        this._numSeriesId = sid;
+        const world = await DB.loadWorld(true);
+        const regs = (await Numbers.listForSeries(sid)).sort((a, b) => a.number - b.number);
+        const nameOf = (r) => r.ownerType === 'team' ? (world.teamsById[r.ownerId]?.name || 'team') : (world.driversById[r.ownerId]?.name || 'driver');
+
+        el.innerHTML = `
+        <section class="panel">
+            <div class="panel-head"><h2>🔢 Car Numbers</h2><span class="chip chip-dim">blind sealed-bid · season-close rollover</span></div>
+            <div class="form-row" style="align-items:end">
+                <label class="field"><span>Series</span><select id="num-series" class="input">${series.map(s => `<option value="${Util.attr(s.id)}" ${s.id === sid ? 'selected' : ''}>${Util.esc(s.name)}</option>`).join('')}</select></label>
+                <label class="field"><span>Open auction for #</span><input id="num-open" class="input" type="number" min="0" max="${Numbers.seriesNumberMax(world.seriesById[sid])}"></label>
+                <button class="btn btn-primary" id="num-open-go">Open auction</button>
+                <button class="btn btn-secondary" id="num-finalize" title="Send un-renewed numbers to public auction">Finalize renewals</button>
+            </div>
+            <p class="muted small">Highest sealed bid wins at close and is charged then; if they can't pay it cascades to the next bid. Season close (Series → Seasons → Close &amp; crown) revokes numbers never fielded and opens renewal windows.</p>
+        </section>
+        <section class="panel">
+            <div class="panel-head"><h2>Registry — ${Util.esc(world.seriesById[sid]?.name || '')}</h2></div>
+            ${regs.length ? `<table class="table">
+                <thead><tr><th>#</th><th>Status</th><th>Holder</th><th>Bids</th><th></th></tr></thead>
+                <tbody>${await Promise.all(regs.map(async r => {
+                    const bids = r.status === 'auction'
+                        ? (await DB.list('numberBids', { force: true })).filter(b => b.auctionId === r.auctionId && b.status === 'pending').length : 0;
+                    return `<tr>
+                        <td class="strong">#${r.number}</td>
+                        <td>${Util.esc(r.status)}</td>
+                        <td>${(r.status === 'owned' || r.status === 'renewal') ? Util.esc(nameOf(r)) : '—'}</td>
+                        <td>${r.status === 'auction' ? bids : '—'}</td>
+                        <td class="right">
+                            ${r.status === 'auction' ? `<button class="btn btn-primary btn-sm" onclick="Admin.gmResolveAuction('${Util.attr(sid)}',${r.number})">Resolve (${bids})</button>` : ''}
+                            ${(r.status === 'owned' || r.status === 'renewal') ? `<button class="btn btn-danger btn-sm" onclick="Admin.gmReleaseNumber('${Util.attr(sid)}',${r.number})">Revoke</button>` : ''}
+                        </td>
+                    </tr>`;
+                })).then(rows => rows.join(''))}</tbody></table>`
+                : '<p class="muted small">No numbers in play. Open an auction above.</p>'}
+        </section>`;
+
+        Util.$('#num-series', el).addEventListener('change', (e) => { this._numSeriesId = e.target.value; this.render(document.getElementById('view-root')); });
+        Util.$('#num-open-go', el).addEventListener('click', () => this.gmOpenAuction(sid, Util.$('#num-open').value));
+        Util.$('#num-finalize', el).addEventListener('click', () => this.gmFinalizeRenewals(sid));
+    },
+
+    async gmOpenAuction(seriesId, number) {
+        if (!this.guard()) return;
+        number = Math.round(Number(number));
+        if (!Number.isFinite(number) || number < 0) { Util.notify('Enter a valid number.', 'info'); return; }
+        try { await Numbers.openAuction(seriesId, number); Util.notify(`Auction open for #${number}. 🔢`); this.refresh(); }
+        catch (err) { Util.notify(err.message, 'error'); }
+    },
+    async gmResolveAuction(seriesId, number) {
+        if (!this.guard()) return;
+        try {
+            const win = await Numbers.resolveAuction(seriesId, number);
+            Util.notify(win ? `#${number} sold for ${Economy.fmt(win.amount)}. 🔢` : `No payable bids on #${number} — returned to the pool.`);
+            this.refresh();
+        } catch (err) { Util.notify(err.message, 'error'); }
+    },
+    async gmFinalizeRenewals(seriesId) {
+        if (!this.guard()) return;
+        try { const n = await Numbers.finalizeRenewals(seriesId); Util.notify(`${n} un-renewed number${n === 1 ? '' : 's'} sent to auction.`); this.refresh(); }
+        catch (err) { Util.notify(err.message, 'error'); }
+    },
+    async gmReleaseNumber(seriesId, number) {
+        if (!this.guard()) return;
+        if (!confirm(`Revoke #${number}? It returns to the available pool.`)) return;
+        try { await Numbers._release(seriesId, number, 'gm-revoked'); Util.notify(`#${number} revoked.`); this.refresh(); }
+        catch (err) { Util.notify(err.message, 'error'); }
     },
 
     async tab_override(el) {

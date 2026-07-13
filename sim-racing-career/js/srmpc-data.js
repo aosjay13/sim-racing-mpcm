@@ -127,6 +127,16 @@ const DB = {
         this.invalidate(collection);
     },
 
+    // Upsert by a caller-chosen id (used where the id is deterministic, e.g. the
+    // per-series number registry `${seriesId}__${number}`). Creates or merges.
+    async set(collection, id, data, { merge = true } = {}) {
+        await this._c(collection).doc(id).set({
+            ...data,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge });
+        this.invalidate(collection);
+    },
+
     // Patch many docs in one write batch (used for prestige XP payouts).
     async batchUpdate(collection, updates) {
         if (!updates.length) return;
@@ -174,7 +184,7 @@ const DB = {
         'games', 'series', 'seasons', 'races', 'teams', 'drivers', 'users',
         'challenges', 'challengeClaims', 'raceSignups', 'roleProfiles', 'staff',
         'contracts', 'tracks', 'sponsors', 'news', 'recruitment',
-        'negotiations', 'ledger'
+        'negotiations', 'ledger', 'numberRegistry', 'numberLeases', 'numberBids'
     ],
 
     // Delete every document in a career's world (all WORLD_COLLECTIONS), in

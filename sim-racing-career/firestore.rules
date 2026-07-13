@@ -129,6 +129,15 @@ service cloud.firestore {
     match /challengeClaims/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
     match /raceSignups/{doc}     { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
 
+    // ----- Car number registry / auctions (js/srmpc-numbers.js) -----
+    // Registry + leases are public-read (numbers show on the series page);
+    // bids are member-only. Blind-bid secrecy is a client concern — like the
+    // rest of this friends-league app, rules constrain writes but don't hide
+    // reads from a determined client (no backend to arbitrate).
+    match /numberRegistry/{doc}  { allow read: if true;             allow write: if isAuthenticated(); }
+    match /numberLeases/{doc}    { allow read: if true;             allow write: if isAuthenticated(); }
+    match /numberBids/{doc}      { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
+
     // ----- App config (admin passcode hash, GM registry, future settings) -----
     match /config/{doc}          { allow read: if true; allow write: if isAuthenticated(); }
 

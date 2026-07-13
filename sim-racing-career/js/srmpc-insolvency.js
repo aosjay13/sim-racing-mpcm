@@ -192,6 +192,9 @@ const Insolvency = {
                     <button class="btn btn-ghost btn-sm" onclick="Insolvency._sell('${Util.attr(teamId)}','${Util.attr(c.id)}')">Sell in</button>
                 </li>`).join('')}</ul>`
                 : '<p class="muted small">No cars in your garage to sell.</p>'}
+            ${this.numbersAvailable() ? `<hr class="sep"><h3>Surrender car numbers</h3>
+                <p class="muted small">Return this team's owned car numbers to the auction pool for a partial refund.</p>
+                <button class="btn btn-secondary btn-sm" onclick="Insolvency._surrenderNumbers('${Util.attr(teamId)}')">🔢 Surrender all numbers</button>` : ''}
             <div class="modal-actions"><button class="btn btn-ghost" onclick="Modal.close()">Close</button></div>`);
         document.getElementById('insolv-inject-form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -206,6 +209,16 @@ const Insolvency = {
         try {
             const v = await this.liquidateCar(teamId, carId);
             Modal.close(); Util.notify(`Sold into the team for ${Economy.fmt(v)}. 🏁`); App.go('career');
+        } catch (err) { Util.notify(err.message, 'error'); }
+    },
+
+    async _surrenderNumbers(teamId) {
+        try {
+            const refunded = await Numbers.surrenderForTeam(teamId);
+            await this.evaluate(teamId);
+            Modal.close();
+            Util.notify(refunded ? `Numbers surrendered — ${Economy.fmt(refunded)} refunded to the team. 🔢` : 'No owned numbers to surrender.');
+            App.go('career');
         } catch (err) { Util.notify(err.message, 'error'); }
     }
 };

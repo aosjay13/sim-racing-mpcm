@@ -947,6 +947,10 @@ const Sim = {
             for (const id of touchedTeams) {
                 try { await Insolvency.evaluate(id, { raceCompleted: true }); } catch (e) { console.warn('Solvency eval failed:', e); }
             }
+
+            // Car numbers: credit any owned number whose owner ran this race
+            // toward its use-it-or-lose-it season quota.
+            try { await Numbers.recordFielded(race, world); } catch (e) { console.warn('Number fielding failed:', e); }
         } catch (e) { console.warn('Race payout failed:', e); }
     },
 
