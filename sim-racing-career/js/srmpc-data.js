@@ -133,6 +133,15 @@ const DB = {
         this.invalidate(collection);
     },
 
+    // Atomic read-then-write across one or more documents — used by
+    // Wallet.executeRoleTransaction so a wallet transfer's debit, credit,
+    // and paired ledger rows commit together or not at all.
+    async runTransaction(fn) {
+        const result = await this._fs().runTransaction(fn);
+        this._cache = {};
+        return result;
+    },
+
     async batchCreate(collection, items) {
         const fs = this._fs();
         const batch = fs.batch();

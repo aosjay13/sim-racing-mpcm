@@ -50,6 +50,22 @@
                 delete(ref) { ops.push(() => ref.delete()); },
                 async commit() { for (const op of ops) await op(); }
             };
+        },
+        // Reads happen immediately (in-memory, no real contention to guard
+        // against); writes queue and apply after the update function
+        // resolves — same get-before-write discipline the real SDK enforces,
+        // enough to back Wallet.executeRoleTransaction's atomic transfers.
+        async runTransaction(updateFn) {
+            const ops = [];
+            const tx = {
+                async get(ref) { return ref.get(); },
+                set(ref, data, opts) { ops.push(() => ref.set(data, opts)); },
+                update(ref, patch) { ops.push(() => ref.update(patch)); },
+                delete(ref) { ops.push(() => ref.delete()); }
+            };
+            const result = await updateFn(tx);
+            for (const op of ops) await op();
+            return result;
         }
     };
 

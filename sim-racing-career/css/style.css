@@ -603,6 +603,44 @@ select.input { cursor: pointer; }
 .onboard-icon { font-size: 2.4rem; display: block; margin-bottom: .5rem; }
 
 /* ============================================================
+   Team Marketplace — flat 2D promotional style only. No 3D
+   renders, no depth stacking beyond the existing flat glow-on-
+   hover language already used for role/onboard cards.
+   ============================================================ */
+.market-banner {
+    display: flex; align-items: center; gap: 1rem; padding: 1.1rem 1.3rem;
+    border-radius: var(--r-lg); border: 1px solid var(--panel-border); background: var(--panel);
+    margin-bottom: 1.1rem;
+}
+.market-banner h2 { margin: 0 0 .15rem; font-family: var(--font-display); }
+.market-banner-icon { font-size: 2.2rem; line-height: 1; }
+.market-banner-hard   { border-color: rgba(255,77,77,.35); }
+.market-banner-medium { border-color: rgba(245,179,1,.35); }
+.market-banner-easy   { border-color: rgba(34,197,94,.35); }
+
+.team-market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 1rem; }
+.team-market-card {
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--r-lg);
+    padding: 1.2rem; cursor: pointer; text-align: left; color: var(--text);
+    display: flex; flex-direction: column; gap: .5rem; transition: transform .12s, border-color .15s, box-shadow .15s;
+}
+.team-market-card:hover { transform: translateY(-3px); border-color: var(--accent); box-shadow: var(--glow-accent); }
+.team-market-card-found { border-style: dashed; text-align: center; align-items: center; }
+.team-market-card h3 { margin: 0; font-family: var(--font-display); }
+.team-market-card .logo-box { align-self: flex-start; }
+.team-market-card .market-price { font-size: 1.15rem; }
+.team-market-card .btn { align-self: stretch; text-align: center; }
+
+/* Checkered-flag bullets — uniform icon divider for stat/perk lists
+   (team stats, budget line items, difficulty perks). Flat unicode glyph,
+   never a raster/3D icon. */
+.checkered-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; }
+.checkered-list li { display: flex; align-items: center; gap: .5rem; font-size: .85rem; color: var(--text-dim); }
+.checkered-list li::before { content: '🏁'; flex: none; font-size: .9rem; }
+
+.wallet-chip-team { color: var(--accent-2); border-color: rgba(0,217,255,.35); background: rgba(0,217,255,.08); }
+
+/* ============================================================
    Tabs + filters
    ============================================================ */
 .tab-row { display: flex; gap: .3rem; flex-wrap: wrap; }

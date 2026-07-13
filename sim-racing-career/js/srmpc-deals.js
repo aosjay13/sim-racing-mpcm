@@ -451,12 +451,19 @@ const Deals = {
     async execute(neg) {
         const year = new Date().getFullYear();
 
-        // Agreed buyout: move the negotiated figure, end the contract.
+        // Agreed buyout: move the negotiated figure, end the contract. The
+        // leaving player pays personally; the money replenishes the TEAM's
+        // budget (it funds the next hire), not the owner's personal pocket.
         if (neg.kind === 'buyout') {
             const contract = await DB.get('contracts', neg.contractId);
             if (!contract || contract.status !== 'active') throw new Error('That contract is no longer active.');
-            await Economy.adjustWallet(neg.personUid, -neg.salary, '💸', `Negotiated buyout paid: ${neg.teamName}`);
-            await Economy.adjustWallet(neg.ownerUid, neg.salary, '💸', `Negotiated buyout received: ${neg.personName}`);
+            await Wallet.executeRoleTransaction({
+                from: { type: 'player', id: neg.personUid },
+                to: neg.ownerUid ? { type: 'team', id: neg.teamId } : null,
+                amount: neg.salary, icon: '💸',
+                fromLabel: `Negotiated buyout paid: ${neg.teamName}`,
+                toLabel: `Negotiated buyout received: ${neg.personName}`
+            });
             await Hub._freeDriver(contract.personId, neg.personUid, 'bought-out', contract.id);
             News.post('💸', `${neg.personName} negotiated a ${Economy.fmt(neg.salary)} buyout to leave ${neg.teamName} (clause was ${Economy.fmt(contract.buyout)})`);
             Util.notify(`Buyout agreed at ${Economy.fmt(neg.salary)} — contract with ${neg.teamName} ended. 💸`);
@@ -528,9 +535,17 @@ const Deals = {
             signOnBonus, clauses: neg.clauses || null,
             seasonYear: year, status: 'active', signedAt: Util.todayISO()
         });
+        // The team's budget pays the bonus; the hire's PERSONAL wallet
+        // collects it — two different documents, so this is a real transfer
+        // even when the team owner is signing their own driver persona.
         if (signOnBonus) {
-            if (neg.ownerUid) await Economy.adjustWallet(neg.ownerUid, -signOnBonus, '🤝', `Sign-on bonus paid: ${neg.personName}`);
-            if (neg.personUid) await Economy.adjustWallet(neg.personUid, signOnBonus, '🤝', `Sign-on bonus from ${neg.teamName}`);
+            await Wallet.executeRoleTransaction({
+                from: neg.ownerUid ? { type: 'team', id: neg.teamId } : null,
+                to: neg.personUid ? { type: 'player', id: neg.personUid } : null,
+                amount: signOnBonus, icon: '🤝',
+                fromLabel: `Sign-on bonus paid: ${neg.personName}`,
+                toLabel: `Sign-on bonus from ${neg.teamName}`
+            });
         }
         News.post('🤝', `${neg.personName} signed with ${neg.teamName} (${Economy.fmt(neg.salary)}/race${agreement === 'open' ? ', open agreement' : (neg.exclusive ? ', exclusive' : ', non-exclusive')})`);
         Util.notify(`Contract signed: ${neg.personName} ⇄ ${neg.teamName} at ${Economy.fmt(neg.salary)}/race. 🤝`);

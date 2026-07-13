@@ -204,6 +204,11 @@ const log = (mark, msg) => { steps.push(`${mark} ${msg}`); console.log(`${mark} 
     await page.waitForSelector('.role-grid .role-card');
     await page.click('.role-card:has-text("Team Owner")');
     await toast(/now playing as/);
+    // Team Owner difficulty floats up separately from the player difficulty
+    // already picked above — ties the marketplace tier to this choice.
+    await page.waitForSelector('.modal-card .role-card');
+    await page.click('.role-card:has-text("Grassroots Underdog")');
+    await toast(/Team Owner difficulty set/);
     // Check the driver onboarding note exists for driver role too (probe the modal text via Career).
     await page.evaluate(() => Career.driverOnboarding('scratch'));
     const rookieNote = await page.evaluate(() => document.querySelector('.modal-card .muted.small')?.textContent || '');
@@ -212,12 +217,18 @@ const log = (mark, msg) => { steps.push(`${mark} ${msg}`); console.log(`${mark} 
     await shot('05-rookie-onboarding');
     await page.evaluate(() => Modal.close());
 
-    // Found a team.
-    await page.waitForSelector('.onboard-card');
-    await page.click('.onboard-card:has-text("Found a new team")');
+    // Found a team via the marketplace.
+    await page.waitForSelector('.team-market-card-found');
+    await page.click('.team-market-card-found');
     await page.fill('#tf-name', 'Tester Racing');
     await page.click('#team-form button[type=submit]');
     log('✅', 'Team founded: ' + (await toast(/founded/i)));
+    // Refund the $1,000 marketplace founding fee — keeps this scenario's
+    // downstream balance checks anchored to the original starting budget.
+    await page.evaluate(async () => {
+        const u = (await DB.users({ force: true })).find(u => u.displayName === 'Phoenix Tester');
+        await DB.update('users', u.id, { balance: 75000 });
+    });
 
     // New team's workspace shows the 1★ Rookie prestige ladder at 0 XP.
     await page.waitForSelector('.prestige-progress');
@@ -246,8 +257,10 @@ const log = (mark, msg) => { steps.push(`${mark} ${msg}`); console.log(`${mark} 
     await shot('07-prestige-gate');
     await page.evaluate(() => Modal.close());
 
-    // Probe: hire a 1★ crew member — should succeed and charge the wallet.
-    const balBefore = await page.evaluate(() => Economy.balance());
+    // Probe: hire a 1★ crew member — should succeed and charge the TEAM's
+    // budget (isolated from the owner's personal wallet since 0.5.9).
+    const teamBudgetBefore = await page.evaluate(async () =>
+        (await DB.teams({ force: true })).find(t => t.name === 'Tester Racing').budget);
     await page.evaluate(async () => {
         let free = (await DB.staff({ force: true })).find(s => !s.teamId);
         if (!free) { // pack staff are all signed — put a rookie on the market
@@ -261,9 +274,10 @@ const log = (mark, msg) => { steps.push(`${mark} ${msg}`); console.log(`${mark} 
     await page.waitForSelector('#offer-form');
     await page.click('#offer-form button[type=submit]');
     const hireToast = await toast(/signed for|error|✕/);
-    const balAfter = await page.evaluate(() => Economy.balance());
-    log(/signed for/.test(hireToast) && balAfter < balBefore ? '🔍' : '❌',
-        `1★ crew hire succeeds & wallet charged: ${hireToast} (balance ${balBefore} → ${balAfter})`);
+    const teamBudgetAfter = await page.evaluate(async () =>
+        (await DB.teams({ force: true })).find(t => t.name === 'Tester Racing').budget);
+    log(/signed for/.test(hireToast) && teamBudgetAfter < teamBudgetBefore ? '🔍' : '❌',
+        `1★ crew hire succeeds & TEAM budget charged: ${hireToast} (team budget ${teamBudgetBefore} → ${teamBudgetAfter})`);
 
     /* ---- 10. Prize money: player driver in a simulated race ---- */
     // Enter the player's team in series 1, give it a driver, sim a race, check wallet grows.

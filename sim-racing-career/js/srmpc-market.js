@@ -51,7 +51,11 @@ const Economy = {
         try {
             const d = this.DIFFICULTIES[id];
             if (!d) return;
-            await Auth.updateProfile({ difficulty: id, balance: d.start, walletInitialized: true });
+            // Mirrored into roleDifficulty.driver too — this is the personal
+            // wallet's difficulty, tracked per-role alongside (and fully
+            // independent of) Wallet.TEAM_DIFFICULTIES for Team Owner.
+            const roleDifficulty = { ...(Auth.state.profile?.roleDifficulty || {}), driver: id };
+            await Auth.updateProfile({ difficulty: id, balance: d.start, walletInitialized: true, roleDifficulty });
             Modal.close();
             Util.notify(`${d.icon} ${d.label} — starting budget ${this.fmt(d.start)}. Good luck out there!`);
             App.go('career');
@@ -126,10 +130,13 @@ const Economy = {
             for (const r of rec.filter(r => r.status === 'pending' && (r.driverUid === uid || r.ownerUid === uid))) {
                 await DB.update('recruitment', r.id, { status: 'withdrawn' });
             }
-            // Fresh profile.
+            // Fresh profile. Team Owner difficulty/budget are untouched — a
+            // personal-career restart doesn't reach into the isolated team
+            // wallet (any owned team was just released above).
+            const roleDifficulty = { ...(Auth.state.profile?.roleDifficulty || {}), driver: diffId };
             await Auth.updateProfile({
                 activeRole: null, driverId: null, teamId: null,
-                difficulty: diffId, balance: d.start, walletInitialized: true
+                difficulty: diffId, balance: d.start, walletInitialized: true, roleDifficulty
             });
             Modal.close();
             News.post('🔄', `${name} restarted their career on ${d.icon} ${d.label}`);
@@ -583,7 +590,7 @@ const Market = {
                     <input id="offer-salary" class="input" type="number" min="0" max="${cap}" step="10" value="${Math.min(asking, cap)}" required></label>
                 <p class="muted small">They'll accept a fair offer — lowball and they'll counter. 📜 League rule: pay can never exceed
                     a talent's prestige level (${Economy.capLine(stars)}). Signing bonus (one race of salary) is paid from your
-                    balance of <strong>${Economy.fmt(Economy.balance())}</strong> when they sign.</p>
+                    team's budget of <strong>${Economy.fmt(Wallet.teamBalance(teamId))}</strong> when they sign — never your personal wallet.</p>
                 <p id="offer-error" class="form-error"></p>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
@@ -612,7 +619,11 @@ const Market = {
             }
             btn.disabled = true;
             try {
-                await Economy.spend(offer, `Signing bonus: ${person.name}`, '🤝');
+                // The TEAM's budget pays the signing bonus, not the owner's
+                // personal wallet — AI free agents have no wallet to credit,
+                // so this is a real debit with no counterpart (a sink), same
+                // as every other team hiring cost.
+                await Wallet.teamSpend(teamId, offer, `Signing bonus: ${person.name}`, '🤝');
                 await DB.update(collection, personId, { teamId, salary: offer });
                 await DB.create('contracts', {
                     teamId,
@@ -776,7 +787,10 @@ const Market = {
             if (!car) return;
             const back = Math.round(car.price * this.SELL_RATIO);
             if (!confirm(`Sell your ${car.name} back to the Dealership for ${Economy.fmt(back)}? (You paid ${Economy.fmt(car.price)}.)`)) return;
-            await Auth.updateProfile({ garage: cars.filter(c => c.id !== carId), balance: Economy.balance() + back });
+            // Two isolated writes (garage, then wallet) — matches buyCar's
+            // pattern and keeps wallet changes a single-purpose operation.
+            await Auth.updateProfile({ garage: cars.filter(c => c.id !== carId) });
+            await Auth.updateProfile({ balance: Economy.balance() + back });
             Economy.logTx(Auth.uid(), back, '🚗', `Sold ${car.name} (Dealership)`);
             Util.notify(`Sold the ${car.name} for ${Economy.fmt(back)}. 💵`);
             App.go(App.current.view, App.current.param);

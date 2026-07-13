@@ -349,8 +349,13 @@ const Admin = {
                 const prize = Clauses.championship(c, snapshot);
                 if (prize) {
                     const paidUid = c.personUid || (c.personKind === 'driver' ? world.driversById[c.personId]?.ownerUid : null);
-                    await Economy.adjustWallet(c.ownerUid, -prize.amount, '🏆', `Clause paid: ${prize.label} — ${c.personName}`, seasonId);
-                    await Economy.adjustWallet(paidUid, prize.amount, '🏆', `${prize.label} bonus — season closed`, seasonId);
+                    await Wallet.executeRoleTransaction({
+                        from: c.ownerUid ? { type: 'team', id: c.teamId } : null,
+                        to: paidUid ? { type: 'player', id: paidUid } : null,
+                        amount: prize.amount, icon: '🏆', refId: seasonId,
+                        fromLabel: `Clause paid: ${prize.label} — ${c.personName}`,
+                        toLabel: `${prize.label} bonus — season closed`
+                    });
                     News.post('🏆', `${c.personName} banks a ${Economy.fmt(prize.amount)} championship bonus (P${prize.rank}) from ${c.teamName}`);
                 }
             }
@@ -2016,10 +2021,16 @@ const Admin = {
         <div class="warn-banner">🔧 <strong>Total control.</strong> Everything here bypasses league rules — pay caps, buyouts, negotiations, ownership. Wallet changes still write ledger rows. There is no undo.</div>
         <div class="grid-2">
             <section class="panel">
-                <div class="panel-head"><h2>💵 Wallet Override</h2></div>
+                <div class="panel-head"><h2>💵 Wallet Override</h2><span class="chip chip-dim">Player and Team wallets are isolated — pick which one</span></div>
                 <div class="form-grid">
-                    <label class="field"><span>Player</span><select id="ov-wallet-user" class="input">
+                    <div class="form-row">
+                        <label class="field"><span>Wallet</span><select id="ov-wallet-kind" class="input">
+                            <option value="player">👤 Player wallet</option><option value="team">🏢 Team wallet</option></select></label>
+                    </div>
+                    <label class="field" id="ov-wallet-user-field"><span>Player</span><select id="ov-wallet-user" class="input">
                         ${users.map(u => opt(u.id, `${u.displayName || u.email || u.id} — ${Economy.fmt(Number(u.balance) || 0)}`)).join('')}</select></label>
+                    <label class="field hidden" id="ov-wallet-team-field"><span>Team</span><select id="ov-wallet-team" class="input">
+                        ${teams.map(t => opt(t.id, `${t.name} — ${Economy.fmt(Number(t.budget) || 0)}`)).join('')}</select></label>
                     <div class="form-row">
                         <label class="field"><span>Operation</span><select id="ov-wallet-op" class="input">
                             <option value="adjust">± Adjust by amount</option><option value="set">= Set exact balance</option></select></label>
@@ -2095,15 +2106,31 @@ const Admin = {
         </div>`;
 
         /* ---- Wallet ---- */
+        Util.$('#ov-wallet-kind').addEventListener('change', (e) => {
+            Util.$('#ov-wallet-user-field').classList.toggle('hidden', e.target.value === 'team');
+            Util.$('#ov-wallet-team-field').classList.toggle('hidden', e.target.value !== 'team');
+        });
         Util.$('#ov-wallet-go').addEventListener('click', async () => {
             if (!this.guard()) return;
             try {
-                const uid = Util.$('#ov-wallet-user').value;
+                const kind = Util.$('#ov-wallet-kind').value;
                 const amt = Math.round(Number(Util.$('#ov-wallet-amt').value) || 0);
+                const why = `GM override: ${Util.$('#ov-wallet-why').value.trim() || 'balance adjustment'}`;
+                if (kind === 'team') {
+                    const teamId = Util.$('#ov-wallet-team').value;
+                    const team = teams.find(t => t.id === teamId);
+                    const delta = Util.$('#ov-wallet-op').value === 'set' ? amt - (Number(team?.budget) || 0) : amt;
+                    if (!delta) { Util.notify('That changes nothing.', 'info'); return; }
+                    await Wallet.adjustTeamWallet(teamId, delta, '🔧', why);
+                    Util.notify(`Team budget updated (${delta > 0 ? '+' : ''}${Economy.fmt(delta)}) — ledger row written. 🔧`);
+                    this.refresh();
+                    return;
+                }
+                const uid = Util.$('#ov-wallet-user').value;
                 const user = users.find(u => u.id === uid);
                 const delta = Util.$('#ov-wallet-op').value === 'set' ? amt - (Number(user?.balance) || 0) : amt;
                 if (!delta) { Util.notify('That changes nothing.', 'info'); return; }
-                await Economy.adjustWallet(uid, delta, '🔧', `GM override: ${Util.$('#ov-wallet-why').value.trim() || 'balance adjustment'}`);
+                await Economy.adjustWallet(uid, delta, '🔧', why);
                 Util.notify(`Wallet updated (${delta > 0 ? '+' : ''}${Economy.fmt(delta)}) — ledger row written. 🔧`);
                 this.refresh();
             } catch (e) { Util.notify(e.message, 'error'); }

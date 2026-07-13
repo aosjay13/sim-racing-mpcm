@@ -31,6 +31,15 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
         const rows = (await DB.list('ledger', { force: true })).filter(t => t.uid === uid && t.icon === icon);
         return { count: rows.length, sum: rows.reduce((s, t) => s + t.amount, 0) };
     }, { name, icon });
+    // Team-wallet counterparts — payroll/clauses/sign-on/buyout now move the
+    // TEAM's isolated budget, not the owner's personal balance.
+    const teamBudget = (teamName) => page.evaluate(async (teamName) =>
+        (await DB.teams({ force: true })).find(t => t.name === teamName)?.budget, teamName);
+    const teamLedger = (teamName, icon) => page.evaluate(async ({ teamName, icon }) => {
+        const teamId = (await DB.teams({ force: true })).find(t => t.name === teamName)?.id;
+        const rows = (await DB.list('ledger', { force: true })).filter(t => t.walletType === 'team' && t.walletId === teamId && t.icon === icon);
+        return { count: rows.length, sum: rows.reduce((s, t) => s + t.amount, 0) };
+    }, { teamName, icon });
 
     const signOut = async () => {
         await page.evaluate(() => Modal.close());
@@ -77,10 +86,19 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
 
     /* ---- 1. Greta founds Vortex Racing (1★ rookie team) ---- */
     await registerPlayer('Greta', 'greta@example.com', 'Team Owner');
-    await page.click('.onboard-card:has-text("Found a new team")');
+    await page.click('.role-card:has-text("Grassroots Underdog")'); // Team Owner difficulty (separate from player difficulty)
+    await toast(/Team Owner difficulty set/);
+    await page.waitForSelector('.team-market-card-found');
+    await page.click('.team-market-card-found');
     await page.fill('#tf-name', 'Vortex Racing');
     await page.click('#team-form button[type=submit]');
     await toast(/Team founded/);
+    // Refund the $1,000 marketplace founding fee — the rest of this scenario's
+    // dollar-math is anchored to the original $75,000 starting budget.
+    await page.evaluate(async () => {
+        const u = (await DB.users({ force: true })).find(u => u.displayName === 'Greta');
+        await DB.update('users', u.id, { balance: 75000 });
+    });
     const ids = await page.evaluate(async () => {
         const team = (await DB.teams({ force: true })).find(t => t.name === 'Vortex Racing');
         const npcId = await DB.create('drivers', { name: 'Npc Rival', rating: 80, isNPC: true, teamId: null, ownerUid: null, status: 'approved' });
@@ -210,9 +228,12 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
     log(c.agreement === 'contracted' && c.signOnBonus === 250 && c.buyout === 5000 && c.exclusive === false
         && c.clauses?.minWins?.count === 2 && c.clauses?.winBonus === 400 && c.clauses?.fastestLapBonus === 80 ? '✅' : '❌',
         `Contract stores the countered sheet (sign-on $${c.signOnBonus}, buyout $${c.buyout}, exclusive ${c.exclusive}, minWins ${c.clauses?.minWins?.count}, flap $${c.clauses?.fastestLapBonus})`);
+    // Sign-on bonus is TEAM money out, PERSONAL money in — isolated wallets,
+    // not the same number moving twice.
     let bal = await balances();
-    log(bal.Henry === 75250 && bal.Greta === 74750 ? '✅' : '❌',
-        `Sign-on bonus (and ONLY it) moved upfront: Henry $${bal.Henry}, Greta $${bal.Greta}`);
+    const vortexBudget = await teamBudget('Vortex Racing');
+    log(bal.Henry === 75250 && bal.Greta === 75000 && vortexBudget === 19750 ? '✅' : '❌',
+        `Sign-on bonus moved from the TEAM's budget, not Greta's personal wallet: Henry $${bal.Henry}, Greta (personal) $${bal.Greta}, Vortex Racing (team) $${vortexBudget}`);
 
     /* ---- 4. Race 1: dominant Henry — clauses settle per race via ledger ---- */
     await gmSignIn();
@@ -240,8 +261,8 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
     // win 400 + top3 200 + pole 150 + most laps led 200 + clean 100 + full distance 100 = $1,150
     log(led.count === 6 && led.sum === 1150 ? '✅' : '❌',
         `Perfect race pays all six per-race clauses via the ledger (${led.count} rows, $${led.sum})`);
-    led = await ledger('Greta', '📜');
-    log(led.count === 6 && led.sum === -1150 ? '✅' : '❌', `Owner debited symmetrically for every clause ($${led.sum})`);
+    led = await teamLedger('Vortex Racing', '📜');
+    log(led.count === 6 && led.sum === -1150 ? '✅' : '❌', `Team's budget debited symmetrically for every clause, not Greta's personal wallet ($${led.sum})`);
 
     /* ---- 5. Race 2: no telemetry entered — those clauses silently skip ---- */
     await page.evaluate((id) => Admin.resultsForm(id), raceIds.r2);
@@ -358,15 +379,19 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
     await toast(/Counter sent/);
     await signIn('ivy@example.com');
     const preBuy = await balances();
+    const preBuyTeam = await teamBudget('Vortex Racing');
     await page.evaluate((id) => Deals.room(id), negBuy);
     await page.waitForSelector('#deal-accept');
     await page.click('#deal-accept');
     await toast(/Buyout agreed at \$1,200/);
     await shot('26-buyout-room');
     bal = await balances();
+    const postBuyTeam = await teamBudget('Vortex Racing');
     c = await page.evaluate(async () => (await DB.contracts({ force: true })).filter(x => x.personName === 'Ivy Drift').map(x => x.status));
-    log(bal.Ivy === preBuy.Ivy - 1200 && bal.Greta === preBuy.Greta + 1200 && c.includes('bought-out') ? '✅' : '❌',
-        `Negotiated $1,200 buyout settled (clause was $2,000): Ivy -$1,200, Greta +$1,200, contract bought-out`);
+    // Ivy pays personally (leaving is her own expense); the buyout replenishes
+    // the TEAM's budget — it funds the next hire, not Greta's personal pocket.
+    log(bal.Ivy === preBuy.Ivy - 1200 && postBuyTeam === preBuyTeam + 1200 && c.includes('bought-out') ? '✅' : '❌',
+        `Negotiated $1,200 buyout settled (clause was $2,000): Ivy -$1,200 (personal), Vortex Racing +$1,200 (team), contract bought-out`);
 
     await browser.close();
     const fails = steps.filter(s => s.startsWith('❌'));

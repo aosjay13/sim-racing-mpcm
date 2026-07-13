@@ -69,10 +69,17 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
 
     /* ---- 1. Seed: Kara owns Omega Racing, Jack drives for it on contract ---- */
     await registerPlayer('Kara', 'kara@example.com', 'Team Owner');
-    await page.click('.onboard-card:has-text("Found a new team")');
+    await page.click('.role-card:has-text("Grassroots Underdog")');
+    await toast(/Team Owner difficulty set/);
+    await page.waitForSelector('.team-market-card-found');
+    await page.click('.team-market-card-found');
     await page.fill('#tf-name', 'Omega Racing');
     await page.click('#team-form button[type=submit]');
     await toast(/Team founded/);
+    await page.evaluate(async () => {
+        const u = (await DB.users({ force: true })).find(u => u.displayName === 'Kara');
+        await DB.update('users', u.id, { balance: 75000 });
+    });
     await registerPlayer('Jack', 'jack@example.com', 'Driver');
     await page.click('.onboard-card:has-text("Start from scratch")');
     await page.fill('#ob-name', 'Jack Speed');

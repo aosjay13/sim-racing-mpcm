@@ -88,14 +88,21 @@ const Career = {
         return this.genericWorkspace(el, role);
     },
 
-    _workspaceHead(roleId, extraBtns = '') {
+    // teamId (optional): shows the isolated team-budget chip alongside the
+    // personal wallet chip — the two never share a number, so both are
+    // worth seeing at once when you're in the Team Owner workspace.
+    _workspaceHead(roleId, extraBtns = '', teamId = null) {
         const info = this.roleInfo(roleId);
         const diff = Economy.difficultyInfo(Auth.state.profile?.difficulty);
+        const teamDiffId = Auth.state.profile?.roleDifficulty?.['team-owner'];
+        const teamDiff = teamDiffId ? Wallet.teamDifficultyInfo(teamDiffId) : null;
         return `<div class="view-head">
             <div><h1>${info.icon} ${info.label} Career</h1><p class="muted">${Util.esc(Auth.state.profile?.displayName || '')} — ${info.desc}</p></div>
             <div class="btn-row">
                 ${Economy.walletChip()}
+                ${teamId ? `<span class="chip wallet-chip wallet-chip-team" title="Team budget — isolated from your personal wallet">🏢 ${Economy.fmt(Wallet.teamBalance(teamId))}</span>` : ''}
                 ${diff ? `<button class="chip chip-btn" title="Change difficulty — restarts your career from scratch" onclick="Economy.difficultyPicker(false)">${diff.icon} ${Util.esc(diff.label)}</button>` : ''}
+                ${roleId === 'team-owner' && teamDiff ? `<span class="chip chip-dim" title="Team Owner difficulty — set once when you bought in">${teamDiff.icon} ${Util.esc(teamDiff.label)}</span>` : ''}
                 ${extraBtns}
                 <button class="btn btn-ghost" onclick="App.go('profile')" title="Your full career record">👤 My Profile</button>
                 <button class="btn btn-ghost" onclick="Career.showRolePicker()">⇄ Switch Role</button>
@@ -412,24 +419,25 @@ const Career = {
         let team = world.teams.find(t => t.ownerUid === Auth.uid());
 
         if (!team) {
-            const takeover = world.teams.filter(t => !t.ownerUid);
-            el.innerHTML = `
-            ${this._workspaceHead('team-owner')}
-            <div class="onboard-split">
-                <div class="onboard-card" onclick="Career.teamForm()">
-                    <span class="onboard-icon">🌱</span>
-                    <h3>Found a new team</h3>
-                    <p>Start from scratch: name, colors, logo, and an empty garage. Build it into a dynasty.</p>
-                    <span class="btn btn-primary">Create Team</span>
-                </div>
-                <div class="onboard-card ${takeover.length ? '' : 'disabled'}" ${takeover.length ? `onclick="Career.takeoverModal()"` : ''}>
-                    <span class="onboard-icon">🏢</span>
-                    <h3>Take over an established team</h3>
-                    <p>${takeover.length ? `${Util.plural(takeover.length, 'unowned team')} available. Inherit the roster and history.` : 'No unowned teams available right now.'}</p>
-                    <span class="btn btn-secondary">Browse Teams</span>
-                </div>
-            </div>`;
-            return;
+            // Team Owner is bought into, not started blank — the difficulty
+            // choice ties directly to the marketplace tier (§3 of the wallet
+            // isolation design): Hard = small garage team, tiny budget; Easy =
+            // established front-runner, massive budget.
+            if (!Auth.state.profile?.roleDifficulty?.['team-owner']) {
+                this.teamOwnerDifficultyPicker(true);
+                el.innerHTML = this._workspaceHead('team-owner');
+                return;
+            }
+            return this.teamMarketplace(el, world);
+        }
+
+        // Pre-marketplace teams (already owned before wallets existed) get
+        // backfilled from their current prestige tier, not shortchanged to
+        // the cheapest one.
+        if (!Number.isFinite(team.budget)) {
+            const stars = Prestige.teamStars(team.id, world);
+            const tier = stars >= 4 ? 'easy' : stars >= 3 ? 'medium' : 'hard';
+            team = await Wallet.ensureTeamWallet(team.id, tier);
         }
 
         // Staff on payroll + active contracts (salary lookup by person).
@@ -595,11 +603,11 @@ const Career = {
                 })()}
             </section>
 
-            ${await Economy.earningsPanel('📒 Team Finances')}
+            ${await Wallet.teamEarningsPanel(team.id, '📒 Team Finances')}
         </div>`;
 
         el.innerHTML = `
-        ${this._workspaceHead('team-owner', `<button class="btn btn-secondary" onclick="Career.teamForm('${Util.attr(team.id)}')">✎ Edit Team</button>`)}
+        ${this._workspaceHead('team-owner', `<button class="btn btn-secondary" onclick="Career.teamForm('${Util.attr(team.id)}')">✎ Edit Team</button>`, team.id)}
 
         <div class="driver-hero panel">
             ${C.logoBox(team, 'logo-xl')}
@@ -621,7 +629,7 @@ const Career = {
         </div>
 
         <div class="stat-strip">
-            ${C.statChip(Economy.fmt(Economy.balance()), 'Balance')}
+            ${C.statChip(Economy.fmt(Wallet.teamBalance(team.id)), 'Team budget')}
             ${C.statChip(payroll ? Economy.fmt(payroll) : '$0', 'Payroll / race')}
             ${C.statChip(roster.length, 'Drivers')}
             ${C.statChip(myStaff.length, 'Pit crew')}
@@ -642,10 +650,19 @@ const Career = {
         }));
     },
 
+    // Editing an already-owned team stays free (name/colors/logo/etc — no
+    // money involved). Creating a BRAND NEW team is the "found a custom
+    // team" marketplace listing: it costs the chosen tier's foundPrice and
+    // seeds a fresh team wallet at that tier's operating budget — you can't
+    // reach this form for a fresh team without a team-owner difficulty set.
     async teamForm(teamId = null) {
         const team = teamId ? await DB.get('teams', teamId) : null;
+        const diffId = Auth.state.profile?.roleDifficulty?.['team-owner'];
+        const diff = !team ? Wallet.teamDifficultyInfo(diffId) : null;
+        if (!team && !diff) { Util.notify('Choose a Team Owner difficulty first.', 'info'); return; }
         Modal.open(`
-            ${Modal.header(team ? 'Edit Team' : 'Found a New Team')}
+            ${Modal.header(team ? 'Edit Team' : `Found a New Team — ${diff.icon} ${diff.label}`,
+                team ? '' : `Entry fee ${Economy.fmt(diff.foundPrice)} from your personal wallet · starting team budget ${Economy.fmt(diff.teamStart)}`)}
             <form id="team-form" class="form-grid">
                 <label class="field"><span>Team name *</span><input id="tf-name" class="input" required value="${Util.esc(team?.name || '')}" maxlength="50"></label>
                 <div class="form-row">
@@ -657,7 +674,7 @@ const Career = {
                 <label class="check"><input id="tf-recruiting" type="checkbox" ${team?.recruiting !== false ? 'checked' : ''}> Open to new drivers (shows in “Join a team”)</label>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">${team ? 'Save' : 'Create Team'}</button>
+                    <button type="submit" class="btn btn-primary">${team ? 'Save' : `Found Team — ${Economy.fmt(diff.foundPrice)}`}</button>
                 </div>
             </form>
         `);
@@ -680,10 +697,15 @@ const Career = {
                     await DB.update('teams', team.id, data);
                     Util.notify('Team updated.');
                 } else {
-                    const id = await DB.create('teams', { ...data, ownerUid: Auth.uid(), isEstablished: false, status: 'approved' });
+                    if (Economy.balance() < diff.foundPrice) throw new Error(`Not enough personal funds — founding costs ${Economy.fmt(diff.foundPrice)} but you have ${Economy.fmt(Economy.balance())}.`);
+                    await Economy.spend(diff.foundPrice, `Founded team: ${data.name}`, '🏢');
+                    const id = await DB.create('teams', {
+                        ...data, ownerUid: Auth.uid(), isEstablished: false, status: 'approved',
+                        budget: diff.teamStart, marketValue: diff.foundPrice, tier: diff.tier
+                    });
                     await Auth.updateProfile({ teamId: id });
                     News.post('🏢', `${data.name} founded by ${Auth.state.profile?.displayName || 'a new owner'} — a new team enters the league`);
-                    Util.notify('Team founded! Time to build a legacy. 🏢');
+                    Util.notify(`Team founded! Starting budget ${Economy.fmt(diff.teamStart)}. Time to build a legacy. 🏢`);
                 }
                 Modal.close();
                 App.go('career');
@@ -694,32 +716,103 @@ const Career = {
         });
     },
 
-    async takeoverModal() {
-        const teams = (await DB.teams({ force: true })).filter(t => !t.ownerUid);
-        if (!teams.length) { Util.notify('No unowned teams available.', 'info'); return; }
+    /* ---------------- Team Owner difficulty + marketplace (buy-in) ---------------- */
+    teamOwnerDifficultyPicker(firstTime = true) {
+        const current = Auth.state.profile?.roleDifficulty?.['team-owner'];
         Modal.open(`
-            ${Modal.header('Take Over a Team', 'These established teams need an owner')}
-            <div class="stack">${teams.map(t => `
-                <div class="race-row" onclick="Career.takeoverTeam('${Util.attr(t.id)}')">
-                    ${C.logoBox(t)}
-                    <div class="race-row-main">
-                        <span class="race-title">${Util.esc(t.name)}</span>
-                        <span class="race-sub">${Util.esc(t.description || '')}</span>
-                    </div>
-                    <span class="btn btn-primary btn-sm">Take over</span>
-                </div>`).join('')}
+            ${Modal.header('🏢 Choose Your Team Owner Difficulty', 'This is separate from your Driver difficulty — sets which teams you can buy and their starting budget.')}
+            <div class="role-grid">
+                ${Object.values(Wallet.TEAM_DIFFICULTIES).map(d => `
+                    <button class="role-card ${current === d.id ? 'selected' : ''}" onclick="Career.pickTeamOwnerDifficulty('${d.id}')">
+                        <span class="role-icon">${d.icon}</span>
+                        <span class="role-name">${d.label}${current === d.id ? ' (current)' : ''}</span>
+                        <span class="role-desc">${d.tagline}</span>
+                        <span class="market-price">${Economy.fmt(d.teamStart)} starting team budget</span>
+                    </button>`).join('')}
             </div>
-        `);
+            <p class="muted small" style="margin-top:.8rem">Your Driver difficulty and Team Owner difficulty are tracked separately — you can be an Easy Driver and a Hard Team Owner, or any combination.</p>
+        `, { wide: true });
     },
 
-    async takeoverTeam(teamId) {
+    async pickTeamOwnerDifficulty(id) {
         try {
-            await DB.update('teams', teamId, { ownerUid: Auth.uid(), isEstablished: true });
-            await Auth.updateProfile({ teamId });
-            const team = await DB.get('teams', teamId);
-            News.post('🏢', `${team?.name || 'A team'} has a new owner: ${Auth.state.profile?.displayName || 'a player'}`);
+            const d = Wallet.teamDifficultyInfo(id);
+            if (!d) return;
+            const roleDifficulty = { ...(Auth.state.profile?.roleDifficulty || {}), 'team-owner': id };
+            await Auth.updateProfile({ roleDifficulty });
             Modal.close();
-            Util.notify('The team is yours. Make it a dynasty. 🏢');
+            Util.notify(`${d.icon} Team Owner difficulty set: ${d.label}. Browse the marketplace to buy in. 🏢`);
+            App.go('career');
+        } catch (e) { Util.notify(e.message, 'error'); }
+    },
+
+    // The marketplace: every team carries a checkered-flag-bulleted stat
+    // list and a price tag (marketValue). Filtered hard to the chosen
+    // difficulty tier — ties the purchase directly to the difficulty level,
+    // matching Grassroots Underdog / Midfield Runner / Front-Running Outfit.
+    async teamMarketplace(el, world) {
+        const diffId = Auth.state.profile?.roleDifficulty?.['team-owner'];
+        const diff = Wallet.teamDifficultyInfo(diffId);
+        const unowned = world.teams.filter(t => !t.ownerUid);
+        for (const t of unowned) if (!Number.isFinite(t.marketValue) || !t.tier) await Wallet.backfillMarketValue(t, world);
+        const fresh = await DB.teams({ force: true });
+        const listings = fresh.filter(t => !t.ownerUid && t.tier === diff.tier)
+            .sort((a, b) => (a.marketValue || 0) - (b.marketValue || 0));
+
+        el.innerHTML = `
+        ${this._workspaceHead('team-owner')}
+        <div class="market-banner market-banner-${diff.tier}">
+            <span class="market-banner-icon">${diff.icon}</span>
+            <div>
+                <h2>${diff.label} Marketplace</h2>
+                <p class="muted">${diff.tagline} Personal wallet: <strong>${Economy.fmt(Economy.balance())}</strong>.</p>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="Career.teamOwnerDifficultyPicker(false)">⇄ Change difficulty</button>
+        </div>
+        <div class="team-market-grid">
+            <div class="team-market-card team-market-card-found" onclick="Career.teamForm()">
+                <span class="onboard-icon">🏁</span>
+                <h3>Found a Custom Team</h3>
+                <ul class="checkered-list">
+                    <li>Pick the name, colors, and logo</li>
+                    <li>Starts with an empty roster</li>
+                    <li>Starting budget ${Economy.fmt(diff.teamStart)}</li>
+                </ul>
+                <span class="market-price">${Economy.fmt(diff.foundPrice)}</span>
+                <span class="btn btn-primary">Found Team</span>
+            </div>
+            ${listings.map(t => `
+                <div class="team-market-card" onclick="Career.buyTeam('${Util.attr(t.id)}')">
+                    ${C.logoBox(t)}
+                    <h3>${Util.esc(t.name)}</h3>
+                    <ul class="checkered-list">
+                        <li>${Prestige.chip(Prestige.teamStars(t.id, world))}</li>
+                        <li>${Util.esc(t.headquarters || 'Location unknown')}</li>
+                        <li>Starting budget ${Economy.fmt(diff.teamStart)}</li>
+                    </ul>
+                    ${t.description ? `<p class="muted small">${Util.esc(t.description)}</p>` : ''}
+                    <span class="market-price">${Economy.fmt(t.marketValue)}</span>
+                    <span class="btn btn-secondary">Buy Team</span>
+                </div>`).join('')}
+        </div>
+        ${!listings.length ? C.empty('🏢', `No ${diff.label} teams for sale right now`, 'Check back later, found a custom team above, or change difficulty to browse a different tier.') : ''}`;
+    },
+
+    async buyTeam(teamId) {
+        try {
+            const diffId = Auth.state.profile?.roleDifficulty?.['team-owner'];
+            const diff = Wallet.teamDifficultyInfo(diffId);
+            if (!diff) { Util.notify('Choose a Team Owner difficulty first.', 'info'); return; }
+            const team = await DB.get('teams', teamId, { force: true });
+            if (!team || team.ownerUid) { Util.notify('That team is no longer available.', 'info'); App.go('career'); return; }
+            const price = Number(team.marketValue) || 0;
+            if (Economy.balance() < price) throw new Error(`Not enough personal funds — ${team.name} costs ${Economy.fmt(price)} but you have ${Economy.fmt(Economy.balance())}.`);
+            if (!confirm(`Buy ${team.name} for ${Economy.fmt(price)}? Their wallet seeds fresh at ${Economy.fmt(diff.teamStart)}.`)) return;
+            await Economy.spend(price, `Purchased team: ${team.name}`, '🏢');
+            await DB.update('teams', teamId, { ownerUid: Auth.uid(), isEstablished: true, budget: diff.teamStart });
+            await Auth.updateProfile({ teamId });
+            News.post('🏢', `${team.name} has a new owner: ${Auth.state.profile?.displayName || 'a player'} (bought for ${Economy.fmt(price)})`);
+            Util.notify(`${team.name} is yours — starting budget ${Economy.fmt(diff.teamStart)}. Make it a dynasty. 🏢`);
             App.go('career');
         } catch (e) { Util.notify(e.message, 'error'); }
     },

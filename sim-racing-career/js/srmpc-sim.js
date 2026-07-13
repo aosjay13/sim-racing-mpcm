@@ -813,10 +813,20 @@ const Sim = {
         try {
             const results = race.results || [];
             const raceName = race.name || race.track || 'race';
-            const tx = []; // { uid, amount, icon, label } — one ledger entry each
+            // { wallet: {type:'player'|'team', id}, amount, icon, label } — one
+            // ledger row each. Team money (payroll debits, prize/sponsor
+            // shares) targets teams/{id}.budget via addTeam; personal money
+            // (driver winnings, staff/agent/persona earnings) targets
+            // users/{uid}.balance via add — two isolated wallets, never
+            // conflated even when the same human owns both.
+            const tx = [];
             const add = (uid, amount, icon, label) => {
                 amount = Math.round(Number(amount) || 0);
-                if (uid && amount) tx.push({ uid, amount, icon, label, refId: race.id || null });
+                if (uid && amount) tx.push({ wallet: { type: 'player', id: uid }, amount, icon, label, refId: race.id || null });
+            };
+            const addTeam = (teamId, amount, icon, label) => {
+                amount = Math.round(Number(amount) || 0);
+                if (teamId && amount) tx.push({ wallet: { type: 'team', id: teamId }, amount, icon, label, refId: race.id || null });
             };
 
             let sponsors = [], contracts = [], profiles = [];
@@ -836,26 +846,29 @@ const Sim = {
                 const team = world.teamsById[driver.teamId];
                 if (team) {
                     racedTeams.add(team.id);
-                    add(team.ownerUid, Math.round(prize * this.TEAM_SHARE), '🏆', `Team share: ${driver.name} — ${raceName}`);
+                    if (team.ownerUid) addTeam(team.id, Math.round(prize * this.TEAM_SHARE), '🏆', `Team share: ${driver.name} — ${raceName}`);
                 }
             }
 
-            /* -- 2. Brand sponsors pay the owner of every team that raced -- */
+            /* -- 2. Brand sponsors pay the team's budget for every team that raced -- */
             for (const teamId of racedTeams) {
                 const team = world.teamsById[teamId];
                 if (!team?.ownerUid) continue;
                 sponsors.filter(s => s.teamId === teamId)
-                    .forEach(s => add(team.ownerUid, s.payoutPerRace, '💰', `Sponsor payout: ${s.name} — ${raceName}`));
+                    .forEach(s => addTeam(teamId, s.payoutPerRace, '💰', `Sponsor payout: ${s.name} — ${raceName}`));
             }
 
-            /* -- 3. Contract salaries: drivers paid per race raced, staff per team race -- */
+            /* -- 3. Contract salaries: TEAM pays (budget), talent collects
+                  (personal wallet) — the internal-payout case (owner hiring
+                  their own driver persona) is just this same code path; the
+                  two wallets are different documents so it's never a no-op. -- */
             const hires = contracts.filter(c => c.type !== 'sponsorship');
             for (const c of hires) {
                 const isDriver = c.personKind === 'driver';
                 const due = isDriver ? racedDrivers.has(c.personId) : racedTeams.has(c.teamId);
                 if (!due || !c.salary) continue;
                 const team = world.teamsById[c.teamId];
-                add(team?.ownerUid, -c.salary, '💼', `Payroll: ${c.personName} — ${raceName}`);
+                if (team?.ownerUid) addTeam(team.id, -c.salary, '💼', `Payroll: ${c.personName} — ${raceName}`);
                 // Player talent collects: drivers via their driver doc, player
                 // crew (crew chief / mechanic / agent) via personUid on the contract.
                 const paidUid = c.personUid || (isDriver ? world.driversById[c.personId]?.ownerUid : null);
@@ -879,18 +892,24 @@ const Sim = {
                 const team = world.teamsById[c.teamId];
                 const paidUid = c.personUid || (isDriver ? world.driversById[c.personId]?.ownerUid : null);
                 for (const p of payouts) {
-                    add(team?.ownerUid, -p.amount, '📜', `Clause paid: ${p.label} — ${c.personName} — ${raceName}`);
+                    if (team?.ownerUid) addTeam(team.id, -p.amount, '📜', `Clause paid: ${p.label} — ${c.personName} — ${raceName}`);
                     add(paidUid, p.amount, '📜', `${p.label} bonus — ${raceName}`);
                 }
             }
 
-            /* -- 4. Sponsorship deals (negotiated): sponsor pays the target per race run -- */
+            /* -- 4. Sponsorship deals (negotiated): sponsor pays personally (a
+                  sponsor persona's own wallet — not a team). The target's side
+                  is TEAM money when the deal backs a team, personal when it
+                  backs a driver directly. -- */
             for (const c of contracts.filter(c => c.type === 'sponsorship')) {
                 const due = c.teamId ? racedTeams.has(c.teamId) : racedDrivers.has(c.driverId);
                 if (!due || !c.salary) continue;
                 add(c.sponsorUid, -c.salary, '🤝', `Sponsorship paid: ${c.teamName || c.driverName} — ${raceName}`);
-                const recvUid = c.teamId ? world.teamsById[c.teamId]?.ownerUid : world.driversById[c.driverId]?.ownerUid;
-                add(recvUid, c.salary, '🤝', `Sponsorship from ${c.sponsorName} — ${raceName}`);
+                if (c.teamId) {
+                    if (world.teamsById[c.teamId]?.ownerUid) addTeam(c.teamId, c.salary, '🤝', `Sponsorship from ${c.sponsorName} — ${raceName}`);
+                } else {
+                    add(world.driversById[c.driverId]?.ownerUid, c.salary, '🤝', `Sponsorship from ${c.sponsorName} — ${raceName}`);
+                }
             }
 
             /* -- 5. Player role personas earn their cut -- */
@@ -917,17 +936,10 @@ const Sim = {
             playerProfiles.filter(p => (p.role === 'crew-chief' || p.role === 'mechanic') && racedTeams.has(p.teamId))
                 .forEach(p => add(p.uid, this.CREW_STIPEND, '🔧', `Race-day crew stipend — ${raceName}`));
 
-            /* -- Apply: one balance write per player, one ledger row per line -- */
-            const perUser = new Map();
-            tx.forEach(t => perUser.set(t.uid, (perUser.get(t.uid) || 0) + t.amount));
-            for (const [uid, delta] of perUser) {
-                if (!delta) continue;
-                const user = await DB.get('users', uid).catch(() => null);
-                if (!user) continue;
-                await DB.update('users', uid, { balance: (Number(user.balance) || 0) + delta }).catch(() => {});
-                if (uid === Auth.uid()) await Auth.reloadProfile().catch(() => {});
-            }
-            await Economy.logMany(tx);
+            /* -- Apply: one balance write per wallet (players and teams
+                  batched separately), one ledger row per line, every row
+                  tagged with the wallet it actually moved. -- */
+            await Wallet.applyBatch(tx);
         } catch (e) { console.warn('Race payout failed:', e); }
     },
 

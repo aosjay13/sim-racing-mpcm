@@ -58,6 +58,12 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
         const users = await DB.users({ force: true });
         return Object.fromEntries(users.map(u => [u.displayName, Number(u.balance)]));
     });
+    // Team hiring costs (signing bonuses, payroll) now move the TEAM's
+    // isolated budget, not the owner's personal wallet.
+    const teamBalances = () => page.evaluate(async () => {
+        const teams = await DB.teams({ force: true });
+        return Object.fromEntries(teams.map(t => [t.name, Number(t.budget) || 0]));
+    });
 
     await page.goto('http://localhost:8317/sim-racing-career/app.html');
 
@@ -73,10 +79,19 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
 
     /* ---- 2. Alice: TEAM OWNER founds Alpha Racing, hires an NPC with counters + cap ---- */
     await registerPlayer('Alice', 'alice@example.com', 'Team Owner');
-    await page.click('.onboard-card:has-text("Found a new team")');
+    await page.click('.role-card:has-text("Grassroots Underdog")');
+    await toast(/Team Owner difficulty set/);
+    await page.waitForSelector('.team-market-card-found');
+    await page.click('.team-market-card-found');
     await page.fill('#tf-name', 'Alpha Racing');
     await page.click('#team-form button[type=submit]');
     await toast(/Team founded/);
+    // Refund the $1,000 marketplace founding fee — this scenario's long chain
+    // of settlement math is anchored to the original $75,000 starting budget.
+    await page.evaluate(async () => {
+        const u = (await DB.users({ force: true })).find(u => u.displayName === 'Alice');
+        await DB.update('users', u.id, { balance: 75000 });
+    });
     const ids = await page.evaluate(async () => {
         const team = (await DB.teams({ force: true })).find(t => t.name === 'Alpha Racing');
         const npcId = await DB.create('drivers', {
@@ -98,7 +113,9 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
     await page.click('#offer-form button[type=submit]'); // accept the counter (input was set to 770)
     log('✅', 'NPC counter accepted: ' + (await toast(/signed for/)));
     let bal = await balances();
-    log(bal.Alice === 75000 - 770 ? '✅' : '❌', `Alice paid the $770 signing bonus (balance ${bal.Alice})`);
+    let teamBal = await teamBalances();
+    log(bal.Alice === 75000 && teamBal['Alpha Racing'] === 20000 - 770 ? '✅' : '❌',
+        `Alpha Racing's TEAM budget paid the $770 signing bonus, not Alice's personal wallet (team $${teamBal['Alpha Racing']}, personal $${bal.Alice})`);
 
     /* ---- 3. Alice opens a P2P negotiation with Bob (non-exclusive + note) ---- */
     await page.evaluate(() => App.go('hub', 'recruitment'));
@@ -155,15 +172,23 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
     log(signed.salary === 1200 && signed.exclusive === false && signed.teamOk ? '✅' : '❌',
         `Contract executed: $${signed.salary}/race, non-exclusive, Bob's primary team = Alpha`);
     bal = await balances();
-    log(bal.Alice === 74230 - 1200 && bal.Bob === 75000 + 1200 ? '✅' : '❌',
-        `Signing bonus moved between players (Alice ${bal.Alice}, Bob ${bal.Bob})`);
+    teamBal = await teamBalances();
+    log(teamBal['Alpha Racing'] === 20000 - 770 - 1200 && bal.Bob === 75000 + 1200 ? '✅' : '❌',
+        `Signing bonus moved from Alpha Racing's TEAM budget to Bob's PERSONAL wallet (team $${teamBal['Alpha Racing']}, Bob $${bal.Bob})`);
 
     /* ---- 6. Carol founds Bravo Motors → multi-team second contract for Bob ---- */
     await registerPlayer('Carol', 'carol@example.com', 'Team Owner');
-    await page.click('.onboard-card:has-text("Found a new team")');
+    await page.click('.role-card:has-text("Grassroots Underdog")');
+    await toast(/Team Owner difficulty set/);
+    await page.waitForSelector('.team-market-card-found');
+    await page.click('.team-market-card-found');
     await page.fill('#tf-name', 'Bravo Motors');
     await page.click('#team-form button[type=submit]');
     await toast(/Team founded/);
+    await page.evaluate(async () => {
+        const u = (await DB.users({ force: true })).find(u => u.displayName === 'Carol');
+        await DB.update('users', u.id, { balance: 75000 });
+    });
     const teamB = await page.evaluate(async () => (await DB.teams({ force: true })).find(t => t.name === 'Bravo Motors').id);
     // Exclusive offer must be blocked (Bob already has a team contract).
     const exclusiveErr = await page.evaluate(async ({ bobId, bobUid, teamB }) => {
@@ -246,6 +271,7 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
 
     /* ---- 9. Race-day settlement: salaries, sponsorship, commission, venue fee ---- */
     const before = await balances();
+    const teamBefore = await teamBalances();
     await page.evaluate(async ({ bobId, npcId }) => {
         const world = await DB.loadWorld(true);
         const race = { id: 'settlement-gp', name: 'Settlement GP', track: 'Test Ring', seriesId: 'none',
@@ -253,16 +279,21 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
         await Sim.payoutRace(race, world);
     }, ids);
     const after = await balances();
-    // Expected deltas:
-    //  Bob:  +5000 prize +1200 Alpha salary +600 Bravo salary                    = +6800
-    //  Alice:+2500 P1 team share +1750 P2 team share +500 sponsorship
+    const teamAfter = await teamBalances();
+    // Expected deltas — team shares, sponsorship-to-team, and payroll are all
+    // TEAM money now (isolated from Alice's/Carol's personal wallets):
+    //  Bob:  +5000 prize +1200 Alpha salary +600 Bravo salary                    = +6800 (personal — driver earnings)
+    //  Alpha Racing (team): +2500 P1 team share +1750 P2 team share +500 sponsorship
     //        −1200 (Bob) −770 (NPC) payroll                                      = +2780
-    //  Carol: −600 (Bob's Bravo salary)                                          = −600
-    //  Dave:  −500 sponsorship +120 agent commission (10% of $1,200) +140 venue  = −240
+    //  Bravo Motors (team): −600 (Bob's Bravo salary)                            = −600
+    //  Dave:  −500 sponsorship +120 agent commission (10% of $1,200) +140 venue  = −240 (personal — sponsor/agent/track-owner personas)
     const delta = (n) => after[n] - before[n];
+    const teamDelta = (n) => teamAfter[n] - teamBefore[n];
     log(delta('Bob') === 6800 ? '✅' : '❌', `Bob settlement: prize + BOTH team salaries = +$${delta('Bob')} (expected +$6,800)`);
-    log(delta('Alice') === 2780 ? '✅' : '❌', `Alice settlement: team shares + sponsorship − payroll = +$${delta('Alice')} (expected +$2,780)`);
-    log(delta('Carol') === -600 ? '✅' : '❌', `Carol settlement: payroll for Bob's second seat = $${delta('Carol')} (expected −$600)`);
+    log(delta('Alice') === 0 && teamDelta('Alpha Racing') === 2780 ? '✅' : '❌',
+        `Alpha Racing TEAM settlement (not Alice personally): team shares + sponsorship − payroll = +$${teamDelta('Alpha Racing')} (expected +$2,780), Alice personal Δ$${delta('Alice')} (expected $0)`);
+    log(delta('Carol') === 0 && teamDelta('Bravo Motors') === -600 ? '✅' : '❌',
+        `Bravo Motors TEAM settlement (not Carol personally): payroll for Bob's second seat = $${teamDelta('Bravo Motors')} (expected −$600), Carol personal Δ$${delta('Carol')} (expected $0)`);
     log(delta('Dave') === -240 ? '✅' : '❌', `Dave settlement: −sponsorship +10% agent commission +venue fee = $${delta('Dave')} (expected −$240)`);
     const ledger = await page.evaluate(async () => (await DB.list('ledger', { force: true })).map(t => t.label));
     const ledgerHas = (re) => ledger.some(l => re.test(l));

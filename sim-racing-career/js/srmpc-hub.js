@@ -1036,8 +1036,11 @@ const Hub = {
 
         Util.$('#lv-pay')?.addEventListener('click', async () => {
             try {
+                // The leaving driver pays personally; the buyout replenishes
+                // the TEAM's budget (it funds the next hire), not the owner's
+                // personal wallet.
                 await Economy.spend(buyout, `Contract buyout: ${team?.name || 'team'}`, '💸');
-                await Economy.adjustWallet(payee, buyout, '💸', `Buyout received: ${driver.name}`);
+                await Wallet.adjustTeamWallet(teamId, buyout, '💸', `Buyout received: ${driver.name}`);
                 await this._freeDriver(driverId, Auth.uid(), 'bought-out', contract.id);
                 Modal.close();
                 News.post('💸', `${driver.name} paid a ${Economy.fmt(buyout)} buyout to leave ${team?.name || 'their team'}`);
