@@ -526,6 +526,14 @@ const Views = {
         const mySignup = uid ? signups.find(s => s.uid === uid) : null;
         const canSignUp = Auth.isPlayer() && Auth.state.profile?.driverId && race.status !== 'completed';
 
+        // Vehicle-ownership gate (js/srmpc-garage.js): entrants need an
+        // eligible car — personally or via their team — when the GM set one.
+        let elig = { eligible: true, via: 'open', reason: '', choices: [] };
+        if (canSignUp && !mySignup) {
+            try { elig = await Garage.validateSeriesEligibility(uid, race.seriesId, { raceId }); }
+            catch (e) { /* eligibility needs auth'd reads — default open */ }
+        }
+
         const results = (race.results || []).slice().sort((a, b) => {
             if (a.dnf !== b.dnf) return a.dnf ? 1 : -1;
             return (Number(a.position) || 99) - (Number(b.position) || 99);
@@ -562,7 +570,9 @@ const Views = {
                 ${canSignUp ? `<div style="margin-top:1rem">
                     ${mySignup
                         ? `<button class="btn btn-secondary" onclick="Views.toggleSignup('${Util.attr(race.id)}')">Withdraw my entry</button>`
-                        : `<button class="btn btn-primary" onclick="Views.toggleSignup('${Util.attr(race.id)}')">🏁 Sign me up</button>`}
+                        : `<button class="btn btn-primary" ${elig.eligible ? '' : 'disabled'} onclick="Views.toggleSignup('${Util.attr(race.id)}')">🏁 Sign me up</button>`}
+                    ${mySignup ? '' : Garage.eligibilityHtml(elig)}
+                    ${!mySignup && !elig.eligible ? `<div class="btn-row" style="margin-top:.5rem"><button class="btn btn-secondary btn-sm" onclick="Modal.close();App.go('dealership')">🏬 Visit the Dealership</button></div>` : ''}
                 </div>` : (Auth.isPlayer() && !Auth.state.profile?.driverId && race.status !== 'completed'
                     ? `<p class="muted" style="margin-top:1rem">Create your driver profile in <a href="#" onclick="Modal.close();App.go('career');return false">My Career</a> to sign up for races.</p>` : '')}
             `}
@@ -587,7 +597,17 @@ const Views = {
                 for (const s of signups) await DB.remove('raceSignups', s.id);
                 Util.notify('Entry withdrawn.');
             } else {
-                await DB.create('raceSignups', { raceId, uid, driverId });
+                // Re-validate at write time (the modal's check could be stale)
+                // and record WHICH car qualifies the entry — firestore.rules
+                // independently verifies carId against the garageCarIds mirror.
+                const race = (await DB.races()).find(r => r.id === raceId);
+                const elig = await Garage.validateSeriesEligibility(uid, race?.seriesId, { raceId });
+                if (!elig.eligible) { Util.notify(elig.reason, 'error'); return; }
+                await Garage.ensureFlatIds(elig);
+                await DB.create('raceSignups', {
+                    raceId, uid, driverId,
+                    carId: elig.carId || null, teamId: elig.via === 'team' ? elig.teamId : null, via: elig.via
+                });
                 Util.notify('You are on the grid! 🏁');
             }
             this.showRace(raceId);

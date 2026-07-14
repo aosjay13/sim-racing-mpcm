@@ -509,7 +509,7 @@ window.Stats = Stats;
 /* ============================================================
    Schedule generator — a full series calendar in one click.
    ============================================================ */
-function generateScheduleRaces({ series, cadence, startDate, time, tracks, laps, startRound = 1, seasonId = null }) {
+function generateScheduleRaces({ series, cadence, startDate, time, tracks, laps, startRound = 1, seasonId = null, carChoices = null }) {
     const start = Util.parseISODate(startDate);
     if (!start) throw new Error('Pick a valid start date.');
     const trackList = tracks.map(t => t.trim()).filter(Boolean);
@@ -533,6 +533,11 @@ function generateScheduleRaces({ series, cadence, startDate, time, tracks, laps,
             date: iso,
             time: time || '',
             laps: laps || null,
+            // The GM's eligible-car tokens for this event (space-delimited in
+            // the builder, parsed to an array). Empty/absent = open entry.
+            // Falls back to series.carChoices at validation time — see
+            // Garage.choicesFor in js/srmpc-garage.js.
+            carChoices: Array.isArray(carChoices) && carChoices.length ? carChoices : (Array.isArray(series.carChoices) ? series.carChoices : []),
             status: 'scheduled',
             results: []
         });

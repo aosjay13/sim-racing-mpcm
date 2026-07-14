@@ -56,6 +56,41 @@ service cloud.firestore {
         || changed.hasOnly(['budget', 'financialState', 'insolventAt', 'insolventRaces', 'updatedAt']);
     }
 
+    // ----- Series-entry vehicle gate (js/srmpc-garage.js) -----
+    // A race signup must name a carId the entrant actually owns whenever the
+    // event has a GM-set carChoices list (race doc, falling back to the
+    // series doc). Ownership is checked against the flat `garageCarIds`
+    // mirror kept next to users/{uid}.garage and teams/{id}.garage — rules
+    // can't scan an array of objects, so the client maintains the mirror on
+    // every garage write. Events with no carChoices are open entry.
+    //
+    // Honest limit (same friends-league posture as the wallet rules): the
+    // team path trusts the asserted teamId belongs to a team the entrant
+    // races for — multi-team contracts live in a collection rules can't
+    // scan. What it DOES lock down: you cannot register for a car-gated
+    // event without SOMEONE's garage (yours or a real team's) containing an
+    // eligible car, and you cannot invent a carId the event doesn't accept.
+    function garageIdsOf(coll, id) {
+      return get(/databases/$(database)/documents/$(coll)/$(id)).data.get('garageCarIds', []);
+    }
+    function signupWriteOk(racesColl, seriesColl, usersColl, teamsColl) {
+      let d = request.resource.data;
+      let race = get(/databases/$(database)/documents/$(racesColl)/$(d.raceId)).data;
+      let choices = race.get('carChoices', []).size() > 0
+        ? race.carChoices
+        : (race.get('seriesId', '') != ''
+            ? get(/databases/$(database)/documents/$(seriesColl)/$(race.seriesId)).data.get('carChoices', [])
+            : []);
+      return d.get('uid', '') == request.auth.uid && (
+        choices.size() == 0
+        || (d.get('carId', '') in choices && (
+              d.get('carId', '') in garageIdsOf(usersColl, request.auth.uid)
+              || (d.get('teamId', '') is string && d.teamId != ''
+                  && d.carId in garageIdsOf(teamsColl, d.teamId))
+        ))
+      );
+    }
+
     // ----- Global GM override: the Game Master may edit ANYTHING -----
     match /{document=**} {
       allow read, write: if isGM();
@@ -127,7 +162,12 @@ service cloud.firestore {
     }
     match /roleProfiles/{doc}    { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
     match /challengeClaims/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
-    match /raceSignups/{doc}     { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
+    // Race signups go through the vehicle gate: create/update must prove car
+    // ownership when the event requires one (withdrawals stay open).
+    match /raceSignups/{doc} {
+      allow read, delete: if isAuthenticated();
+      allow create, update: if isAuthenticated() && signupWriteOk('races', 'series', 'users', 'teams');
+    }
 
     // ----- Car number registry / auctions (js/srmpc-numbers.js) -----
     // Registry + leases are public-read (numbers show on the series page);
@@ -163,11 +203,18 @@ service cloud.firestore {
     // `c__…` prefix, which those never match. The isGM() wildcard override
     // still covers everything.
     match /{coll}/{doc} {
-      allow read:           if coll.matches('^c__[a-z0-9]+__.*');
-      allow create, delete: if coll.matches('^c__[a-z0-9]+__.*') && isAuthenticated();
-      allow update:         if coll.matches('^c__[a-z0-9]+__.*') && isAuthenticated()
+      allow read:   if coll.matches('^c__[a-z0-9]+__.*');
+      allow delete: if coll.matches('^c__[a-z0-9]+__.*') && isAuthenticated();
+      allow create: if coll.matches('^c__[a-z0-9]+__.*') && isAuthenticated()
+        && (!coll.matches('^c__[a-z0-9]+__raceSignups$')
+            || signupWriteOk(coll.replace('raceSignups', 'races'), coll.replace('raceSignups', 'series'),
+                             coll.replace('raceSignups', 'users'), coll.replace('raceSignups', 'teams')));
+      allow update: if coll.matches('^c__[a-z0-9]+__.*') && isAuthenticated()
         && (!coll.matches('^c__[a-z0-9]+__users$') || userWriteOk())
-        && (!coll.matches('^c__[a-z0-9]+__teams$') || teamWriteOk());
+        && (!coll.matches('^c__[a-z0-9]+__teams$') || teamWriteOk())
+        && (!coll.matches('^c__[a-z0-9]+__raceSignups$')
+            || signupWriteOk(coll.replace('raceSignups', 'races'), coll.replace('raceSignups', 'series'),
+                             coll.replace('raceSignups', 'users'), coll.replace('raceSignups', 'teams')));
     }
   }
 }

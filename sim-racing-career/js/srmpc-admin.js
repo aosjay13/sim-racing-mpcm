@@ -438,6 +438,9 @@ const Admin = {
                     <input id="sf-logo" class="input" type="file" accept="image/*"></label>
                 <label class="field"><span>Highest car number (0–999)</span>
                     <input id="sf-nummax" class="input" type="number" min="0" max="999" value="${Number(series?.numberMax) || 99}"></label>
+                <label class="field"><span>Eligible cars — space-separated car IDs (blank = open entry)</span>
+                    <input id="sf-cars" class="input" value="${Util.esc((series?.carChoices || []).join(' '))}" placeholder="e.g. phoenix-gt-r-street-spec falcon-rs-coupe">
+                    <span class="muted small">Drivers must own one of these (personally or via their team) to enter. Known IDs: ${Util.esc([...Market.STOCK.new, ...Market.STOCK.used].map(c => Garage.carId(c.name)).join(' · '))}</span></label>
                 <label class="field"><span>Description</span><textarea id="sf-desc" class="input" rows="2" maxlength="400">${Util.esc(series?.description || '')}</textarea></label>
                 <div class="modal-actions">
                     ${series?.logo ? `<button type="button" class="btn btn-ghost" id="sf-remove-logo">Remove logo</button>` : ''}
@@ -468,6 +471,7 @@ const Admin = {
                     pointsSystem: Util.$('#sf-points').value,
                     status: Util.$('#sf-status').value,
                     numberMax: Math.min(999, Math.max(0, Number(Util.$('#sf-nummax').value) || 99)),
+                    carChoices: Garage.parseChoices(Util.$('#sf-cars').value),
                     description: Util.$('#sf-desc').value.trim()
                 };
                 if (!data.name) throw new Error('Series name is required.');
@@ -563,6 +567,9 @@ const Admin = {
                         </select></label>
                     <label class="field"><span>Laps (optional)</span><input id="sb-laps" class="input" type="number" min="1" placeholder="e.g. 25"></label>
                 </div>
+                <label class="field"><span>Eligible cars — space-separated car IDs (blank = open entry)</span>
+                    <input id="sb-cars" class="input" value="${Util.esc((series.find(s => s.id === initialSid)?.carChoices || []).join(' '))}" placeholder="e.g. phoenix-gt-r-street-spec falcon-rs-coupe">
+                    <span class="muted small">Stamped on every generated race — entrants must own one of these cars (personal or team garage). Known IDs: ${Util.esc([...Market.STOCK.new, ...Market.STOCK.used].map(c => Garage.carId(c.name)).join(' · '))}</span></label>
                 <label class="field"><span>Tracks — one per line, in order *</span>
                     <textarea id="sb-tracks" class="input" rows="8" placeholder="Silverstone&#10;Spa-Francorchamps&#10;Monza&#10;Suzuka&#10;Interlagos" required></textarea></label>
                 <div class="field"><span id="sb-lib-label">Track library — click to add</span>
@@ -610,6 +617,7 @@ const Admin = {
         // Keep the season dropdown and track library in sync with the chosen series.
         Util.$('#sb-series').addEventListener('change', (e) => {
             Util.$('#sb-season').innerHTML = seasonOptions(e.target.value);
+            Util.$('#sb-cars').value = (series.find(s => s.id === e.target.value)?.carChoices || []).join(' ');
             renderLib(e.target.value);
         });
 
@@ -655,9 +663,15 @@ const Admin = {
                     }
                 }
 
+                // Persist the eligible-car list on the series too, so future
+                // one-off races and the series page share the same requirement.
+                const carChoices = Garage.parseChoices(Util.$('#sb-cars').value);
+                await DB.update('series', sid, { carChoices }).catch(() => {});
+
                 const races = generateScheduleRaces({
                     series: s,
                     seasonId,
+                    carChoices,
                     cadence: Util.$('#sb-cadence').value,
                     startDate: Util.$('#sb-start').value,
                     time: Util.$('#sb-time').value,

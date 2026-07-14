@@ -100,7 +100,9 @@ const Insolvency = {
         const car = cars.find(c => c.id === carId);
         if (!car) throw new Error('That car is no longer in your garage.');
         const value = Math.round((Number(car.price) || 0) * Market.SELL_RATIO);
-        await Auth.updateProfile({ garage: cars.filter(c => c.id !== carId) });
+        // persistPlayerGarage (not a bare profile write) keeps the rules-facing
+        // garageCarIds mirror in sync — see js/srmpc-garage.js.
+        await Garage.persistPlayerGarage(cars.filter(c => c.id !== carId));
         await Wallet.adjustTeamWallet(teamId, value, '🏁', `Liquidated ${car.name} into the team (${Math.round(Market.SELL_RATIO * 100)}%)`);
         await this.evaluate(teamId);
         return value;

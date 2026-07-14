@@ -513,6 +513,8 @@ const Career = {
                     : C.empty('🧰', 'No crew hired yet', 'A crew chief, engineer, mechanic, and spotter keep your cars fast and reliable. Hire from the free agent market.')}
             </section>
 
+            ${Garage.teamGaragePanel(team)}
+
             <section class="panel">
                 <div class="panel-head"><h2>📊 Recent Team Results</h2></div>
                 ${results.length ? results.map(r => C.raceRow(r, world)).join('')

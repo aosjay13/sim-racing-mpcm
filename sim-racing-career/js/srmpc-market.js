@@ -771,9 +771,10 @@ const Market = {
             await Economy.spend(car.price, `${car.name} (Dealership)`, '🚗');
             const garage = [...this.myGarage(), {
                 id: 'car-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+                carId: Garage.carId(car.name),
                 name: car.name, emoji: car.emoji, tag: car.tag, price: car.price, boughtAt: Util.todayISO()
             }];
-            await Auth.updateProfile({ garage });
+            await Garage.persistPlayerGarage(garage);
             News.post('🚗', `${Auth.state.profile?.displayName || 'A player'} bought a ${car.name} from the Dealership`);
             Util.notify(`${car.emoji} ${car.name} is yours! It's parked in your garage. 🔑`);
             App.go(App.current.view, App.current.param);
@@ -789,7 +790,7 @@ const Market = {
             if (!confirm(`Sell your ${car.name} back to the Dealership for ${Economy.fmt(back)}? (You paid ${Economy.fmt(car.price)}.)`)) return;
             // Two isolated writes (garage, then wallet) — matches buyCar's
             // pattern and keeps wallet changes a single-purpose operation.
-            await Auth.updateProfile({ garage: cars.filter(c => c.id !== carId) });
+            await Garage.persistPlayerGarage(cars.filter(c => c.id !== carId));
             await Auth.updateProfile({ balance: Economy.balance() + back });
             Economy.logTx(Auth.uid(), back, '🚗', `Sold ${car.name} (Dealership)`);
             Util.notify(`Sold the ${car.name} for ${Economy.fmt(back)}. 💵`);
