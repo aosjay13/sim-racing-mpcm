@@ -731,10 +731,12 @@ const Admin = {
 
     async raceForm(raceId = null, presetSeriesId = null) {
         if (!this.guard()) return;
-        const [race, series, games, allRaces, seasons, allTracks] = await Promise.all([
+        const [race, series, games, allRaces, seasons, allTracks, inventory] = await Promise.all([
             raceId ? DB.get('races', raceId) : null, DB.series(), DB.games(), DB.races(), DB.seasons(),
-            DB.tracks({ force: true }).catch(() => [])
+            DB.tracks({ force: true }).catch(() => []),
+            Dealership.inventory({ force: true }).catch(() => [])
         ]);
+        const knownCarIds = [...new Set(inventory.map(c => c.carId || Garage.carId(c.name)))].join(' · ');
         const seasonOptionsFor = (sid, selId) => {
             const list = seasons.filter(se => se.seriesId === sid);
             return `<option value="">— No season —</option>${list.map(se =>
@@ -767,6 +769,9 @@ const Admin = {
                     <label class="field"><span>Season</span>
                         <select id="rf-season" class="input">${seasonOptionsFor(race?.seriesId || presetSeriesId || '', race?.seasonId)}</select></label>
                 </div>
+                <label class="field"><span>Eligible cars — space-separated car IDs (blank = inherit series list)</span>
+                    <input id="rf-cars" class="input" value="${Util.esc((race?.carChoices || []).join(' '))}" placeholder="e.g. phoenix-gt-r-street-spec falcon-rs-coupe">
+                    <span class="muted small">Per-race override — entrants must own one of these cars. Blank falls back to the series' Eligible cars. ${knownCarIds ? `Catalog IDs: ${Util.esc(knownCarIds)}` : 'Stock the Dealership (Admin → Dealership) to get car IDs.'}</span></label>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
                     <button type="submit" class="btn btn-primary">${race ? 'Save' : 'Add Race'}</button>
@@ -816,7 +821,10 @@ const Admin = {
                     round: round || null,
                     seriesId,
                     seasonId: Util.$('#rf-season').value || null,
-                    gameId: Util.$('#rf-game').value || linkedSeries?.gameId || null
+                    gameId: Util.$('#rf-game').value || linkedSeries?.gameId || null,
+                    // Same space-delimited nomenclature as the Schedule Builder;
+                    // [] = no override, so Garage.choicesFor falls back to the series.
+                    carChoices: Garage.parseChoices(Util.$('#rf-cars').value)
                 };
                 if (!data.track) throw new Error('Track is required.');
                 if (!data.date) throw new Error('Date is required.');
