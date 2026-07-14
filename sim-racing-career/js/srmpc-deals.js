@@ -20,6 +20,75 @@ const Deals = {
     INSULT_RATIO: 0.4,        // offers below 40% of the minimum make the AI walk
     AGENT_COMMISSION: 0.10,   // player agents earn 10% of client race salaries
 
+    /* ---------------- Negotiation state machine ---------------- */
+    // Explicit, symmetric counter-loop states for every deal room (hires,
+    // renegotiations, sponsorships, agent representation, buyouts). Side A is
+    // always the paying / management side (team owner, GM proxy, sponsor);
+    // side B is the talent / sponsorship target. Every offer or counter flips
+    // the machine to the OTHER side's pending state, and the loop only exits
+    // through a terminal ACCEPTED / REJECTED / WITHDRAWN commit.
+    // `turnUid` remains the source of truth for WHO may act (it gates every
+    // write and legacy docs carry it); `state` names WHERE the machine is so
+    // panels and queries never re-derive it.
+    STATE: {
+        PENDING_OWNER_RESPONSE: 'PENDING_OWNER_RESPONSE',   // waiting on side A (management/sponsor)
+        PENDING_PLAYER_RESPONSE: 'PENDING_PLAYER_RESPONSE', // waiting on side B (talent/target)
+        PENDING_AI_RESPONSE: 'PENDING_AI_RESPONSE',         // transient — the NPC answers in the same call
+        ACCEPTED: 'ACCEPTED',
+        REJECTED: 'REJECTED',
+        WITHDRAWN: 'WITHDRAWN'
+    },
+    STATE_LABEL: {
+        PENDING_OWNER_RESPONSE: '⏳ Pending management response',
+        PENDING_PLAYER_RESPONSE: '⏳ Pending player response',
+        PENDING_AI_RESPONSE: '🤖 AI is answering',
+        ACCEPTED: '✅ Accepted', REJECTED: '❌ Rejected', WITHDRAWN: '🚫 Withdrawn'
+    },
+
+    // Derive the state from status + whose turn it is. Works on legacy docs
+    // that predate the stored `state` field.
+    stateFor(neg, { status = neg.status, turnUid = neg.turnUid } = {}) {
+        if (status === 'accepted') return this.STATE.ACCEPTED;
+        if (status === 'declined') return this.STATE.REJECTED;
+        if (status === 'withdrawn') return this.STATE.WITHDRAWN;
+        if (turnUid === null || turnUid === undefined) return this.STATE.PENDING_AI_RESPONSE;
+        return turnUid === neg.sideAUid ? this.STATE.PENDING_OWNER_RESPONSE : this.STATE.PENDING_PLAYER_RESPONSE;
+    },
+
+    /* ---------------- Term-sheet snapshots (negotiationHistory) ---------------- */
+    // ONE sheet shape for every deal kind — concepts a kind doesn't negotiate
+    // stay at their defaults instead of forking the schema per room.
+    _sheetOf(neg) {
+        return {
+            salary: neg.salary,
+            buyout: Math.round(Number(neg.buyout) || 0),
+            exclusive: !!neg.exclusive,
+            agreement: neg.agreement === 'open' ? 'open' : 'contracted',
+            signOnBonus: Number.isFinite(neg.signOnBonus) ? neg.signOnBonus : null,
+            clauses: neg.clauses || null,
+            numberPreference: neg.numberPreference === 'driver' ? 'driver' : 'team'
+        };
+    },
+
+    // Append-only payload log: one entry per offer/counter, never rewritten.
+    // The doc's top-level term fields always MIRROR the latest entry, so the
+    // double-opt-in accept (which re-reads the doc) and every legacy reader
+    // keep working unchanged. Call BEFORE appending — `turn` indexes the log.
+    _historyEntry(negAfter, { byUid, byName, action }) {
+        return {
+            turn: (negAfter.negotiationHistory || []).length,
+            byUid: byUid ?? null, byName: byName || 'AI', action,
+            at: Util.todayISO(), terms: this._sheetOf(negAfter)
+        };
+    },
+
+    // The live editable sheet is the LATEST negotiationHistory entry; legacy
+    // docs without the log fall back to the mirrored top-level fields.
+    activeSheet(neg) {
+        const last = neg.negotiationHistory?.[neg.negotiationHistory.length - 1];
+        return last?.terms || this._sheetOf(neg);
+    },
+
     /* ---------------- Prestige pay caps ---------------- */
     // The cap always follows the party being PAID — talent for hires, and
     // for sponsorships the SPONSOR's own prestige (their brand can only
@@ -124,6 +193,8 @@ const Deals = {
             turnUid: (uid === sideAUid ? sideBUid : sideAUid) || null,
             history: [{ byUid: uid, byName: myName, action: 'offer', salary, note: note || '', at: Util.todayISO() }]
         };
+        neg.state = this.stateFor(neg);
+        neg.negotiationHistory = [this._historyEntry(neg, { byUid: uid, byName: myName, action: 'offer' })];
 
         // Cap check up front (against the live cap). Buyout talks are exempt —
         // the figure on the table is an exit price, not pay.
@@ -184,7 +255,16 @@ const Deals = {
     },
 
     async _npcRespond(neg) {
+        // Every AI move runs through the same state machine as a player move:
+        // stamp the resulting `state`, and counters append their full term
+        // sheet to negotiationHistory just like a player counter does.
         const patchHistory = async (entry, patch = {}) => {
+            const merged = { ...neg, ...patch };
+            patch.state = this.stateFor(merged, merged);
+            if (entry.action === 'counter') {
+                patch.negotiationHistory = [...(neg.negotiationHistory || []),
+                    this._historyEntry(merged, { byUid: entry.byUid, byName: entry.byName, action: 'counter' })];
+            }
             await DB.update('negotiations', neg.id, { ...patch, history: [...neg.history, { ...entry, at: Util.todayISO() }] });
         };
 
@@ -209,7 +289,7 @@ const Deals = {
         const world = await DB.loadWorld();
         const collection = neg.personKind === 'driver' ? 'drivers' : 'staff';
         const person = await DB.get(collection, neg.personId).catch(() => null);
-        if (!person) { await DB.update('negotiations', neg.id, { status: 'declined' }); return; }
+        if (!person) { await DB.update('negotiations', neg.id, { status: 'declined', state: this.STATE.REJECTED }); return; }
         const stars = neg.personKind === 'driver' ? Prestige.driverStars(neg.personId, world) : Prestige.stored(person);
         const cap = Economy.payCap(stars);
         const asking = Market.askingFor(person, neg.personKind === 'driver' ? 'driver' : 'staff', stars);
@@ -235,7 +315,7 @@ const Deals = {
         const world = await DB.loadWorld();
         const collection = neg.personKind === 'driver' ? 'drivers' : 'staff';
         const person = await DB.get(collection, neg.personId).catch(() => null);
-        if (!person) { await DB.update('negotiations', neg.id, { status: 'declined', turnUid: null }); return; }
+        if (!person) { await DB.update('negotiations', neg.id, { status: 'declined', state: this.STATE.REJECTED, turnUid: null }); return; }
         const stars = neg.personKind === 'driver' ? Prestige.driverStars(neg.personId, world) : Prestige.stored(person);
         const cap = Economy.payCap(stars);
         const fair = Math.max(10, Math.min(Math.round(Market.askingFor(person, neg.personKind === 'driver' ? 'driver' : 'staff', stars) / 10) * 10, cap));
@@ -283,6 +363,8 @@ const Deals = {
             capStars: stars, capAmount: cap,
             history: [{ byUid: null, byName: `${app.teamName} — Team Principal`, action: 'offer', salary, note: this._principalLine('offer', salary), at: Util.todayISO() }]
         };
+        neg.state = this.stateFor(neg);
+        neg.negotiationHistory = [this._historyEntry(neg, { byUid: null, byName: `${app.teamName} — Team Principal`, action: 'offer' })];
         neg.id = await DB.create('negotiations', neg);
         await DB.update('recruitment', recruitmentId, { status: 'accepted' });
         News.post('🤖', `${app.teamName}'s team principal opened contract talks with ${app.driverName}`);
@@ -329,6 +411,8 @@ const Deals = {
             const show = (v) => v === null || v === undefined ? 'default (1× salary)' : Economy.fmt(v);
             out.push(`🎁 Sign-on ${show(before.signOnBonus)} → ${show(patch.signOnBonus)}`);
         }
+        if (patch.numberPreference !== undefined && patch.numberPreference !== (before.numberPreference || 'team'))
+            out.push(patch.numberPreference === 'driver' ? '🔢 They keep their personal number' : "🔢 They run the team's number");
         if (patch.clauses !== undefined) {
             const was = Clauses.flatten(before.clauses), now = Clauses.flatten(patch.clauses);
             const fmt = (e) => e.money ? Economy.fmt(e.value) : e.value;
@@ -372,15 +456,27 @@ const Deals = {
             patch.agreement = agreement;
             patch.signOnBonus = validated.signOnBonus;
             patch.clauses = validated.clauses;
+            if (neg.kind === 'team-driver' && terms.numberPreference)
+                patch.numberPreference = terms.numberPreference === 'driver' ? 'driver' : 'team';
         }
 
+        const myName = Auth.state.profile?.displayName || 'A player';
         const changes = this._termChanges(neg, patch, neg.kind === 'buyout' ? ' one-time' : '/race');
         const other = neg.turnUid === neg.sideAUid ? neg.sideBUid : neg.sideAUid;
         const updated = {
             ...neg, ...patch, turnUid: other || null,
-            history: [...neg.history, { byUid: Auth.uid(), byName: Auth.state.profile?.displayName || 'A player', action: 'counter', salary, note: note || '', changes, at: Util.todayISO() }]
+            history: [...neg.history, { byUid: Auth.uid(), byName: myName, action: 'counter', salary, note: note || '', changes, at: Util.todayISO() }]
         };
-        await DB.update('negotiations', id, { ...patch, turnUid: updated.turnUid, history: updated.history });
+        // Flip the state machine to the other side and log the full countered
+        // term sheet — the receiving party's room re-initializes from this
+        // entry with every field editable, exactly like a fresh offer.
+        updated.state = this.stateFor(updated, updated);
+        updated.negotiationHistory = [...(neg.negotiationHistory || []),
+            this._historyEntry({ ...updated, negotiationHistory: neg.negotiationHistory }, { byUid: Auth.uid(), byName: myName, action: 'counter' })];
+        await DB.update('negotiations', id, {
+            ...patch, turnUid: updated.turnUid, state: updated.state,
+            negotiationHistory: updated.negotiationHistory, history: updated.history
+        });
         if (updated.turnUid === null) await this._npcRespond(updated);
         return DB.get('negotiations', id);
     },
@@ -400,19 +496,26 @@ const Deals = {
     // seenSalary (optional): the number the user had on screen when they hit
     // Accept. If the deal moved under them (other side countered from another
     // device), refuse instead of silently signing a different amount.
-    async accept(id, seenSalary = null) {
+    // seenTurn (optional): the negotiationHistory length the user's room was
+    // rendered from. Guards the FULL term sheet, not just salary — a counter
+    // that only moved clauses or the sign-on bonus still voids a stale accept.
+    async accept(id, seenSalary = null, seenTurn = null) {
         const neg = await DB.get('negotiations', id, { force: true });
         if (!neg || neg.status !== 'open') throw new Error('This negotiation is closed.');
         if (neg.turnUid !== Auth.uid()) throw new Error('The current offer is yours — they have to answer it.');
         if (seenSalary !== null && Math.round(Number(seenSalary)) !== neg.salary) {
             throw new Error(`This deal has moved to ${Economy.fmt(neg.salary)}${neg.kind === 'buyout' ? '' : '/race'} since you last looked — review the updated offer before signing.`);
         }
+        const turns = (neg.negotiationHistory || []).length;
+        if (seenTurn !== null && turns && Math.round(Number(seenTurn)) !== turns) {
+            throw new Error('The terms changed since you last looked — review the updated sheet before signing.');
+        }
         if (neg.kind !== 'buyout') {
             const capInfo = await this.capForNeg(neg);
             if (neg.salary > capInfo.cap) throw new Error(`This deal now exceeds the prestige pay cap (${Economy.fmt(capInfo.cap)}/race) — counter with a legal number.`);
         }
         await DB.update('negotiations', id, {
-            status: 'accepted', turnUid: null,
+            status: 'accepted', state: this.STATE.ACCEPTED, turnUid: null,
             history: [...neg.history, { byUid: Auth.uid(), byName: Auth.state.profile?.displayName || 'A player', action: 'accept', salary: neg.salary, at: Util.todayISO() }]
         });
         await this.execute({ ...neg, status: 'accepted' });
@@ -444,7 +547,8 @@ const Deals = {
             }
         }
         await DB.update('negotiations', id, {
-            status: action === 'decline' ? 'declined' : 'withdrawn', turnUid: null,
+            status: action === 'decline' ? 'declined' : 'withdrawn',
+            state: action === 'decline' ? this.STATE.REJECTED : this.STATE.WITHDRAWN, turnUid: null,
             history: [...neg.history, { byUid: uid, byName: Auth.state.profile?.displayName || 'A player', action, at: Util.todayISO() }]
         });
     },
@@ -583,6 +687,23 @@ const Deals = {
         // menu the initial offer did, not just a bare salary field.
         const isFreshHire = (neg.kind === 'team-driver' || neg.kind === 'team-staff') && !neg.contractId;
         const teamStars = isFreshHire ? Prestige.teamStars(neg.teamId, await DB.loadWorld()) : null;
+        // The workspace always re-initializes from the LATEST term sheet in
+        // negotiationHistory — after a counter, the receiving side gets the
+        // same fully-editable form as the initial offer, pre-populated with
+        // the countered values (nothing frozen, nothing stale).
+        const sheet = this.activeSheet(neg);
+        const state = neg.state || this.stateFor(neg);
+        const turnNo = (neg.negotiationHistory || []).length || null;
+        // Car-number preference is negotiable on driver hires whenever both
+        // sides own a number — mirror of the initial offer form's toggle.
+        let numberInfo = null;
+        if (isFreshHire && neg.kind === 'team-driver') {
+            const [drv, team] = await Promise.all([
+                DB.get('drivers', neg.personId).catch(() => null),
+                DB.get('teams', neg.teamId).catch(() => null)
+            ]);
+            if (drv?.number && team?.number) numberInfo = { driverNum: drv.number, teamNum: team.number };
+        }
         // Withdraw = retracting your own un-answered offer. It disappears the
         // moment the other side counters (and never shows right after YOUR
         // counter) — mirrors the guards in close().
@@ -606,6 +727,7 @@ const Deals = {
                 </div>
                 <div class="chip-row" style="margin-top:.35rem">
                     ${statusBadge}
+                    <span class="chip chip-dim" title="Negotiation state machine — each counter flips the pending side">${Util.esc(this.STATE_LABEL[state] || state)}${turnNo ? ` · turn ${turnNo}` : ''}</span>
                     ${isBuyout ? `<span class="chip chip-dim" title="You negotiate DOWN from the contractual buyout clause">💸 Contract clause ${Economy.fmt(neg.buyout)}</span>` : ''}
                     ${neg.kind === 'team-driver' && !neg.contractId ? `<span class="chip chip-dim">${neg.exclusive ? '🔒 Exclusive' : '🔓 Non-exclusive (multi-team OK)'}</span>` : ''}
                     ${!isBuyout && isFreshHire
@@ -653,14 +775,16 @@ const Deals = {
                     ${myTurn ? `
                         <div class="form-row">
                             <label class="field"><span>Counter ${perRace} ($${isBuyout ? ', one-time' : '/race'})</span>
-                                <input id="deal-salary" class="input" type="number" min="10" step="10" value="${neg.salary}"></label>
+                                <input id="deal-salary" class="input" type="number" min="10" step="10" value="${sheet.salary}"></label>
                         </div>
                         ${isFreshHire ? `
-                            ${neg.kind === 'team-driver' ? `<label class="check"><input id="deal-exclusive" type="checkbox" ${neg.exclusive ? 'checked' : ''}>
+                            ${neg.kind === 'team-driver' ? `<label class="check"><input id="deal-exclusive" type="checkbox" ${sheet.exclusive ? 'checked' : ''}>
                                 🔒 Exclusive contract — they drive for you and nobody else (uncheck to allow multi-team)</label>` : ''}
+                            ${numberInfo ? `<label class="check"><input id="deal-driver-number" type="checkbox" ${sheet.numberPreference === 'driver' ? 'checked' : ''}>
+                                🔢 The driver keeps their personal #${Util.esc(String(numberInfo.driverNum))} (unchecked: they run the team's #${Util.esc(String(numberInfo.teamNum))})</label>` : ''}
                             ${Clauses.formSection({
-                                teamStars, salary: neg.salary, personKind: neg.personKind,
-                                current: { agreement: neg.agreement, signOnBonus: neg.signOnBonus, clauses: neg.clauses }
+                                teamStars, salary: sheet.salary, personKind: neg.personKind,
+                                current: { agreement: sheet.agreement, signOnBonus: sheet.signOnBonus, clauses: sheet.clauses }
                             })}` : ''}` : ''}
                     <label class="field"><span>Message ${myTurn ? '(sent with your counter)' : 'to the other side'}</span>
                         <input id="deal-note" class="input" maxlength="200" placeholder="e.g. Final offer — podium bonuses when we renegotiate next season."></label>
@@ -698,6 +822,7 @@ const Deals = {
                 if (myTurn) {
                     const terms = isFreshHire ? {
                         exclusive: neg.kind === 'team-driver' ? !!Util.$('#deal-exclusive')?.checked : neg.exclusive,
+                        numberPreference: numberInfo ? (Util.$('#deal-driver-number')?.checked ? 'driver' : 'team') : sheet.numberPreference,
                         ...Clauses.readForm()
                     } : null;
                     const n = await this.counter(id, Util.$('#deal-salary').value, note, terms);
@@ -712,7 +837,7 @@ const Deals = {
         });
         Util.$('#deal-accept')?.addEventListener('click', async () => {
             busy(true);
-            try { await this.accept(id, neg.salary); await rerender(); }
+            try { await this.accept(id, neg.salary, turnNo); await rerender(); }
             catch (err) {
                 // The deal may have moved under us — surface why, then show
                 // the room's fresh state so the buttons match reality again.
@@ -775,9 +900,9 @@ const Deals = {
             <div class="race-row">
                 <div class="race-row-main">
                     <span class="race-title">${Util.esc(this._label(n))}
-                        ${n.status === 'open' ? (n.turnUid === uid ? '<span class="badge badge-amber">Your move</span>' : '<span class="badge badge-blue">Waiting</span>')
+                        ${n.status === 'open' ? (n.turnUid === uid ? `<span class="badge badge-amber" title="${Util.attr(this.STATE_LABEL[n.state || this.stateFor(n)] || '')}">Your move</span>` : `<span class="badge badge-blue" title="${Util.attr(this.STATE_LABEL[n.state || this.stateFor(n)] || '')}">Waiting</span>`)
                             : `<span class="badge ${n.status === 'accepted' ? 'badge-green' : 'badge-dim'}">${Util.esc(n.status)}</span>`}</span>
-                    <span class="race-sub">${Economy.fmt(n.salary)}/race on the table · ${Util.plural((n.history || []).length, 'note')} in the thread</span>
+                    <span class="race-sub">${Economy.fmt(n.salary)}/race on the table · ${n.negotiationHistory?.length ? `turn ${n.negotiationHistory.length} · ` : ''}${Util.plural((n.history || []).length, 'note')} in the thread</span>
                 </div>
                 <button class="btn btn-secondary btn-sm" onclick="Deals.room('${Util.attr(n.id)}')">Open room</button>
             </div>`;

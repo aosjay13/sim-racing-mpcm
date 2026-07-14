@@ -49,6 +49,9 @@ node drive.js
   `#gate-name-field.hidden` before clicking `#gate-mode-toggle`.
 - `harness/profile-drive.js` covers the player-profile flows (v3.6.0).
 - `harness/persona-drive.js` covers the GM persona/role-profile + sponsor flows, incl. bulk generation (v3.11.0).
+- `harness/counterloop-drive.js` covers the symmetric counter-offer state machine: PENDING_OWNER_RESPONSE ⇄
+  PENDING_PLAYER_RESPONSE, negotiationHistory term-sheet log, full-form workspace reset both directions,
+  full-terms stale-accept guard, sponsorship loop, terminal states (v3.27.0).
 - `harness/deals-drive.js` covers the negotiation economy: P2P deal rooms, prestige pay caps, multi-team
   contracts, sponsorship deals, race-day settlement, Team Management, garage (v3.12.0). New collections
   `negotiations` + `ledger` need firestore.rules deployed in prod.
