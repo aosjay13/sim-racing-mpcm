@@ -690,57 +690,13 @@ const Market = {
 
     /* ---------------- Dealership & garage ---------------- */
     SELL_RATIO: 0.6, // cars sell back at 60% of what you paid
-    STOCK: {
-        new: [
-            { emoji: '🏎️', name: 'Phoenix GT-R Street Spec', price: 42000, tag: 'Gran Turismo 7' },
-            { emoji: '🚗', name: 'Falcon RS Coupe', price: 38500, tag: 'Forza' },
-            { emoji: '🚙', name: 'Vulcan V8 Interceptor', price: 45900, tag: 'Wreckfest' }
-        ],
-        used: [
-            { emoji: '🚘', name: "'09 Boxer Rally Special", price: 8900, tag: 'Used · 88k miles' },
-            { emoji: '🚕', name: 'Retired Track Hatch', price: 6500, tag: 'Used · ex-league car' },
-            { emoji: '🛻', name: 'Barn-Find Muscle Project', price: 3200, tag: 'Used · needs work' }
-        ]
-    },
 
     myGarage() { return Array.isArray(Auth.state.profile?.garage) ? Auth.state.profile.garage : []; },
 
-    async dealership(el) {
-        if (!Auth.isSignedIn()) {
-            el.innerHTML = C.empty('🔒', 'Sign in to visit the Dealership', 'Every player can buy cars here — drivers keep their own garage and can bring cars to a new team.');
-            return;
-        }
-        const canBuy = Auth.isPlayer() && Auth.state.profile?.walletInitialized;
-        const carCard = (c, kind, i) => `
-            <div class="car-card">
-                <span class="car-emoji">${c.emoji}</span>
-                <h3>${Util.esc(c.name)}</h3>
-                <div class="chip-row">
-                    <span class="chip chip-dim">${Util.esc(c.tag)}</span>
-                    <span class="market-price">${Economy.fmt(c.price)}</span>
-                </div>
-                <button class="btn btn-primary btn-sm" ${canBuy ? '' : 'disabled title="Player accounts with a started career can buy"'}
-                    onclick="Market.buyCar('${kind}',${i})">🔑 Buy</button>
-            </div>`;
-
-        el.innerHTML = `
-        <div class="view-head">
-            <div><h1>🏬 Dealership</h1><p class="muted">New and used rides for street racing nights — Wreckfest, Forza, Gran Turismo 7, and more.</p></div>
-            <div class="btn-row">${Economy.walletChip()}</div>
-        </div>
-
-        <section class="panel" style="margin-bottom:1.1rem">
-            <div class="panel-head"><h2>✨ New Cars</h2><span class="chip chip-dim">Factory fresh</span></div>
-            <div class="card-grid">${this.STOCK.new.map((c, i) => carCard(c, 'new', i)).join('')}</div>
-        </section>
-
-        <section class="panel" style="margin-bottom:1.1rem">
-            <div class="panel-head"><h2>🔑 Used Lot</h2><span class="chip chip-dim">Priced to move</span></div>
-            <div class="card-grid">${this.STOCK.used.map((c, i) => carCard(c, 'used', i)).join('')}</div>
-        </section>
-
-        ${this.garagePanel()}`;
-    },
+    // The storefront itself is the GM-curated global inventory — see
+    // js/srmpc-dealership.js. (This delegate keeps the App.go route and every
+    // existing "🏬 Dealership" button working.)
+    dealership(el) { return Dealership.storefront(el); },
 
     // Reusable garage panel — shown at the Dealership AND on the driver page.
     garagePanel() {
@@ -759,26 +715,6 @@ const Market = {
                 </div>`).join('')
             : C.empty('🏚', 'Your garage is empty', 'Cars you buy at the Dealership live here — take them street racing or lend them to your team.')}
         </section>`;
-    },
-
-    async buyCar(kind, index) {
-        try {
-            const car = this.STOCK[kind]?.[index];
-            if (!car) return;
-            if (!Auth.isPlayer() || !Auth.state.profile?.walletInitialized) {
-                throw new Error('Start your career (pick a difficulty) before buying cars.');
-            }
-            await Economy.spend(car.price, `${car.name} (Dealership)`, '🚗');
-            const garage = [...this.myGarage(), {
-                id: 'car-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
-                carId: Garage.carId(car.name),
-                name: car.name, emoji: car.emoji, tag: car.tag, price: car.price, boughtAt: Util.todayISO()
-            }];
-            await Garage.persistPlayerGarage(garage);
-            News.post('🚗', `${Auth.state.profile?.displayName || 'A player'} bought a ${car.name} from the Dealership`);
-            Util.notify(`${car.emoji} ${car.name} is yours! It's parked in your garage. 🔑`);
-            App.go(App.current.view, App.current.param);
-        } catch (e) { Util.notify(e.message, 'error'); }
     },
 
     async sellCar(carId) {

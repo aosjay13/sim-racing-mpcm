@@ -331,9 +331,19 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
 
     /* ---- 12. Bob: garage — buy and sell a car at the Dealership ---- */
     await signIn('bob@example.com');
+    // The storefront is GM-curated inventory now (js/srmpc-dealership.js) —
+    // seed the used lot the old hardcoded STOCK used to provide.
+    await page.evaluate(async () => {
+        await SRMPC.db.collection('dealershipInventory').doc('inv-barn').set({
+            name: 'Barn-Find Muscle Project', carId: 'barn-find-muscle-project', emoji: '🛻',
+            gameId: null, seriesIds: [], condition: 'used', price: 3200,
+            stats: { performance: 3, durability: 4 }, available: true
+        });
+        DB.invalidate();
+    });
     await page.evaluate(() => App.go('dealership'));
-    await page.waitForSelector('.car-card');
-    await page.click('.car-card:has-text("Barn-Find") button:has-text("Buy")');
+    await page.waitForSelector('#view-root .race-row');
+    await page.click('.race-row:has-text("Barn-Find") button:has-text("Buy")');
     await toast(/is yours/);
     await page.evaluate(() => App.go('career'));
     await page.waitForSelector('#view-root .panel');

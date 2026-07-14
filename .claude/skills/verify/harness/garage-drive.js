@@ -70,6 +70,9 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
         // Sam: crew chief hired DIRECTLY by independent driver Val (no team).
         await db.collection('users').doc('u-sam').set({ displayName: 'Sam Spanner', balance: 100, walletInitialized: true });
         await db.collection('contracts').doc('c-sam').set({ personId: 'st-sam', personKind: 'crew-chief', role: 'crew-chief', personUid: 'u-sam', teamId: null, ownerUid: 'u-val', status: 'active', salary: 50 });
+        // GM-curated dealership inventory (js/srmpc-dealership.js).
+        await db.collection('dealershipInventory').doc('inv-phoenix').set({ name: 'Phoenix GT-R Street Spec', carId: 'phoenix-gt-r-street-spec', emoji: '🏎️', gameId: 'g1', seriesIds: ['s-gt'], condition: 'new', price: 42000, stats: { performance: 7, durability: 8 }, available: true });
+        await db.collection('dealershipInventory').doc('inv-falcon').set({ name: 'Falcon RS Coupe', carId: 'falcon-rs-coupe', emoji: '🚗', gameId: 'g1', seriesIds: ['s-gt'], condition: 'new', price: 38500, stats: { performance: 6, durability: 8 }, available: true });
         DB.invalidate();
         return true;
     });
@@ -113,7 +116,7 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
 
     /* ---- 2. Buy the car at the Dealership → eligible via PERSONAL garage ---- */
     const bought = await page.evaluate(async () => {
-        await Market.buyCar('new', 0); // Phoenix GT-R Street Spec, $42,000
+        await Dealership.buy('inv-phoenix'); // Phoenix GT-R Street Spec, $42,000
         const me = await DB.get('users', 'u-val', { force: true });
         const elig = await Garage.validateSeriesEligibility('u-val', 's-gt', { raceId: 'r1' });
         document.querySelectorAll('#toast-holder .toast').forEach(t => t.remove());
@@ -145,7 +148,7 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
     /* ---- 3. Team Garage: owner buys a car from the TEAM budget ---- */
     await actAs('u-owner');
     const teamBuy = await page.evaluate(async () => {
-        await Garage.buyTeamCar('t-kings', 'new', 1); // Falcon RS Coupe, $38,500
+        await Dealership.buy('inv-falcon', 't-kings'); // Falcon RS Coupe, $38,500 from the TEAM budget
         const t = await DB.get('teams', 't-kings', { force: true });
         const owner = await DB.get('users', 'u-owner', { force: true });
         const rows = (await DB.list('ledger', { force: true })).filter(l => l.walletType === 'team' && l.walletId === 't-kings');
@@ -175,7 +178,7 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
 
     /* ---- 3c. Non-owner cannot buy/sell team cars ---- */
     const guarded = await page.evaluate(async () => {
-        await Garage.buyTeamCar('t-kings', 'new', 2);
+        await Dealership.buy('inv-phoenix', 't-kings');
         const toast = document.getElementById('toast-holder')?.innerText || '';
         document.querySelectorAll('#toast-holder .toast').forEach(t => t.remove());
         const t = await DB.get('teams', 't-kings', { force: true });

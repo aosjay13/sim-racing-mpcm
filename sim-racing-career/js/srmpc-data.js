@@ -184,7 +184,8 @@ const DB = {
         'games', 'series', 'seasons', 'races', 'teams', 'drivers', 'users',
         'challenges', 'challengeClaims', 'raceSignups', 'roleProfiles', 'staff',
         'contracts', 'tracks', 'sponsors', 'news', 'recruitment',
-        'negotiations', 'ledger', 'numberRegistry', 'numberLeases', 'numberBids'
+        'negotiations', 'ledger', 'numberRegistry', 'numberLeases', 'numberBids',
+        'dealershipInventory'
     ],
 
     // Delete every document in a career's world (all WORLD_COLLECTIONS), in

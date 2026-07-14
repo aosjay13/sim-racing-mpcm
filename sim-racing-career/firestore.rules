@@ -169,6 +169,15 @@ service cloud.firestore {
       allow create, update: if isAuthenticated() && signupWriteOk('races', 'series', 'users', 'teams');
     }
 
+    // ----- Dealership inventory (js/srmpc-dealership.js) -----
+    // The global car catalog is GM-curated: everyone can browse (the
+    // storefront is public league data), but only the Game Master creates,
+    // reprices, unlists, or deletes vehicles. Purchases never write here —
+    // they copy the doc into the buyer's garage and debit their wallet.
+    // (Career-namespaced c__…__dealershipInventory falls under the generic
+    // authenticated-write rule below, same posture as other career worlds.)
+    match /dealershipInventory/{doc} { allow read: if true; allow write: if isGM(); }
+
     // ----- Car number registry / auctions (js/srmpc-numbers.js) -----
     // Registry + leases are public-read (numbers show on the series page);
     // bids are member-only. Blind-bid secrecy is a client concern — like the

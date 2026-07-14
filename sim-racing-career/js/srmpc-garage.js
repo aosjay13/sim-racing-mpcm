@@ -189,29 +189,10 @@ const Garage = {
     },
 
     /* ============================================================
-       Team Garage — buy/sell on the TEAM budget (Wallet), mirroring
-       the personal Dealership flow in js/srmpc-market.js.
+       Team Garage — sell on the TEAM budget (Wallet). Team PURCHASES
+       happen at the Dealership storefront's "For team" button
+       (Dealership.buy in js/srmpc-dealership.js).
        ============================================================ */
-    async buyTeamCar(teamId, kind, index) {
-        try {
-            const car = Market.STOCK[kind]?.[index];
-            if (!car) return;
-            const team = await DB.get('teams', teamId, { force: true });
-            if (!team || team.ownerUid !== Auth.uid()) throw new Error('Only the team owner can buy cars for the team.');
-            await Wallet.teamSpend(teamId, car.price, `${car.name} (Team Garage)`, '🚗');
-            const garage = [...this.garageOf(team), {
-                id: 'car-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
-                carId: this.carId(car.name),
-                name: car.name, emoji: car.emoji, tag: car.tag, price: car.price, boughtAt: Util.todayISO()
-            }];
-            await this.persistTeamGarage(teamId, garage);
-            News.post('🚗', `${team.name} added a ${car.name} to the team garage`);
-            Util.notify(`${car.emoji} ${car.name} is in the team garage. 🔑`);
-            Modal.close();
-            App.go(App.current.view, App.current.param);
-        } catch (e) { Util.notify(e.message, 'error'); }
-    },
-
     async sellTeamCar(teamId, entryId) {
         try {
             const team = await DB.get('teams', teamId, { force: true });
@@ -228,33 +209,13 @@ const Garage = {
         } catch (e) { Util.notify(e.message, 'error'); }
     },
 
-    teamDealershipModal(teamId) {
-        const card = (c, kind, i) => `
-            <div class="race-row">
-                <div class="driver-hero-num" style="font-size:1.2rem;min-width:2.8rem;height:2.8rem">${c.emoji}</div>
-                <div class="race-row-main">
-                    <span class="race-title">${Util.esc(c.name)} <span class="chip chip-dim">${Util.esc(this.carId(c.name))}</span></span>
-                    <span class="race-sub">${Util.esc(c.tag)} · ${Economy.fmt(c.price)}</span>
-                </div>
-                <button class="btn btn-primary btn-sm" onclick="Garage.buyTeamCar('${Util.attr(teamId)}','${kind}',${i})">🔑 Buy for team</button>
-            </div>`;
-        Modal.open(`
-            ${Modal.header('🏬 Team Dealership', 'Cars bought here belong to the TEAM — paid from the team budget, usable by every contracted driver for series entry')}
-            <div class="chip-row" style="margin-bottom:.8rem"><span class="chip wallet-chip">💵 Team budget: ${Economy.fmt(Wallet.teamBalance(teamId))}</span></div>
-            <h3 class="section-label">New Cars</h3>
-            ${Market.STOCK.new.map((c, i) => card(c, 'new', i)).join('')}
-            <h3 class="section-label">Used Lot</h3>
-            ${Market.STOCK.used.map((c, i) => card(c, 'used', i)).join('')}
-            <div class="modal-actions"><button class="btn btn-ghost" onclick="Modal.close()">Close</button></div>
-        `, { wide: true });
-    },
-
-    // Team Garage panel — rendered in the Team Owner workspace.
+    // Team Garage panel — rendered in the Team Owner workspace. Buying
+    // happens at the Dealership storefront ("For team" button).
     teamGaragePanel(team) {
         const cars = this.garageOf(team);
         return `<section class="panel">
             <div class="panel-head"><h2>🚗 Team Garage (${cars.length})</h2>
-                <button class="btn btn-primary btn-sm" onclick="Garage.teamDealershipModal('${Util.attr(team.id)}')">🏬 Buy Car</button></div>
+                <button class="btn btn-primary btn-sm" onclick="App.go('dealership')">🏬 Buy Car</button></div>
             <p class="muted small">Team cars unlock series entry for every driver contracted to this team — a series only accepts cars on its GM-set eligible list.</p>
             ${cars.length ? cars.map(c => `
                 <div class="race-row">

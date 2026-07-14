@@ -26,7 +26,7 @@ const Admin = {
 
         const tabs = [
             ['overview', '🎛 Overview'], ['games', '🎮 Games'], ['series', '🏆 Series'],
-            ['races', '🏁 Races'], ['teams', '🛠 Teams'], ['drivers', '🏎 Drivers'],
+            ['races', '🏁 Races'], ['dealership', '🏬 Dealership'], ['teams', '🛠 Teams'], ['drivers', '🏎 Drivers'],
             ['world', '🌍 World'], ['players', '👥 Players'], ['challenges', '🎯 Challenges'],
             ['numbers', '🔢 Numbers'], ['override', '🔧 GM Override'], ['settings', '⚙ Settings']
         ];
@@ -407,7 +407,11 @@ const Admin = {
 
     async seriesForm(seriesId = null) {
         if (!this.guard()) return;
-        const [series, games] = await Promise.all([seriesId ? DB.get('series', seriesId) : null, DB.games()]);
+        const [series, games, inventory] = await Promise.all([
+            seriesId ? DB.get('series', seriesId) : null, DB.games(),
+            Dealership.inventory({ force: true }).catch(() => [])
+        ]);
+        const knownCarIds = [...new Set(inventory.map(c => c.carId || Garage.carId(c.name)))].join(' · ');
         const sys = series?.pointsSystem || 'f1';
         Modal.open(`
             ${Modal.header(series ? 'Edit Series' : 'Create Series', 'A championship with its own logo, schedule, and points')}
@@ -440,7 +444,7 @@ const Admin = {
                     <input id="sf-nummax" class="input" type="number" min="0" max="999" value="${Number(series?.numberMax) || 99}"></label>
                 <label class="field"><span>Eligible cars — space-separated car IDs (blank = open entry)</span>
                     <input id="sf-cars" class="input" value="${Util.esc((series?.carChoices || []).join(' '))}" placeholder="e.g. phoenix-gt-r-street-spec falcon-rs-coupe">
-                    <span class="muted small">Drivers must own one of these (personally or via their team) to enter. Known IDs: ${Util.esc([...Market.STOCK.new, ...Market.STOCK.used].map(c => Garage.carId(c.name)).join(' · '))}</span></label>
+                    <span class="muted small">Drivers must own one of these (personally or via their team) to enter. ${knownCarIds ? `Catalog IDs: ${Util.esc(knownCarIds)}` : 'Stock the Dealership (Admin → Dealership) to get car IDs.'}</span></label>
                 <label class="field"><span>Description</span><textarea id="sf-desc" class="input" rows="2" maxlength="400">${Util.esc(series?.description || '')}</textarea></label>
                 <div class="modal-actions">
                     ${series?.logo ? `<button type="button" class="btn btn-ghost" id="sf-remove-logo">Remove logo</button>` : ''}
@@ -525,10 +529,12 @@ const Admin = {
     /* ---------------- Schedule builder ---------------- */
     async scheduleBuilder(seriesId = null) {
         if (!this.guard()) return;
-        const [series, seasons, allTracks, games] = await Promise.all([
+        const [series, seasons, allTracks, games, inventory] = await Promise.all([
             DB.series(), DB.seasons({ force: true }),
-            DB.tracks({ force: true }).catch(() => []), DB.games()
+            DB.tracks({ force: true }).catch(() => []), DB.games(),
+            Dealership.inventory({ force: true }).catch(() => [])
         ]);
+        const knownCarIds = [...new Set(inventory.map(c => c.carId || Garage.carId(c.name)))].join(' · ');
         const editable = series.filter(s => (s.status || 'active') === 'active');
         if (!editable.length) {
             Util.notify('Create a series first — the builder generates its schedule.', 'info');
@@ -569,7 +575,7 @@ const Admin = {
                 </div>
                 <label class="field"><span>Eligible cars — space-separated car IDs (blank = open entry)</span>
                     <input id="sb-cars" class="input" value="${Util.esc((series.find(s => s.id === initialSid)?.carChoices || []).join(' '))}" placeholder="e.g. phoenix-gt-r-street-spec falcon-rs-coupe">
-                    <span class="muted small">Stamped on every generated race — entrants must own one of these cars (personal or team garage). Known IDs: ${Util.esc([...Market.STOCK.new, ...Market.STOCK.used].map(c => Garage.carId(c.name)).join(' · '))}</span></label>
+                    <span class="muted small">Stamped on every generated race — entrants must own one of these cars (personal or team garage). ${knownCarIds ? `Catalog IDs: ${Util.esc(knownCarIds)}` : 'Stock the Dealership (Admin → Dealership) to get car IDs.'}</span></label>
                 <label class="field"><span>Tracks — one per line, in order *</span>
                     <textarea id="sb-tracks" class="input" rows="8" placeholder="Silverstone&#10;Spa-Francorchamps&#10;Monza&#10;Suzuka&#10;Interlagos" required></textarea></label>
                 <div class="field"><span id="sb-lib-label">Track library — click to add</span>
@@ -690,6 +696,9 @@ const Admin = {
             }
         });
     },
+
+    /* ---------------- Dealership (GM vehicle creation) ---------------- */
+    tab_dealership(el) { return Dealership.adminPanel(el); },
 
     /* ---------------- Races ---------------- */
     async tab_races(el) {
@@ -2025,7 +2034,8 @@ const Admin = {
     // changes still write ledger rows so the books always balance.
     OVERRIDE_COLLECTIONS: ['users', 'drivers', 'teams', 'staff', 'roleProfiles', 'contracts',
         'negotiations', 'recruitment', 'races', 'series', 'seasons', 'games', 'tracks',
-        'sponsors', 'challenges', 'challengeClaims', 'raceSignups', 'news', 'ledger', 'config'],
+        'sponsors', 'challenges', 'challengeClaims', 'raceSignups', 'news', 'ledger',
+        'dealershipInventory', 'config'],
 
     _ovLabel(doc) {
         return doc.name || doc.title || doc.personName || doc.displayName || doc.teamName
