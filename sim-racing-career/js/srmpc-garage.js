@@ -219,7 +219,8 @@ const Garage = {
             <p class="muted small">Team cars unlock series entry for every driver contracted to this team — a series only accepts cars on its GM-set eligible list.</p>
             ${cars.length ? cars.map(c => `
                 <div class="race-row">
-                    <div class="driver-hero-num" style="font-size:1.2rem;min-width:2.8rem;height:2.8rem">${c.emoji || '🚗'}</div>
+                    ${CarImg.normalize(c.imageUrl) ? CarImg.thumb(c.imageUrl, c.name)
+                        : `<div class="driver-hero-num" style="font-size:1.2rem;min-width:2.8rem;height:2.8rem">${c.emoji || '🚗'}</div>`}
                     <div class="race-row-main">
                         <span class="race-title">${Util.esc(c.name)} <span class="chip chip-dim">${Util.esc(c.carId || this.carId(c.name))}</span></span>
                         <span class="race-sub">${Util.esc(c.tag || '')} · bought ${Util.esc(Util.fmtDateShort(c.boughtAt))} for ${Economy.fmt(c.price)}</span>

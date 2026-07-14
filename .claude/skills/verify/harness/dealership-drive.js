@@ -128,19 +128,20 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
         App.go('dealership');
         await new Promise(r => setTimeout(r, 250));
         const el = document.getElementById('view-root');
-        const rows = [...el.querySelectorAll('.race-row')];
+        const rows = [...el.querySelectorAll('.car-grid .car-card')]; // v3.28.0: storefront is a flat card grid
         const html = el.innerHTML;
         const prices = [...html.matchAll(/market-price">\$?([\d,]+)/g)].map(m => Number(m[1].replace(/,/g, '')));
         return {
             hasFilters: ['deal-f-game', 'deal-f-series', 'deal-f-cond', 'deal-f-sort'].every(id => !!document.getElementById(id)),
             rowCount: rows.length,
             checkered: (html.match(/🏁/g) || []).length > 20,
-            flat2d: !/car-card|box-shadow|rotate3d|perspective|translateZ/i.test(html),
+            flat2d: !/rotate3d|perspective|translateZ|drop-shadow/i.test(html)
+                && getComputedStyle(el.querySelector('.car-card')).boxShadow === 'none',
             sortedDesc: prices.every((p, i) => i === 0 || prices[i - 1] >= p)
         };
     });
-    log(store.hasFilters && store.rowCount >= 21 && store.checkered && store.flat2d && store.sortedDesc ? '✅' : '❌',
-        `Storefront: ${store.rowCount} flat 2D rows, 4 filters, checkered 🏁 markers everywhere, price high→low default (no 3D cards/shadows)`);
+    log(store.hasFilters && store.rowCount >= 20 && store.checkered && store.flat2d && store.sortedDesc ? '✅' : '❌',
+        `Storefront: ${store.rowCount} flat 2D cards, 4 filters, checkered 🏁 markers everywhere, price high→low default (no shadows/3D)`);
 
     /* ---- 3b. Filters: game + condition + series + sort ---- */
     const filtered = await page.evaluate(async () => {
@@ -150,11 +151,11 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
         document.getElementById('deal-f-game').value = gt7;
         document.getElementById('deal-f-game').dispatchEvent(new Event('change'));
         await new Promise(r => setTimeout(r, 200));
-        const gt7Rows = [...el.querySelectorAll('.race-row')].filter(r => !r.innerHTML.includes('Sell')).length;
+        const gt7Rows = el.querySelectorAll('.car-grid .car-card').length;
         document.getElementById('deal-f-cond').value = 'used';
         document.getElementById('deal-f-cond').dispatchEvent(new Event('change'));
         await new Promise(r => setTimeout(r, 200));
-        const usedGt7 = [...el.querySelectorAll('.race-row')].filter(r => !r.innerHTML.includes('Sell'));
+        const usedGt7 = [...el.querySelectorAll('.car-grid .car-card')];
         const usedName = usedGt7[0]?.innerText || '';
         // Series filter: reset game/cond, pick Phoenix Cup (only the Silverado).
         document.getElementById('deal-f-game').value = ''; document.getElementById('deal-f-game').dispatchEvent(new Event('change'));
@@ -165,7 +166,7 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
         seriesSel.value = [...seriesSel.options].find(o => o.text.includes('Phoenix Cup'))?.value || '';
         seriesSel.dispatchEvent(new Event('change'));
         await new Promise(r => setTimeout(r, 200));
-        const cupRows = [...el.querySelectorAll('.race-row')].filter(r => !r.innerHTML.includes('Sell'));
+        const cupRows = [...el.querySelectorAll('.car-grid .car-card')];
         // Sort ascending sanity.
         document.getElementById('deal-f-series').value = ''; document.getElementById('deal-f-series').dispatchEvent(new Event('change'));
         await new Promise(r => setTimeout(r, 200));

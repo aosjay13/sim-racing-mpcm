@@ -1030,3 +1030,56 @@ td.right, th.right { text-align: right; }
     background: transparent; box-shadow: none;
 }
 @media (max-width: 560px) { .crew-checklist { grid-template-columns: 1fr; } }
+
+/* ============================================================
+   Vehicle images — Dealership & Garage (v3.28.0)
+   Strictly flat 2D promo shots: hairline borders only, fixed
+   16:9 crop (object-fit: cover) so mismatched GM uploads never
+   break a grid. No drop shadows, no 3D frames, no lighting fx.
+   ============================================================ */
+.car-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+    gap: .9rem;
+}
+.car-card {
+    display: flex; flex-direction: column; overflow: hidden;
+    background: var(--bg-3); border: 1px solid var(--panel-border);
+    border-radius: var(--r-md); box-shadow: none;
+}
+.car-card-body { padding: .55rem .75rem .75rem; display: flex; flex-direction: column; gap: .15rem; }
+
+.car-media { width: 100%; aspect-ratio: 16 / 9; overflow: hidden; background: var(--bg-1); flex: none; }
+.car-media .car-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* Row thumbnail variant (garage lists, admin catalog) */
+.car-media-thumb {
+    width: 6.4rem; min-width: 6.4rem; align-self: center;
+    border: 1px solid var(--panel-border); border-radius: var(--r-sm);
+}
+
+/* Admin-form live preview */
+.car-media-preview-wrap .car-media {
+    max-width: 24rem; border: 1px solid var(--hairline); border-radius: var(--r-sm);
+}
+
+/* Branded checkered placeholder — rendered whenever a car has no image
+   (or its hotlink breaks). Pure CSS checkerboard, flat by design. */
+.car-img-ph {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .3rem;
+    background: repeating-conic-gradient(var(--bg-2) 0% 25%, var(--bg-1) 0% 50%) 0 0 / 22px 22px;
+}
+.car-img-ph-flag { font-size: 1.6rem; line-height: 1; }
+.car-img-ph-brand {
+    font-size: .58rem; font-weight: 700; letter-spacing: .22em; color: var(--text-faint);
+    background: var(--bg-0); border: 1px solid var(--hairline); border-radius: var(--r-sm);
+    padding: .18rem .55rem;
+}
+
+/* Crisp checkered divider between a card's image and its stats */
+.checker-divider {
+    display: flex; align-items: center; justify-content: center;
+    font-size: .68rem; line-height: 1; padding: .18rem 0;
+    border-top: 1px solid var(--panel-border); border-bottom: 1px solid var(--panel-border);
+    background: repeating-linear-gradient(90deg, var(--bg-2) 0 10px, var(--bg-1) 10px 20px);
+}

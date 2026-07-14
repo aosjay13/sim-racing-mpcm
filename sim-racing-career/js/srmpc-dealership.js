@@ -20,7 +20,11 @@
      stats:     { performance: 1–10, durability: 1–10 },  // base stats for the
                                              // future Mechanic upgrade system
      available: true | false,                // GM shelf toggle (hidden ≠ deleted)
-     notes:     ''                           // optional GM flavor line
+     notes:     '',                          // optional GM flavor line
+     imageUrl:  ''                           // 2D promo shot: 'https://…' (GM-pasted
+                                             // link) or 'img://<vehicleImages doc>'
+                                             // (GM file upload) — see js/srmpc-carimg.js.
+                                             // Copied verbatim onto every garage entry.
    }
 
    Purchases COPY a reference of the doc into the buyer's garage
@@ -114,15 +118,19 @@ const Dealership = {
         const seriesInStock = [...new Set(inv.flatMap(c => c.seriesIds || []))]
             .map(id => world.seriesById[id]).filter(Boolean);
 
+        // Flat 2D listing card: promo shot on top (fixed 16:9 crop, branded
+        // checkered placeholder when the GM hasn't attached one), a checkered
+        // divider, then the same stat chips as before. No shadows, no 3D.
         const row = (c) => {
             const cond = this.CONDITIONS[c.condition] || this.CONDITIONS.new;
             const game = world.gamesById[c.gameId];
             const series = (c.seriesIds || []).map(id => world.seriesById[id]?.name).filter(Boolean);
             return `
-            <div class="race-row">
-                <div class="driver-hero-num" style="font-size:1.2rem;min-width:2.8rem;height:2.8rem">${c.emoji || '🚗'}</div>
-                <div class="race-row-main">
-                    <span class="race-title">${Util.esc(c.name)}
+            <div class="car-card">
+                ${CarImg.html(c.imageUrl, c.name)}
+                <div class="checker-divider" role="separator">🏁</div>
+                <div class="car-card-body">
+                    <span class="race-title">${c.emoji || '🚗'} ${Util.esc(c.name)}
                         <span class="chip chip-dim">${cond.icon} ${cond.label}</span>
                         <span class="chip chip-dim">${Util.esc(c.carId || Garage.carId(c.name))}</span></span>
                     <span class="race-sub">🏁 ${Util.esc(game?.name || 'Any sim')}${series.length ? ` · 🏁 ${Util.esc(series.join(', '))}` : ''}</span>
@@ -130,11 +138,11 @@ const Dealership = {
                         ${this._statBar('Perf', c.stats?.performance)} ${this._statBar('Durab', c.stats?.durability)}
                         <span class="chip chip-dim">🏁 <span class="market-price">${Economy.fmt(c.price)}</span></span>
                     </span>
-                </div>
-                <div class="btn-col">
-                    <button class="btn btn-primary btn-sm" ${canBuy ? '' : 'disabled title="Player accounts with a started career can buy"'}
-                        onclick="Dealership.buy('${Util.attr(c.id)}')">🔑 Buy</button>
-                    ${myTeam ? `<button class="btn btn-secondary btn-sm" onclick="Dealership.buy('${Util.attr(c.id)}','${Util.attr(myTeam.id)}')">🛠 For team</button>` : ''}
+                    <div class="btn-row" style="margin-top:.5rem">
+                        <button class="btn btn-primary btn-sm" ${canBuy ? '' : 'disabled title="Player accounts with a started career can buy"'}
+                            onclick="Dealership.buy('${Util.attr(c.id)}')">🔑 Buy</button>
+                        ${myTeam ? `<button class="btn btn-secondary btn-sm" onclick="Dealership.buy('${Util.attr(c.id)}','${Util.attr(myTeam.id)}')">🛠 For team</button>` : ''}
+                    </div>
                 </div>
             </div>`;
         };
@@ -167,7 +175,7 @@ const Dealership = {
                     <option value="name" ${f.sort === 'name' ? 'selected' : ''}>🏁 Name A–Z</option>
                 </select>
             </div>
-            ${cars.length ? cars.map(row).join('')
+            ${cars.length ? `<div class="car-grid">${cars.map(row).join('')}</div>`
                 : C.empty('🏬', inv.length ? 'No cars match those filters' : 'The showroom is empty',
                     inv.length ? 'Clear a filter or two — the catalog has more in stock.'
                         : 'The Game Master stocks this dealership from Admin → Dealership.')}
@@ -197,7 +205,10 @@ const Dealership = {
             tag: [car.gameName, this.CONDITIONS[car.condition]?.label].filter(Boolean).join(' · '),
             gameId: car.gameId || null, condition: car.condition || 'new',
             stats: { performance: Number(car.stats?.performance) || 5, durability: Number(car.stats?.durability) || 5 },
-            price: Number(car.price) || 0, boughtAt: Util.todayISO()
+            price: Number(car.price) || 0, boughtAt: Util.todayISO(),
+            // The promo shot travels with the sale — garages render the same
+            // image (or reference) the showroom listing carried, forever.
+            imageUrl: CarImg.normalize(car.imageUrl)
         };
     },
 
@@ -240,7 +251,8 @@ const Dealership = {
             const off = c.available === false;
             return `
             <div class="race-row" style="${off ? 'opacity:.55' : ''}">
-                <div class="driver-hero-num" style="font-size:1.1rem;min-width:2.6rem;height:2.6rem">${c.emoji || '🚗'}</div>
+                ${CarImg.normalize(c.imageUrl) ? CarImg.thumb(c.imageUrl, c.name)
+                    : `<div class="driver-hero-num" style="font-size:1.1rem;min-width:2.6rem;height:2.6rem">${c.emoji || '🚗'}</div>`}
                 <div class="race-row-main">
                     <span class="race-title">${Util.esc(c.name)}
                         <span class="chip chip-dim">${Util.esc(c.carId || Garage.carId(c.name))}</span>
@@ -311,6 +323,15 @@ const Dealership = {
                     </select>
                     <span class="muted small">Informational link for storefront filtering. Race entry itself is enforced by the series/race <strong>Eligible cars</strong> token list.</span></label>
                 <label class="field"><span>🏁 Notes (optional)</span><input id="df-notes" class="input" maxlength="140" value="${Util.esc(car?.notes || '')}" placeholder="e.g. ex-league car, one careful owner"></label>
+                <div class="form-row">
+                    <label class="field" style="flex:2"><span>🏁 Vehicle image — paste a URL…</span>
+                        <input id="df-img-url" class="input" type="url" maxlength="500" placeholder="https://…  (leave blank for the checkered placeholder)"
+                            value="${CarImg.isDirect(CarImg.normalize(car?.imageUrl)) ? Util.esc(car.imageUrl) : ''}"></label>
+                    <label class="field"><span>🏁 …or upload a file</span>
+                        <input id="df-img-file" class="input" type="file" accept="image/*"></label>
+                </div>
+                <div id="df-img-preview" class="car-media-preview-wrap">${CarImg.html(car?.imageUrl, car?.name || 'New vehicle')}</div>
+                <p class="muted small">Flat 2D promo shot, cropped to 16:9 in every grid. Uploads are compressed in your browser (max ~480 KB) and stored with the league data — no external hosting needed. <button type="button" id="df-img-clear" class="btn btn-ghost btn-sm">Remove image</button></p>
                 <p class="muted small">ID token (auto): <strong id="df-carid">${Util.esc(car ? (car.carId || Garage.carId(car.name)) : '—')}</strong> — paste this into a series' Eligible cars list to require it.</p>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
@@ -321,6 +342,41 @@ const Dealership = {
 
         Util.$('#df-name').addEventListener('input', (e) => {
             Util.$('#df-carid').textContent = Garage.carId(e.target.value) || '—';
+        });
+
+        // ---- Image field: URL ⊕ file upload, with an instant 2D preview ----
+        // The preview always shows exactly what will save: a pasted URL renders
+        // live as typed; a chosen file is compressed in-browser immediately and
+        // previewed from the result. The vehicleImages doc is only created on
+        // SUBMIT, so cancelling the form never orphans an upload.
+        // pendingImage: undefined = keep the car's current image;
+        //               '' = cleared; 'https://…' = pasted; {data} = file shot.
+        let pendingImage = undefined;
+        const preview = (u) => { Util.$('#df-img-preview').innerHTML = CarImg.html(u, Util.$('#df-name').value || 'Vehicle'); };
+        Util.$('#df-img-url').addEventListener('input', (e) => {
+            Util.$('#df-img-file').value = '';
+            pendingImage = CarImg.normalize(e.target.value);
+            preview(pendingImage);
+        });
+        Util.$('#df-img-file').addEventListener('change', async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            try {
+                const shot = await CarImg._compress(file);
+                if (shot.data.length > CarImg.MAX_DATAURL) throw new Error('That image is too detailed to compress under the storage cap — paste a hosted URL instead.');
+                pendingImage = shot;
+                Util.$('#df-img-url').value = '';
+                preview(shot.data);
+            } catch (err) {
+                e.target.value = '';
+                Util.notify(err.message, 'error');
+            }
+        });
+        Util.$('#df-img-clear').addEventListener('click', () => {
+            pendingImage = '';
+            Util.$('#df-img-url').value = '';
+            Util.$('#df-img-file').value = '';
+            preview('');
         });
         Util.$('#deal-form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -343,6 +399,12 @@ const Dealership = {
                     notes: Util.$('#df-notes').value.trim(),
                     available: car ? car.available !== false : true
                 };
+                // Resolve the image LAST: a file shot becomes a vehicleImages
+                // doc now (submit time), a pasted URL saves as-is, cleared
+                // saves '', and an untouched field keeps the existing value.
+                if (pendingImage === undefined) data.imageUrl = CarImg.normalize(car?.imageUrl);
+                else if (typeof pendingImage === 'string') data.imageUrl = pendingImage;
+                else data.imageUrl = await CarImg.persistShot(pendingImage);
                 if (car) await DB.update('dealershipInventory', car.id, data);
                 else await DB.create('dealershipInventory', data);
                 Modal.close();

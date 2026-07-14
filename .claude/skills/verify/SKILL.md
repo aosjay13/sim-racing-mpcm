@@ -49,6 +49,11 @@ node drive.js
   `#gate-name-field.hidden` before clicking `#gate-mode-toggle`.
 - `harness/profile-drive.js` covers the player-profile flows (v3.6.0).
 - `harness/persona-drive.js` covers the GM persona/role-profile + sponsor flows, incl. bulk generation (v3.11.0).
+- `harness/carimg-drive.js` covers custom vehicle images: GM form URL/file inputs + instant preview,
+  vehicleImages docs (img:// refs, browser-side compression), storefront card grid + checkered placeholder +
+  broken-hotlink fallback, strict imageUrl inheritance into player/team garages (v3.28.0). New collection
+  `vehicleImages` needs firestore.rules deployed in prod. NOTE: `Util.attr` strips non-word chars — never
+  use it for URLs in attributes; use `Util.esc`.
 - `harness/counterloop-drive.js` covers the symmetric counter-offer state machine: PENDING_OWNER_RESPONSE ⇄
   PENDING_PLAYER_RESPONSE, negotiationHistory term-sheet log, full-form workspace reset both directions,
   full-terms stale-accept guard, sponsorship loop, terminal states (v3.27.0).

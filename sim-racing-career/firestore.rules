@@ -187,6 +187,13 @@ service cloud.firestore {
     // authenticated-write rule below, same posture as other career worlds.)
     match /dealershipInventory/{doc} { allow read: if true; allow write: if isGM(); }
 
+    // Vehicle promo images (js/srmpc-carimg.js): one immutable doc per GM
+    // file upload ({ data: <compressed data URL>, w, h, bytes }), referenced
+    // from dealershipInventory docs and garage copies as 'img://<docId>'.
+    // Public-read like the catalog itself; only the GM creates or prunes them
+    // (write flows are GM-only, and the isGM() wildcard covers admin cleanup).
+    match /vehicleImages/{doc} { allow read: if true; allow write: if isGM(); }
+
     // ----- Car number registry / auctions (js/srmpc-numbers.js) -----
     // Registry + leases are public-read (numbers show on the series page);
     // bids are member-only. Blind-bid secrecy is a client concern — like the
