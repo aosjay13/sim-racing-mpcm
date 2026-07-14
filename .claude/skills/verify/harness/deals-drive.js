@@ -342,8 +342,9 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
         DB.invalidate();
     });
     await page.evaluate(() => App.go('dealership'));
-    await page.waitForSelector('#view-root .race-row');
-    await page.click('.race-row:has-text("Barn-Find") button:has-text("Buy")');
+    // v3.28.0: the storefront renders a flat card grid, not race-rows.
+    await page.waitForSelector('#view-root .car-grid .car-card');
+    await page.click('.car-card:has-text("Barn-Find") button:has-text("Buy")');
     await toast(/is yours/);
     await page.evaluate(() => App.go('career'));
     await page.waitForSelector('#view-root .panel');

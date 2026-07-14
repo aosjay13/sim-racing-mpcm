@@ -42,9 +42,11 @@ const Insolvency = {
     // raceCompleted advances the grace fuse (only completed races count).
     async evaluate(teamId, { raceCompleted = false } = {}) {
         const t = await DB.get('teams', teamId, { force: true }).catch(() => null);
-        // Only player-owned, non-repossessed teams have a solvency state — an
-        // unowned marketplace team can't go bankrupt.
-        if (!t || !t.ownerUid || t.financialState === 'repossessed') return;
+        if (!t || t.financialState === 'repossessed') return;
+        // AI (unowned) teams run the SAME thresholds through the parity
+        // module — they liquidate instantly and recover via consortium
+        // takeover instead of the human marketplace (js/srmpc-parity.js).
+        if (!t.ownerUid) return Parity.evaluateAITeam(teamId, { raceCompleted });
         const budget = Number(t.budget) || 0;
 
         if (budget > 0) {
@@ -74,6 +76,9 @@ const Insolvency = {
         const t = await DB.get('teams', teamId).catch(() => null);
         if (t?.financialState === 'insolvent') {
             throw new Error(`${t.name} is insolvent — clear the debt before extending offers or acquiring talent.`);
+        }
+        if (t?.financialState === 'repossessed' && !t.ownerUid) {
+            throw new Error(`${t.name} is in league receivership — it can't sign anyone until the consortium takeover completes.`);
         }
     },
 

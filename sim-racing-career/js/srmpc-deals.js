@@ -170,8 +170,9 @@ const Deals = {
         agreement = agreement === 'open' ? 'open' : 'contracted';
         const isFreshHire = (kind === 'team-driver' || kind === 'team-staff') && !contractId;
         if (isFreshHire) {
-            // An insolvent team is frozen from extending new offers / acquiring talent.
-            if (teamId && ownerUid) await Insolvency.assertSolvent(teamId);
+            // An insolvent team is frozen from extending new offers / acquiring
+            // talent — human AND AI (receivership) teams alike.
+            if (teamId) await Insolvency.assertSolvent(teamId);
             ({ signOnBonus, clauses } = await this._validateOfferTerms({ teamId, personKind, salary, agreement, signOnBonus, clauses }));
         } else { signOnBonus = null; clauses = null; }
 
@@ -351,6 +352,9 @@ const Deals = {
         const stars = Prestige.driverStars(app.driverId, world);
         const cap = Economy.payCap(stars);
         const salary = Math.max(10, Math.min(Math.round(Market.askingFor(person, 'driver', stars) / 10) * 10, cap));
+        // AI parity: the principal only opens talks the team wallet can fund
+        // (sign-on + first payroll) and never bids from insolvency/receivership.
+        await Parity.assertAICanBid(app.teamId, salary);
         const neg = {
             kind: 'team-driver', status: 'open', contractId: null,
             teamId: app.teamId, teamName: app.teamName, ownerUid: null,
@@ -647,9 +651,11 @@ const Deals = {
         // The team's budget pays the bonus; the hire's PERSONAL wallet
         // collects it — two different documents, so this is a real transfer
         // even when the team owner is signing their own driver persona.
+        // AI parity: unowned teams pay from their own wallet too (ledger-
+        // paired) — an AI signing is never league ghost money.
         if (signOnBonus) {
             await Wallet.executeRoleTransaction({
-                from: neg.ownerUid ? { type: 'team', id: neg.teamId } : null,
+                from: neg.teamId ? { type: 'team', id: neg.teamId } : null,
                 to: neg.personUid ? { type: 'player', id: neg.personUid } : null,
                 amount: signOnBonus, icon: '🤝',
                 fromLabel: `Sign-on bonus paid: ${neg.personName}`,

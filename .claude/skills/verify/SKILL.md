@@ -49,6 +49,13 @@ node drive.js
   `#gate-name-field.hidden` before clicking `#gate-mode-toggle`.
 - `harness/profile-drive.js` covers the player-profile flows (v3.6.0).
 - `harness/persona-drive.js` covers the GM persona/role-profile + sponsor flows, incl. bulk generation (v3.11.0).
+- `harness/parity-drive.js` covers the AI Financial Parity system: per-race consortium sponsorship
+  (prestige × field strength × human-median anchor × GM knob), AI payroll/sign-on through the real
+  team wallet + ledger, AI insolvency auto-liquidation, receivership → consortium takeover, and the
+  Admin → 🏦 AI Finance dashboard with GM overrides (v3.29.0). Config lives in config/aiEconomy.
+  NOTE: `.panel` carries the app-wide `--shadow` token — "flat 2D" assertions should check for no
+  NEW inline shadows/3D transforms, not computed panel style. Drives that pipe to `tail` show no
+  interim output (tail buffers to EOF) — wallet-drive takes ~4 min; that's not a hang.
 - `harness/carimg-drive.js` covers custom vehicle images: GM form URL/file inputs + instant preview,
   vehicleImages docs (img:// refs, browser-side compression), storefront card grid + checkered placeholder +
   broken-hotlink fallback, strict imageUrl inheritance into player/team garages (v3.28.0). New collection

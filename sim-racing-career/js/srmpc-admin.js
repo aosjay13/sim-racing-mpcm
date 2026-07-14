@@ -28,7 +28,7 @@ const Admin = {
             ['overview', '🎛 Overview'], ['games', '🎮 Games'], ['series', '🏆 Series'],
             ['races', '🏁 Races'], ['dealership', '🏬 Dealership'], ['teams', '🛠 Teams'], ['drivers', '🏎 Drivers'],
             ['world', '🌍 World'], ['players', '👥 Players'], ['challenges', '🎯 Challenges'],
-            ['numbers', '🔢 Numbers'], ['override', '🔧 GM Override'], ['settings', '⚙ Settings']
+            ['numbers', '🔢 Numbers'], ['parity', '🏦 AI Finance'], ['override', '🔧 GM Override'], ['settings', '⚙ Settings']
         ];
 
         el.innerHTML = `
@@ -54,6 +54,10 @@ const Admin = {
             body.innerHTML = C.empty('⚠️', 'Could not load this section', e.message);
         }
     },
+
+    // AI Financial Parity oversight — rendered by the parity module
+    // (js/srmpc-parity.js) in the house flat-2D style.
+    async tab_parity(body) { return Parity.adminPanel(body); },
 
     refresh() {
         const el = document.getElementById('view-root');

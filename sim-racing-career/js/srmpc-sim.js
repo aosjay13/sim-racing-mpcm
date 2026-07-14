@@ -846,17 +846,33 @@ const Sim = {
                 const team = world.teamsById[driver.teamId];
                 if (team) {
                     racedTeams.add(team.id);
-                    if (team.ownerUid) addTeam(team.id, Math.round(prize * this.TEAM_SHARE), '🏆', `Team share: ${driver.name} — ${raceName}`);
+                    // AI parity: unowned teams collect their share too — real
+                    // wallet money with a ledger row, not league ghost money.
+                    addTeam(team.id, Math.round(prize * this.TEAM_SHARE), '🏆', `Team share: ${driver.name} — ${raceName}`);
                 }
             }
 
             /* -- 2. Brand sponsors pay the team's budget for every team that raced -- */
             for (const teamId of racedTeams) {
                 const team = world.teamsById[teamId];
-                if (!team?.ownerUid) continue;
+                if (!team) continue;
                 sponsors.filter(s => s.teamId === teamId)
                     .forEach(s => addTeam(teamId, s.payoutPerRace, '💰', `Sponsor payout: ${s.name} — ${raceName}`));
             }
+
+            /* -- 2b. AI consortium sponsorship: automated per-race income for
+                  unowned teams, scaled by prestige × field strength × the
+                  human-economy anchor × the GM's global knob — settled in the
+                  same batch, one ledger row each (js/srmpc-parity.js). -- */
+            try {
+                const aiCfg = await Parity.config();
+                for (const teamId of racedTeams) {
+                    const team = world.teamsById[teamId];
+                    if (!team || team.ownerUid) continue;
+                    const pay = Parity.calculateAISponsorship(team, race, world, aiCfg);
+                    if (pay) addTeam(teamId, pay, '🏦', `AI consortium sponsorship — ${raceName}`);
+                }
+            } catch (e) { console.warn('AI sponsorship failed:', e); }
 
             /* -- 3. Contract salaries: TEAM pays (budget), talent collects
                   (personal wallet) — the internal-payout case (owner hiring
@@ -868,7 +884,8 @@ const Sim = {
                 const due = isDriver ? racedDrivers.has(c.personId) : racedTeams.has(c.teamId);
                 if (!due || !c.salary) continue;
                 const team = world.teamsById[c.teamId];
-                if (team?.ownerUid) addTeam(team.id, -c.salary, '💼', `Payroll: ${c.personName} — ${raceName}`);
+                // AI parity: unowned teams pay payroll from their own wallet.
+                if (team) addTeam(team.id, -c.salary, '💼', `Payroll: ${c.personName} — ${raceName}`);
                 // Player talent collects: drivers via their driver doc, player
                 // crew (crew chief / mechanic / agent) via personUid on the contract.
                 const paidUid = c.personUid || (isDriver ? world.driversById[c.personId]?.ownerUid : null);
@@ -892,7 +909,7 @@ const Sim = {
                 const team = world.teamsById[c.teamId];
                 const paidUid = c.personUid || (isDriver ? world.driversById[c.personId]?.ownerUid : null);
                 for (const p of payouts) {
-                    if (team?.ownerUid) addTeam(team.id, -p.amount, '📜', `Clause paid: ${p.label} — ${c.personName} — ${raceName}`);
+                    if (team) addTeam(team.id, -p.amount, '📜', `Clause paid: ${p.label} — ${c.personName} — ${raceName}`);
                     add(paidUid, p.amount, '📜', `${p.label} bonus — ${raceName}`);
                 }
             }
@@ -957,6 +974,11 @@ const Sim = {
             for (const id of touchedTeams) {
                 try { await Insolvency.evaluate(id, { raceCompleted: true }); } catch (e) { console.warn('Solvency eval failed:', e); }
             }
+
+            // AI parity sweep: advance receivership fuses toward consortium
+            // takeover (repossessed teams don't race, so the loop above never
+            // reaches them) and refresh the human-economy anchor.
+            try { await Parity.raceTick(world); } catch (e) { console.warn('Parity race tick failed:', e); }
 
             // Car numbers: credit any owned number whose owner ran this race
             // toward its use-it-or-lose-it season quota.
