@@ -539,6 +539,11 @@ const Views = {
             return (Number(a.position) || 99) - (Number(b.position) || 99);
         });
 
+        // Immersive crew section (js/srmpc-crew.js): pit-lane entries, crew
+        // registration, the driver's pit-wall briefing, post-race crew log.
+        let crewHtml = '';
+        try { crewHtml = await Crew.raceSection(race, world); } catch (e) { /* crew optional */ }
+
         Modal.open(`
             ${Modal.header(race.name || race.track || 'Race', `${series ? series.name + ' · ' : ''}${Util.fmtDate(race.date)}${race.time ? ' · ' + Util.fmtTime(race.time) : ''}`)}
             <div class="chip-row" style="margin-bottom:1rem">
@@ -576,6 +581,8 @@ const Views = {
                 </div>` : (Auth.isPlayer() && !Auth.state.profile?.driverId && race.status !== 'completed'
                     ? `<p class="muted" style="margin-top:1rem">Create your driver profile in <a href="#" onclick="Modal.close();App.go('career');return false">My Career</a> to sign up for races.</p>` : '')}
             `}
+
+            ${crewHtml}
 
             ${isAdmin ? `<div class="modal-actions">
                 ${race.status !== 'completed'

@@ -903,6 +903,12 @@ const Career = {
                 }).join('') : C.empty('👥', `No ${label.toLowerCase()} yet`, `Add drivers to your book to track their form here.`)}
             </section>`;
 
+            if (roleId === 'crew-chief') {
+                // Immersive pit wall (js/srmpc-crew.js): event registration +
+                // the pre-race strategy dashboard for contracted drivers.
+                contextHtml = await Crew.chiefPanel(mine, world) + contextHtml;
+            }
+
             if (roleId === 'agent') {
                 const openSeats = world.teams.filter(t => t.recruiting).map(t => ({ t, n: world.drivers.filter(d => d.teamId === t.id).length }));
                 contextHtml += `<section class="panel">
@@ -923,7 +929,10 @@ const Career = {
             const reliability = starts ? Math.round((1 - dnfs / starts) * 100) : null;
 
             kpis = `${kpi(teamRank ? '#' + teamRank : '—', 'Constructor rank')}${kpi(roster.length, 'Cars')}${kpi(reliability != null ? reliability + '%' : '—', 'Reliability')}${kpi(dnfs, 'DNFs')}`;
-            contextHtml = `<section class="panel">
+            // Immersive upgrades panel (js/srmpc-crew.js): prestige buff tiers
+            // per game paradigm + race-day buff activation.
+            contextHtml = await Crew.mechanicPanel(mine, world);
+            contextHtml += `<section class="panel">
                 <div class="panel-head"><h2>🔧 My Garage</h2>
                     <button class="btn btn-secondary btn-sm" onclick="Career.pickTeamForRole('${Util.attr(mine.id)}')">✍️ Apply to a Team</button></div>
                 ${team ? `<div class="race-row" onclick="Views.showTeam('${Util.attr(team.id)}')">

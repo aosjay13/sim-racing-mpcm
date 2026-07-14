@@ -164,6 +164,15 @@ service cloud.firestore {
     match /challengeClaims/{doc} { allow read: if isAuthenticated(); allow write: if isAuthenticated(); }
     // Race signups go through the vehicle gate: create/update must prove car
     // ownership when the event requires one (withdrawals stay open).
+    // Crew event registrations (js/srmpc-crew.js): crew chiefs / mechanics
+    // enter races under their role. No vehicle gate — pit-lane staff don't
+    // field a car — but only the signed-in member may write their own entry.
+    match /crewSignups/{doc} {
+      allow read, delete: if isAuthenticated();
+      allow create, update: if isAuthenticated()
+        && request.resource.data.get('uid', '') == request.auth.uid;
+    }
+
     match /raceSignups/{doc} {
       allow read, delete: if isAuthenticated();
       allow create, update: if isAuthenticated() && signupWriteOk('races', 'series', 'users', 'teams');

@@ -977,3 +977,56 @@ td.right, th.right { text-align: right; }
 /* ---------------- Bankruptcy / insolvency alert (flat 2D) ---------------- */
 .panel-alert { border-color: var(--bad); }
 .panel-alert .panel-head h2 { color: var(--bad); }
+
+/* ============================================================
+   Immersive Crew Chief & Mechanic (js/srmpc-crew.js)
+   Flat 2D promotional style — solid fills and 2px borders only.
+   No box-shadows, gradients, or rendered depth anywhere here.
+   ============================================================ */
+.crew-panel { box-shadow: none; }
+.crew-card,
+.crew-pitwall {
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-2);
+    padding: .85rem 1rem;
+    margin: .75rem 0;
+    box-shadow: none;
+}
+.crew-card-head {
+    display: flex; align-items: center; gap: .5rem;
+    flex-wrap: wrap; margin-bottom: .5rem;
+}
+.crew-flag { font-size: 1rem; line-height: 1; }
+.crew-note-line {
+    display: flex; gap: .45rem; align-items: baseline;
+    padding: .25rem 0; font-size: .92rem;
+}
+.crew-checklist { display: grid; grid-template-columns: 1fr 1fr; gap: .25rem .75rem; margin-top: .5rem; }
+.crew-flag-item { font-size: .88rem; }
+
+/* Checkered-flag bullets for upgrade tiers & strategy checklists */
+.crew-flag-list { list-style: none; margin: .5rem 0; padding: 0; }
+.crew-flag-list li {
+    padding: .3rem 0 .3rem 1.6rem;
+    position: relative; font-size: .92rem;
+}
+.crew-flag-list li::before {
+    content: '🏁';
+    position: absolute; left: 0; top: .3rem;
+    font-size: .9rem; line-height: 1;
+}
+.crew-tiers li { border-bottom: 1px solid var(--border); }
+.crew-tiers li:last-child { border-bottom: none; }
+.crew-tier-active {
+    background: var(--bg-2);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+}
+.crew-current {
+    border: 2px solid var(--accent);
+    border-radius: 8px; padding: .6rem .85rem;
+    margin-top: .5rem; font-size: .95rem;
+    background: transparent; box-shadow: none;
+}
+@media (max-width: 560px) { .crew-checklist { grid-template-columns: 1fr; } }

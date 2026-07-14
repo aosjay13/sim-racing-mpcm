@@ -185,7 +185,7 @@ const DB = {
         'challenges', 'challengeClaims', 'raceSignups', 'roleProfiles', 'staff',
         'contracts', 'tracks', 'sponsors', 'news', 'recruitment',
         'negotiations', 'ledger', 'numberRegistry', 'numberLeases', 'numberBids',
-        'dealershipInventory'
+        'dealershipInventory', 'crewSignups'
     ],
 
     // Delete every document in a career's world (all WORLD_COLLECTIONS), in
@@ -223,6 +223,7 @@ const DB = {
     challenges(opts) { return this.list('challenges', opts); },
     claims(opts) { return this.list('challengeClaims', opts); },
     signups(opts) { return this.list('raceSignups', opts); },
+    crewSignups(opts) { return this.list('crewSignups', opts); },
     roleProfiles(opts) { return this.list('roleProfiles', opts); },
     staff(opts) { return this.list('staff', opts); },
     contracts(opts) { return this.list('contracts', opts); },

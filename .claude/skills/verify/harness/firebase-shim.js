@@ -22,7 +22,20 @@
         },
         async update(patch) {
             const prev = coll(cname).get(id) || {};
-            coll(cname).set(id, { ...prev, ...JSON.parse(JSON.stringify(patch)) });
+            const next = { ...prev };
+            // Real-SDK semantics: dotted keys are field paths into nested maps.
+            for (const [k, v] of Object.entries(JSON.parse(JSON.stringify(patch)))) {
+                if (k.includes('.')) {
+                    const parts = k.split('.');
+                    let node = next;
+                    for (let i = 0; i < parts.length - 1; i++) {
+                        node[parts[i]] = { ...(node[parts[i]] || {}) };
+                        node = node[parts[i]];
+                    }
+                    node[parts[parts.length - 1]] = v;
+                } else next[k] = v;
+            }
+            coll(cname).set(id, next);
         },
         async delete() { coll(cname).delete(id); }
     });

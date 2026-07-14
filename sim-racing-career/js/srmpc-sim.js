@@ -932,8 +932,18 @@ const Sim = {
             playerProfiles.filter(p => p.role === 'series-owner' &&
                 ((p.seriesIds || []).includes(race.seriesId) || (world.seriesById[race.seriesId]?.ownerUid === p.uid)))
                 .forEach(p => add(p.uid, this.PROMOTER_FEE_PER_ENTRANT * results.length, '🏆', `Promoter fee — ${raceName}`));
-            // Crew personas attached to a team that raced.
-            playerProfiles.filter(p => (p.role === 'crew-chief' || p.role === 'mechanic') && racedTeams.has(p.teamId))
+            // Immersive crew (js/srmpc-crew.js): crew chiefs / mechanics
+            // REGISTERED for this event get their role payout + the applied
+            // modifier frozen into the ledger and races/{id}.crewLog.
+            let crewPaid = new Set();
+            try {
+                const crewLog = await Crew.settleRace(race, world, add);
+                crewPaid = new Set(crewLog.map(l => l.uid));
+            } catch (e) { console.warn('Crew settlement failed:', e); }
+            // Passive stipend for attached crew personas who DIDN'T register
+            // for the event (legacy behavior — registering always pays more).
+            playerProfiles.filter(p => (p.role === 'crew-chief' || p.role === 'mechanic')
+                && racedTeams.has(p.teamId) && !crewPaid.has(p.uid))
                 .forEach(p => add(p.uid, this.CREW_STIPEND, '🔧', `Race-day crew stipend — ${raceName}`));
 
             /* -- Apply: one balance write per wallet (players and teams
