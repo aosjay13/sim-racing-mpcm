@@ -658,8 +658,31 @@
             }
             assignNumbers(S);
         }
-        inbox(S, '🚦', `Season ${S.seasonNo} is go`, `${S.season.events.length} rounds in the ${seriesDef(S, S.season.sid).name}. First up: ${S.season.events[0].t}.`, 'news');
+        const pv = S.season.preview = seasonPreview(S);
+        const expectTxt = P.role === 'principal' ? `The board wants P${P.board.target} in the teams' championship.`
+            : `The paddock expects you around P${pv.expect} — beat that and the team's faith in you grows.`;
+        inbox(S, '🚦', `Season ${S.seasonNo} is go`, `${S.season.events.length} rounds in the ${seriesDef(S, S.season.sid).name}. First up: ${S.season.events[0].t}. Pre-season favourites: ${pv.favs.join(', ')}. ${expectTxt}`, 'news');
     };
+
+    // Who the paddock rates: driver skill + car, averaged over the calendar's track types.
+    function seasonPreview(S) {
+        const sid = S.season.sid;
+        const spec = specOf(S, sid);
+        const types = S.season.events.map(e => e.type);
+        const carFor = (t) => mean(types.map(ty => carScore(t, ty) - fieldCarMean(S, sid, ty)));
+        const rows = [];
+        for (const t of teamsIn(S, sid)) {
+            const c = carFor(t) * spec * 0.85;
+            for (const id of t.drivers) {
+                const skill = id === 'P' ? S.player.dr : S.drivers[id]?.skill || 60;
+                rows.push({ id, v: skill + c });
+            }
+        }
+        rows.sort((a, b) => b.v - a.v);
+        const expect = Math.max(1, rows.findIndex(r => r.id === 'P') + 1);
+        return { favs: rows.slice(0, 3).map(r => driverName(S, r.id)), expect, field: rows.length };
+    }
+    E.seasonPreview = seasonPreview;
 
     // The owner/principal can edit the calendar in preseason.
     E.setCalendar = function (S, entries) {
@@ -1941,6 +1964,14 @@
             p: e.res.player ? { pos: e.res.player.pos, st: e.res.player.start, dnf: e.res.player.dnf, pts: e.res.player.pts, sim: e.res.player.sim } : null
         }));
         const champion = me && me.rank === 1;
+        const pv = S.season.preview;
+        if (pv && me && P.role !== 'principal') {
+            archive.expect = pv.expect;
+            const beat = pv.expect - me.rank;
+            P.morale = clamp(P.morale + clamp(beat * 3, -20, 20), 0, 100);
+            if (beat >= 3) inbox(S, '📈', 'Beat expectations', `The paddock had you down for P${pv.expect}; you finished P${me.rank}. The team is delighted.`, 'team');
+            else if (beat <= -3) inbox(S, '📉', 'Below expectations', `The paddock had you down for P${pv.expect}; you finished P${me.rank}. The team expected more.`, 'team');
+        }
         if (P.role !== 'principal') {
             P.career.seasons += 1;
             if (champion) {
@@ -2036,6 +2067,7 @@
             personalSponsorOffers(S, P.role === 'owner' ? 1 : 2);
             S.flags.personalSponsorSeason = true;
         }
+        checkAchievements(S, null); // season-end ones (titles, board)
         // Retirement check.
         if (S.seasonNo >= S.settings.maxSeasons) {
             S.postseason.mustRetire = true;
@@ -2106,6 +2138,9 @@
         const diff = pos - b.target;
         const delta = (diff <= -2 ? 25 : diff <= 0 ? 12 : diff === 1 ? -8 : -20) * DIFF[S.settings.difficulty].board;
         b.confidence = clamp(Math.round(b.confidence + delta), 0, 100);
+        // A principal's reputation is built on beating the board's targets.
+        const tierF = 1 + (6 - clamp(seriesDef(S, S.season.sid).tier, 1, 6)) * 0.2;
+        P.rep = round1(clamp(P.rep + (b.target - pos) * 2 * tierF + (pos === 1 ? 8 * tierF : 0), 0, 100));
         archive.board = { target: b.target, pos, confidence: b.confidence };
         const t = S.teams[P.teamId];
         if (b.confidence <= 15) {
@@ -2310,6 +2345,8 @@
         S.offers = [];
         S.postseason = null;
         assignNumbers(S);
+        // The board resets its target every winter from where the team now stands.
+        if (P.role === 'principal') P.board.target = boardTarget(S, S.teams[P.teamId]);
         startSeason(S);
         // Owner/principal staff contracts
         if (P.role !== 'driver') staffRollover(S);
@@ -2641,14 +2678,17 @@
         { id: 'owner-win', icon: '🏢', label: 'Owner-Driver Winner', test: (S) => S.player.role === 'owner' && S.player.career.w >= 1 },
         { id: 'hat-trick', icon: '🎩', label: 'Hat-trick (3 wins in a row)', test: (S) => { const done = S.season.events.filter(e => e.done && e.res?.player); const last3 = done.slice(-3); return last3.length === 3 && last3.every(e => e.res.player.pos === 1 && !e.res.player.dnf); } },
         { id: 'iron', icon: '🛡️', label: 'Iron Career — 40 Seasons', test: (S) => S.history.length >= 40 },
-        { id: 'wrecker', icon: '💥', label: 'Wrecking Ball (50 wrecks)', test: (S) => S.player.career.wr >= 50 }
+        { id: 'wrecker', icon: '💥', label: 'Wrecking Ball (50 wrecks)', test: (S) => S.player.career.wr >= 50 },
+        { id: 'pw-title', icon: '🏗️', label: 'Constructors’ Champion (principal)', principal: true, test: (S) => S.player.role === 'principal' && S.player.career.titles >= 1 },
+        { id: 'pw-dynasty', icon: '🏰', label: 'Dynasty — 5 team titles (principal)', principal: true, test: (S) => S.player.role === 'principal' && S.player.career.titles >= 5 },
+        { id: 'pw-board', icon: '📋', label: 'Board’s Favourite (95% confidence)', principal: true, test: (S) => S.player.role === 'principal' && (S.player.board?.confidence || 0) >= 95 }
     ];
     E.ACHIEVEMENTS = ACH;
     function checkAchievements(S, ev) {
         for (const a of ACH) {
             if (S.achievements[a.id]) continue;
             let ok = false;
-            try { ok = S.player.role === 'principal' && !['millionaire', 'iron'].includes(a.id) ? false : a.test(S, ev); } catch (e) { ok = false; }
+            try { ok = S.player.role === 'principal' && !a.principal && !['millionaire', 'iron'].includes(a.id) ? false : a.test(S, ev); } catch (e) { ok = false; }
             if (ok) {
                 S.achievements[a.id] = { s: S.seasonNo, r: S.season ? S.season.round : 0, y: S.year };
                 inbox(S, a.icon, `Achievement: ${a.label}`, `Unlocked in season ${S.seasonNo} (${S.year}).`, 'news');

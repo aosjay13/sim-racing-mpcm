@@ -71,7 +71,8 @@
                 ${K.panel(`🏆 ${esc(sd.short)} standings`, st.length ? `<table class="table table-tight"><tbody>${standRows.map(r => `
                     <tr class="${r.id === 'P' ? 'sc-me' : ''}"><td class="rank">${r.rank}</td><td>${esc(r.name)}<br><span class="muted small">${esc(S.teams[r.team]?.name || '')}</span></td>
                     <td class="num"><strong>${r.pts}</strong></td><td class="num muted small">${r.w}W</td></tr>`).join('')}</tbody></table>
-                    ${me && st[0] && me.rank > 1 ? `<p class="muted small">${st[0].pts - me.pts} points behind the leader.</p>` : ''}` : '<p class="muted">No rounds run yet this season.</p>',
+                    ${me && st[0] && me.rank > 1 ? `<p class="muted small">${st[0].pts - me.pts} points behind the leader.</p>` : ''}
+                    ${S.season.preview && me ? `<p class="muted small">Pre-season prediction: P${S.season.preview.expect} · currently ${me.rank <= S.season.preview.expect ? 'on or ahead of target 📈' : 'behind target 📉'}</p>` : ''}` : '<p class="muted">No rounds run yet this season.</p>',
                     { actions: '<button class="btn btn-ghost btn-sm" data-go="standings">Full table</button>' })}
             </div>
             <div class="stack">

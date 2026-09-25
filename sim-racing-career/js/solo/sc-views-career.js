@@ -168,6 +168,17 @@
         const me = ts.find(r => r.id === t.id);
         const drivers = t.drivers.map(id => ({ id, d: id === 'P' ? S.drivers.P : S.drivers[id] })).filter(x => x.d);
         const staff = t.staff ? E().staffList(t) : [];
+        // Season head-to-head vs each teammate (classification order already puts DNFs last).
+        const h2h = t.drivers.includes('P') ? t.drivers.filter(id => id !== 'P').map(id => {
+            let me = 0, them = 0;
+            for (const e of S.season.events) {
+                if (!e.done || !e.res) continue;
+                const a = e.res.order.indexOf('P'), b = e.res.order.indexOf(id);
+                if (a < 0 || b < 0) continue;
+                if (a < b) me++; else them++;
+            }
+            return { id, me, them };
+        }) : [];
         return `<div class="grid-2">
             ${K.panel('Team', `<div class="stat-strip">${K.stat(me ? K.ord(me.rank) : '—', 'Teams’ standing')}${K.stat(t.prestige, 'Prestige')}${K.stat(t.titles, 'Titles')}${K.stat(t.cars, 'Cars')}</div>
                 ${P.role === 'driver' ? `<p>Your contract: <strong>${K.money(P.contract.salary)}/season</strong>${P.contract.salary < 0 ? ' (you pay for the seat)' : ''}, ${P.contract.seasons > 0 ? P.contract.seasons + ' season(s) left' : 'expiring'}, ${P.contract.status === 'lead' ? 'lead driver' : 'second driver'}.
@@ -176,6 +187,8 @@
                     <p class="muted small">Beat your teammate, score podiums and keep the car in one piece to keep faith high — it decides whether you're re-signed.</p>` : ''}
                 ${P.role === 'principal' ? `<p>Board target: <strong>P${P.board.target}</strong> in the teams' championship. Confidence ${P.board.confidence}%.</p>${K.progress(P.board.confidence)}` : ''}`)}
             ${K.panel('Drivers', `<table class="table table-tight"><tbody>${drivers.map(({ id, d }) => `<tr class="${id === 'P' ? 'sc-me' : ''}"><td>#${d.num ?? ''}</td><td>${K.flag(d.nat)} ${esc(d.first + ' ' + d.last)}${id === 'P' ? ' (you)' : ''}</td><td class="num">${Math.round(id === 'P' ? P.dr : d.skill)}</td><td class="muted small">age ${d.age}${id !== 'P' ? ` · ${K.money(d.salary)}/yr · ${d.years}y` : ''}</td></tr>`).join('')}</tbody></table>
+                ${h2h.some(x => x.me + x.them) ? `<h3 class="sc-subhead">Head-to-head this season</h3>${h2h.map(x => `<div class="sc-line"><span>You vs ${esc(dn(S, x.id))}</span><strong class="${x.me >= x.them ? 'sc-pos' : 'sc-neg'}">${x.me} – ${x.them}</strong></div>`).join('')}` : ''}
+                ${S.season.preview && P.role !== 'principal' ? `<p class="muted small">Pre-season prediction: P${S.season.preview.expect} of ${S.season.preview.field}.</p>` : ''}
                 ${staff.length ? `<h3 class="sc-subhead">Key staff</h3><ul class="small">${staff.map(s => `<li>${SC.STAFF_ROLES[s.role].icon} ${esc(SC.STAFF_ROLES[s.role].label)}: <strong>${esc(s.first + ' ' + s.last)}</strong> (${s.skill})</li>`).join('')}</ul>` : ''}`)}
         </div>`;
     }
