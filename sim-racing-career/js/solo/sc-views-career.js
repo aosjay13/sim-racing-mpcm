@@ -61,8 +61,7 @@
             if (!mine) return '';
             const evs = S.season.events.filter(e => e.done).slice(-5);
             return `<span class="form-pips">${evs.map(e => { const p = e.res.order.indexOf(id) + 1; const d = e.res.dnf[id];
-                const c = d ? 'dnf' : p === 1 ? 'win' : p <= 3 ? 'podium' : (e.res.pts[id] || 0) > 0 ? 'points' : 'out';
-                return `<span class="pip pip-${c}" title="R${e.r}: ${d ? 'DNF' : 'P' + p}"></span>`; }).join('')}</span>`;
+                return K.resultPip(p, d, (e.res.pts[id] || 0) > 0, `R${e.r}: ${d ? 'DNF' : 'P' + p}`); }).join('')}</span>`;
         };
         const leader = st[0]?.pts || 0;
         let body = '';
@@ -527,7 +526,7 @@
                 ${der ? `<h3 class="sc-subhead">From your logged races (last ${der.n})</h3>${K.rating('Qualifying', der.qual)}${K.rating('Racecraft (places gained)', der.racecraft)}${K.rating('Consistency', der.consistency)}${K.rating('Safety', der.safety)}` : ''}
                 ${principal ? '' : `<h3 class="sc-subhead">Off-track</h3>${Object.entries(P.attrs).map(([k, v]) => K.rating(k[0].toUpperCase() + k.slice(1), v)).join('')}`}
                 ${types.length ? `<h3 class="sc-subhead">Track-type performance</h3><div class="chip-row">${types.map(t => `<span class="chip">${t.icon} ${esc(t.label)}: ${t.perf ?? '—'} <span class="muted">(${t.st})</span></span>`).join('')}</div>` : ''}`)}
-            ${K.panel('Progression', `${posChart}${drChart}`)}
+            ${K.panel('Progression', hist.length < 2 ? `<p class="muted">Your season-by-season charts (championship position${principal ? '' : ', driver rating and reputation'}) appear once two seasons are complete.</p>` : `${posChart}${drChart}`)}
         </div>
         ${K.panel('Season by season', hist.length ? `<div class="sc-table-wrap"><table class="table"><thead><tr><th>Year</th><th>Series</th><th>Team</th><th class="num">Pos</th><th class="num">Pts</th><th class="num">W</th><th class="num">Pod</th><th class="num">Poles</th><th class="num">DNF</th><th class="num">Team</th><th></th></tr></thead><tbody>
             ${hist.slice().reverse().map(h => `<tr class="${h.pos === 1 ? 'sc-champ-row' : ''}"><td>${h.year}</td><td>${esc(h.series)} <span class="muted small">${K.stars(h.tier)}</span></td><td>${esc(h.team)}</td>

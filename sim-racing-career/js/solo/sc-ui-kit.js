@@ -110,6 +110,16 @@
             <div class="sc-rating-top"><span>${icon} ${K.esc(label)}</span><strong>${Math.round(value)}</strong></div>
             ${K.bar(value, { mark, label: markLabel })}
         </div>`;
+    // One pip per race, coloured by where the car finished (same colours everywhere).
+    K.resultPip = (pos, dnf, scored, title) => {
+        const c = dnf ? 'dnf' : pos === 1 ? 'win' : pos <= 3 ? 'podium' : scored ? 'points' : 'out';
+        return `<span class="pip pip-${c}" title="${K.esc(title)}"></span>`;
+    };
+    K.recentPips = (recent) => {
+        if (!recent || !recent.length) return '<span class="muted small">—</span>';
+        return `<span class="form-pips">${recent.map(x => K.resultPip(x.pos, x.dnf, x.pts > 0,
+            `${x.y} R${x.r}: ${x.dnf ? 'DNF' : 'P' + x.pos}${x.perf != null ? ` · performance ${x.perf}/100 for the car` : ''}${x.sim ? ' (simulated)' : ''}`)).join('')}</span>`;
+    };
     K.formPips = (perfs) => {
         if (!perfs || !perfs.length) return '<span class="muted small">—</span>';
         return `<span class="form-pips">${perfs.map(p => {

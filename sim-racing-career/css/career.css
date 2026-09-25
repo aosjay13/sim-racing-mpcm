@@ -231,3 +231,6 @@ tr.sc-subrow td { border-bottom: 1px solid var(--panel-border); padding-top: 0; 
     .sc-wizard-nav { position: sticky; bottom: 0; background: var(--bg-1); padding: .6rem 0; }
 }
 :root[data-theme="light"] .sc-statusbar { background: rgba(9, 12, 17, .85); }
+
+/* Stacked blocks inside a view always get breathing room. */
+#sc-view > :is(.panel, .grid-2, .card-grid, .stat-strip) + :is(.panel, .grid-2, .card-grid) { margin-top: 1.1rem; }

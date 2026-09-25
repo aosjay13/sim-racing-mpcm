@@ -80,7 +80,7 @@
                     <div class="sc-meter-row"><span>Season ${S.seasonNo} of ${S.settings.maxSeasons}</span>${K.progress(S.seasonNo / S.settings.maxSeasons * 100)}</div>
                     ${P.role !== 'principal' ? K.rating('Driver rating (from your results)', P.dr, { mark: E().fieldSkillMean(S, S.season.sid), markLabel: 'Field average' }) : ''}
                     ${K.rating('Reputation', P.rep)}
-                    ${P.role !== 'principal' ? `<div class="sc-meter-row"><span>Recent form</span>${K.formPips(P.form.slice(-8))}</div>` : ''}
+                    ${P.role !== 'principal' ? `<div class="sc-meter-row"><span>Recent form</span>${P.recent ? K.recentPips(P.recent.slice(-8)) : K.formPips(P.form.slice(-8))}</div>` : ''}
                     <div class="chip-row"><span class="chip">🏁 ${P.career.st} starts</span><span class="chip">🥇 ${P.career.w}</span><span class="chip">🍾 ${P.career.p} podiums</span><span class="chip">⏱️ ${P.career.pl} poles</span></div>`,
                     { actions: '<button class="btn btn-ghost btn-sm" data-go="career">Profile</button>' })}
                 ${t ? K.panel(esc(t.name), teamSnapshot(S, t), { actions: '<button class="btn btn-ghost btn-sm" data-go="team">Team</button>' }) : ''}
@@ -237,10 +237,10 @@
         el.innerHTML = `
         <div class="view-head"><div><p class="section-label">Round ${ev.r} of ${S.season.events.length} · ${K.date(ev.date)}, ${S.year}</p>
             <h1>${esc(ev.t)}</h1>
-            <div class="chip-row">${typeChip(ev.type)}<span class="chip">📏 ${b.length}${b.tr.km ? ` · ${b.tr.km} km lap` : ''}</span>
+            <div class="chip-row">${typeChip(ev.type)}<span class="chip">📏 ${b.length}${b.tr.km && !rally && !derby ? ` · ${b.tr.km} km lap` : ''}</span>
             <span class="chip">${ev.wx.cond === 'Wet' ? '🌧️' : ev.wx.cond.startsWith('Mixed') ? '🌦️' : ev.wx.cond === 'Overcast' ? '☁️' : '☀️'} ${esc(ev.wx.cond)} ${ev.wx.temp}°C</span>
             <span class="chip">${ev.night ? '🌙 Night race' : '🕒 ' + esc(ev.wx.time)}</span>
-            ${derby ? K.badge('Demolition derby', 'badge-amber') : rally ? K.badge('Rally', 'badge-amber') : ''}</div></div>
+            ${derby && ev.type !== 'ar' ? K.badge('Demolition derby', 'badge-amber') : ''}</div></div>
             ${App().undoInfo ? `<button class="btn btn-ghost btn-sm" id="rw-undo" title="${esc(App().undoInfo.label)}">↩ Undo last race</button>` : ''}</div>
         ${ev.order && !principal ? `<div class="panel-alert sc-order">📻 <strong>Team radio:</strong> telemetry shows a ${esc(ev.order.part)} problem. The team orders you to <strong>retire at ${ev.order.unit} ${ev.order.at}</strong>. Race it until then, park it, and log a mechanical DNF. (Turn these off in Settings.)</div>` : ''}
         <div class="grid-2">
@@ -294,27 +294,28 @@
     function resultPanel(S, ev, N, posLabel, derby, t) {
         const mates = t ? t.drivers.filter(id => id !== 'P') : [];
         const g = E().gameOf(S);
+        const rally = ev.format === 'rally';
         const tabs = [['manual', '✍️ Log result'], ['import', '📂 Import file'], ['sim', '🎲 Simulate']];
         return K.panel('🏁 Your result', `
             ${K.tabs(tabs, 'manual', 'data-rtab')}
             <div class="sc-rtab" data-pane="manual">
                 <form id="rs-form" class="form-grid">
                     <div class="form-row">
-                        <label class="field"><span>${derby ? 'Starting slot' : 'Started (grid)'}</span><input id="rs-start" class="input" type="number" min="1" max="${N}" placeholder="1–${N}"></label>
+                        <label class="field"><span>${derby ? 'Starting slot' : rally ? 'Start order' : 'Started (grid)'}</span><input id="rs-start" class="input" type="number" min="1" max="${N}" placeholder="1–${N}"></label>
                         <label class="field"><span>${esc(posLabel)} *</span><input id="rs-pos" class="input" type="number" min="1" max="${N}" placeholder="1–${N}" autofocus></label>
                     </div>
                     ${derby ? '' : `<label class="check"><input id="rs-dnf" type="checkbox" ${ev.order ? 'checked' : ''}> Did not finish</label>
                     <div class="form-row ${ev.order ? '' : 'hidden'}" id="rs-dnf-row">
                         <label class="field"><span>Reason</span>${K.select('rs-reason', [['crash', 'Accident / damage'], ['mech', 'Mechanical']], ev.order ? 'mech' : 'crash')}</label>
-                        <label class="field"><span>${ev.laps ? 'Laps completed' : 'Completed'}</span><input id="rs-laps" class="input" type="number" min="0" value="${ev.order ? ev.order.at : ''}"></label>
+                        <label class="field"><span>${ev.laps ? 'Laps completed' : ev.stages ? 'Stages completed' : 'Completed'}</span><input id="rs-laps" class="input" type="number" min="0" value="${ev.order ? ev.order.at : ''}"></label>
                     </div>`}
                     <div class="form-row">
                         ${derby ? '<label class="field"><span>Wrecks (cars you took out)</span><input id="rs-wrecks" class="input" type="number" min="0" value="0"></label>'
-                            : `<label class="field"><span>Laps led</span><input id="rs-led" class="input" type="number" min="0" value="0"></label>
+                            : `${rally ? '' : `<label class="field"><span>Laps led</span><input id="rs-led" class="input" type="number" min="0" max="${ev.laps || ''}" value="0"></label>`}
                                <label class="field"><span>Incidents</span><input id="rs-inc" class="input" type="number" min="0" placeholder="optional"></label>`}
                         <label class="field"><span>Car damage</span>${K.select('rs-dmg', [['none', 'None'], ['light', 'Light'], ['heavy', 'Heavy'], ['totaled', 'Destroyed']], 'none')}</label>
                     </div>
-                    ${derby ? '' : '<label class="check"><input id="rs-fl" type="checkbox"> I set the fastest lap</label>'}
+                    ${derby ? '' : `<label class="check"><input id="rs-fl" type="checkbox"> ${rally ? 'I set the fastest stage time' : 'I set the fastest lap'}</label>`}
                     ${ev.type === 'f8' ? '<label class="field"><span>Wrecks caused</span><input id="rs-wrecks" class="input" type="number" min="0" value="0"></label>' : ''}
                     ${mates.length ? `<details class="sc-details"><summary>Teammate result (optional — otherwise simulated)</summary>
                         ${mates.map(id => `<div class="form-row"><label class="field"><span>${esc(dn(S, id))}</span><input class="input" type="number" min="1" max="${N}" data-mate="${id}" placeholder="Position"></label>

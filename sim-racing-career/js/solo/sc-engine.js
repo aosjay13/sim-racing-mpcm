@@ -358,16 +358,18 @@
         const len = sd.len || { laps: 20 };
         const pct = S.settings.raceLength || 1;
         let laps = null, mins = null, stages = null;
+        // Shortened races never drop below 5 laps (or the full distance, if that's shorter).
+        const scaled = (full) => Math.max(Math.min(Math.round(full), 5), Math.round(full * pct), 1);
         if (sd.format === 'rally' || type === 'ry') {
             stages = Math.max(2, Math.round((len.stages || 6) * Math.max(0.35, pct)));
         } else if (type === 'ar') {
             mins = Math.max(3, Math.round((len.mins || 5)));
         } else if (entry.laps) {
-            laps = Math.max(1, Math.round(entry.laps * pct));
+            laps = scaled(entry.laps);
         } else if (len.laps) {
-            laps = Math.max(1, Math.round(len.laps * pct));
+            laps = scaled(len.laps);
         } else if (len.km) {
-            laps = Math.max(1, Math.round(len.km / Math.max(0.3, tr.km || 4) * pct));
+            laps = scaled(len.km / Math.max(0.3, tr.km || 4));
         } else if (len.mins) {
             mins = Math.max(5, Math.round(len.mins * pct / 5) * 5);
         }
@@ -1195,6 +1197,9 @@
             P.rep = round1(clamp(P.rep + dRep, 0, 100));
             report.repDelta = round1(dRep);
         }
+        // Recent results (positions, for the form guide on Home).
+        (P.recent || (P.recent = [])).push({ y: S.year, r: ev.r, pos: pr.dnf ? null : pr.pos, dnf: !!pr.dnf, pts: ev.res.pts?.P || 0, perf: report.perf ?? null, sim: !!pr.sim });
+        if (P.recent.length > 10) P.recent.shift();
         // Team morale in you.
         if (P.role === 'driver') {
             const mates = t.drivers.filter(id => id !== 'P');
