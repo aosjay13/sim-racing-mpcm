@@ -84,6 +84,19 @@ const log = (ok, msg) => { const line = `${ok ? '✅' : '❌'} ${msg}`; steps.pu
     log(sched.n >= 10 && sched.seasons.length === 1 && sched.day === 6, `Director scheduled ${sched.seasons[0]}: ${sched.n} rounds on Saturdays (R1 ${sched.laps} laps) — ${ran1.find(t => /Scheduled/.test(t))}`);
     log(await page.evaluate(async () => (await DB.challenges({ force: true })).length >= 1), 'Challenges are running');
     await shot('01-director-panel', true);
+    // Races dated before the Director was switched on are left alone.
+    const guard = await page.evaluate(async (ids) => {
+        const c = await Director.config(true);
+        await DB.update('races', ids[0], { date: '2020-01-04' });
+        const done = await Director.tick({ reason: 'manual', quiet: true });
+        const r = await DB.get('races', ids[0], { force: true });
+        return { activatedAt: c.activatedAt, status: r.status, simmed: done.some(a => /Round 1\b/.test(a.text)) };
+    }, sched.ids);
+    log(guard.activatedAt && guard.status === 'scheduled' && !guard.simmed, `A race dated before the Director was switched on (${guard.activatedAt}) is left for the GM`);
+    await page.evaluate(() => App.go('admin', 'overview'));
+    await page.waitForSelector('.director-panel');
+    await settle(600);
+    log(/Enter results: .*Round 1\b/i.test(await page.innerText('#admin-body')), '…and it shows up under Needs your attention');
 
     /* ---------------- 2. A player applies to an AI team: instant offer ---------------- */
     await signOut();
@@ -129,6 +142,8 @@ const log = (ok, msg) => { const line = `${ok ? '✅' : '❌'} ${msg}`; steps.pu
     const myDriverId = await page.evaluate(() => Auth.state.profile.driverId);
 
     /* ---------------- 3. Time passes: the Director catches up ---------------- */
+    // Pretend the Director has been running for a week, so time can pass.
+    await page.evaluate(async (d) => { await DB.set('config', 'director', { activatedAt: d }); }, daysAgo(7));
     // Round 1 happened 3 days ago with nobody entered; round 2 is today's human race.
     await page.evaluate(async ([ids, d3]) => { await DB.update('races', ids[0], { date: d3 }); }, [sched.ids, daysAgo(3)]);
     // Things the Director should also tidy up:

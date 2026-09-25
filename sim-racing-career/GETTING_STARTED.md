@@ -74,6 +74,10 @@ Every switch is in the Director panel, along with a log of everything it did. Wa
 less to do? Tick **Confirm results from driver reports** and races confirm themselves once
 every entered driver has reported. (You can still edit any result.)
 
+The Director never simulates races dated before the day it was first switched on, so
+anything already on your calendar stays yours to result (it shows under **Needs your
+attention**).
+
 The Director runs whenever a Game Master has the app open: on sign-in, right after you
 save results, and every 10 minutes. There's no server, so if nobody opens the app for a
 week it simply catches up next time.

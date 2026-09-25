@@ -73,13 +73,16 @@ const Admin = {
         const proposedSeries = world.series.filter(s => s.status === 'proposed');
         // Races waiting on the GM: ones people entered. With the League Director
         // on, races nobody entered get simulated for you, so they don't count.
-        const dirOn = await Director.config().then(c => c.enabled && c.simAiRaces).catch(() => false);
+        const dirCfgNow = await Director.config(true).catch(() => null);
+        const dirOn = !!(dirCfgNow?.enabled && dirCfgNow?.simAiRaces);
         let raceSignups = [];
         try { raceSignups = await DB.signups({ force: true }); } catch (e) { /* */ }
         // Today's races count too once a driver has reported their result.
         const unresulted = world.races.filter(r => (r.status !== 'completed' && r.status !== 'cancelled')
             && (Util.isPast(r.date) || (r.date === Util.todayISO() && raceSignups.some(s => s.raceId === r.id && s.report)))
-            && (!dirOn || raceSignups.some(s => s.raceId === r.id)));
+            && (!dirOn || raceSignups.some(s => s.raceId === r.id)
+                // Races from before the Director was switched on are always yours.
+                || (dirCfgNow.activatedAt && r.date < dirCfgNow.activatedAt)));
 
         // First-run checklist: what a brand-new league needs before anyone can race.
         const today = Util.todayISO();

@@ -91,7 +91,10 @@ const Director = {
         const actions = [];
         const act = (icon, text) => actions.push({ icon, text, at: new Date().toISOString() });
         try {
-            await DB.set('config', 'director', { lease: Date.now() + 3 * 60 * 1000 });
+            // First ever run: remember the day, so races already on the calendar
+            // before the Director existed are never simulated behind the GM's back.
+            if (!cfg.activatedAt) cfg.activatedAt = Util.todayISO();
+            await DB.set('config', 'director', { lease: Date.now() + 3 * 60 * 1000, activatedAt: cfg.activatedAt });
             const jobs = [
                 ['proposals', 'Series proposals', this._proposals],
                 ['recruiting', 'Recruitment', this._recruitment],
@@ -315,7 +318,8 @@ const Director = {
         const world = await DB.loadWorld(true);
         const signups = await DB.signups({ force: true }).catch(() => []);
         const due = world.races
-            .filter(r => r.status !== 'completed' && r.status !== 'cancelled' && r.date && this._daysSince(r.date) >= Math.max(1, Number(cfg.graceDays) || 0))
+            .filter(r => r.status !== 'completed' && r.status !== 'cancelled' && r.date && this._daysSince(r.date) >= Math.max(1, Number(cfg.graceDays) || 0)
+                && (!cfg.activatedAt || r.date >= cfg.activatedAt))
             .sort((a, b) => (a.date || '').localeCompare(b.date || '') || (Number(a.round) || 0) - (Number(b.round) || 0))
             .slice(0, this.MAX_RACES_PER_TICK);
         for (const race of due) {
@@ -532,7 +536,7 @@ const Director = {
 
     /* ---------------- Admin → Overview panel ---------------- */
     SWITCHES: [
-        ['simAiRaces', 'Simulate races nobody entered', 'Runs them with the AI field a couple of days after race day; cancels them if the series has no AI.'],
+        ['simAiRaces', 'Simulate races nobody entered', 'Runs them with the AI field a couple of days after race day; cancels them if the series has no AI. Races dated before the Director was switched on are left for you.'],
         ['aiFill', 'Race the AI field around your results', 'You enter the human results; AI drivers fill the other places so the whole championship moves.'],
         ['seasons', 'Close seasons and crown champions', 'When every round is done: champions, title bonuses, car-number rollover.'],
         ['autoSchedule', 'Schedule the next season', 'Real calendar for library series, otherwise last season\'s tracks, on your race day.'],
