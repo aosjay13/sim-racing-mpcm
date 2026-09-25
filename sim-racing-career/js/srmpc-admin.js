@@ -73,8 +73,34 @@ const Admin = {
         const proposedSeries = world.series.filter(s => s.status === 'proposed');
         const unresulted = world.races.filter(r => r.status !== 'completed' && Util.isPast(r.date));
 
+        // First-run checklist: what a brand-new league needs before anyone can race.
+        const today = Util.todayISO();
+        const appLink = location.href.split('#')[0];
+        const steps = [
+            { done: world.games.length > 0, title: 'Add a game', body: 'Install one from the library — it brings real series, points and tracks.',
+                btn: window.Library?.ok() ? `<button class="btn btn-primary btn-sm" onclick="Library.installForm()">📚 Game library</button>` : `<button class="btn btn-primary btn-sm" onclick="Admin.gameForm()">🎮 Add game</button>` },
+            { done: world.series.length > 0, title: 'Create a series', body: 'Library installs add series for you; or make your own championship.',
+                btn: `<button class="btn btn-secondary btn-sm" onclick="Admin.seriesForm()">🏆 New series</button>` },
+            { done: world.races.some(r => r.status !== 'completed' && (r.date || '') >= today) || world.races.some(r => r.status === 'completed'), title: 'Schedule races', body: 'The Schedule Builder turns a track list (or the real calendar) into a season.',
+                btn: world.series.length ? `<button class="btn btn-secondary btn-sm" onclick="Admin.scheduleBuilder()">📅 Schedule builder</button>` : '' },
+            { done: users.length > 0, title: 'Invite your drivers', body: `Share the app link. Drivers create an account, pick <strong>My Career → Driver</strong>, and sign up for races.<br><span class="setup-link">${Util.esc(appLink)}</span>`,
+                btn: `<button class="btn btn-secondary btn-sm" data-copy-link="${Util.esc(appLink)}">📋 Copy link</button>` },
+            { done: world.races.some(r => r.status === 'completed'), title: 'Run the first race', body: 'After the race, open it and Enter Results — import the sim\'s results file or use your drivers\' reports.',
+                btn: '' }
+        ];
+        const setupDone = steps.every(x => x.done);
+
         el.innerHTML = `
-        <div class="stat-strip">
+        ${setupDone ? '' : `<section class="panel setup-panel">
+            <div class="panel-head"><h2>🚀 Get your league racing</h2><span class="chip chip-dim">${steps.filter(x => x.done).length}/${steps.length} done</span></div>
+            <ol class="setup-steps">${steps.map((x, i) => `
+                <li class="setup-step ${x.done ? 'done' : ''}">
+                    <span class="setup-step-mark">${x.done ? '✓' : i + 1}</span>
+                    <div class="setup-step-main"><strong>${x.title}</strong><span class="muted small">${x.body}</span></div>
+                    ${x.done ? '' : x.btn}
+                </li>`).join('')}</ol>
+        </section>`}
+        <div class="stat-strip" ${setupDone ? '' : 'style="margin-top:1.1rem"'}>
             ${C.statChip(world.games.length, 'Games')}
             ${C.statChip(world.series.length, 'Series')}
             ${C.statChip(world.races.length, 'Races')}
@@ -87,6 +113,7 @@ const Admin = {
             <section class="panel">
                 <div class="panel-head"><h2>⚡ Quick Actions</h2></div>
                 <div class="quick-grid">
+                    ${window.Library?.ok() ? `<button class="btn btn-secondary" onclick="Library.installForm()">📚 Game Library</button>` : ''}
                     <button class="btn btn-secondary" onclick="Admin.gameForm()">🎮 Add Game</button>
                     <button class="btn btn-secondary" onclick="Admin.seriesForm()">🏆 New Series</button>
                     <button class="btn btn-secondary" onclick="Admin.scheduleBuilder()">📅 Schedule Builder</button>
@@ -128,6 +155,12 @@ const Admin = {
             </section>
         </div>`;
 
+        Util.$('[data-copy-link]', el)?.addEventListener('click', (e) => {
+            const link = e.currentTarget.dataset.copyLink;
+            const done = () => Util.notify('App link copied — send it to your drivers. 📋');
+            if (navigator.clipboard?.writeText) navigator.clipboard.writeText(link).then(done, () => Util.notify('Copy failed — select the link and copy it.', 'error'));
+            else done();
+        });
         Util.$('[data-admin-goto]', el)?.addEventListener('click', (e) => {
             this._tab = e.target.dataset.adminGoto;
             this.render(document.getElementById('view-root'));

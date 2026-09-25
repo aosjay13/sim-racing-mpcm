@@ -1,7 +1,7 @@
 /* ============================================================
    Phoenix SRMPC — Contract performance clauses
    Pure evaluation engine for the advanced-contract system
-   (RECRUITMENT_CONTRACTS_DESIGN.md). No function here moves
+   (docs/design/RECRUITMENT_CONTRACTS_DESIGN.md). No function here moves
    money or writes documents — Sim.payoutRace settles per-race
    clauses and Admin.closeSeason settles championship bonuses
    and termination stipulations.

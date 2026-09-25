@@ -1,5 +1,9 @@
 # Firebase Setup Guide
 
+> **Setting up your own copy.** The live league already runs on `sim-racing-career-228a3`; for
+> the league owner's checklist (sign-in methods, authorized domains, rules) see
+> [GETTING_STARTED.md](GETTING_STARTED.md#league-owner-one-time-firebase-checklist).
+
 This guide will walk you through setting up Firebase for your Sim Racing Career application.
 
 ## Step 1: Create a Firebase Project

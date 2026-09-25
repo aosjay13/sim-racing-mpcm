@@ -81,7 +81,7 @@ const App = {
 
         if (SRMPC.firebaseError) {
             document.getElementById('boot-error').classList.remove('hidden');
-            document.getElementById('boot-error-msg').textContent = SRMPC.firebaseError.message;
+            document.getElementById('boot-error-msg').textContent = 'Details: ' + SRMPC.firebaseError.message;
             return;
         }
 
@@ -376,7 +376,7 @@ const App = {
             if (!email) { this._gateError('Enter your email first, then click "Forgot password".'); return; }
             try {
                 await Auth.sendPasswordReset(email);
-                Util.notify('Password reset email sent — check your inbox.');
+                Util.notify('If an account exists for that email, a reset link is on its way. Check your inbox (and spam).');
             } catch (err) { this._gateError(this._friendlyAuthError(err)); }
         });
 
@@ -491,7 +491,16 @@ const App = {
             'auth/email-already-in-use': 'This email is already registered — switch to Sign In.',
             'auth/weak-password': 'Password is too weak — use at least 6 characters.',
             'auth/too-many-requests': 'Too many attempts. Wait a bit and try again.',
-            'auth/network-request-failed': 'Network error — check your connection and try again.'
+            'auth/network-request-failed': 'Network error — check your connection and try again.',
+            'auth/invalid-login-credentials': 'Incorrect email or password.',
+            'auth/missing-password': 'Enter your password.',
+            'auth/missing-email': 'Enter your email address.',
+            'auth/user-disabled': 'This account has been disabled. Ask your league\'s Game Master for help.',
+            'auth/operation-not-allowed': 'Email sign-in isn\'t switched on for this league yet. The league owner needs to enable Email/Password in Firebase → Authentication → Sign-in method.',
+            'auth/admin-restricted-operation': 'This sign-in method is switched off for the league. The league owner can enable it in Firebase → Authentication → Sign-in method.',
+            'auth/unauthorized-domain': 'This website address isn\'t authorised for sign-in yet. The league owner needs to add it in Firebase → Authentication → Settings → Authorized domains.',
+            'auth/quota-exceeded': 'The league has hit its sign-in limit for now. Try again later.',
+            'auth/internal-error': 'The sign-in service had a hiccup. Try again in a moment.'
         };
         return map[err.code] || err.message || 'Something went wrong. Please try again.';
     }

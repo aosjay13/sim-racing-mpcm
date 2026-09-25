@@ -25,7 +25,7 @@
 
    NOTE (number surrender): "surrender car numbers to the auction pool for
    a refund" is a designed-but-unbuilt lever — the Series Number registry
-   (CAR_NUMBER_REGISTRY_DESIGN.md) is not implemented. The hook below
+   (docs/design/CAR_NUMBER_REGISTRY_DESIGN.md) is not implemented. The hook below
    (numbersAvailable / the liquidation modal) lights up automatically once
    a `Numbers` module exposes surrenderForTeam(); until then it's hidden.
    ============================================================ */

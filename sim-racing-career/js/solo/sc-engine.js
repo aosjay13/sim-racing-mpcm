@@ -1592,7 +1592,6 @@
        Sponsors
        ============================================================ */
     function objectiveFor(S, t) {
-        const sd = seriesDef(S, t.sid);
         const ranked = teamsIn(S, t.sid).sort((a, b) => carScore(b, 'rd') - carScore(a, 'rd'));
         const rank = ranked.findIndex(x => x.id === t.id) + 1;
         const strong = rank <= Math.ceil(ranked.length / 4);
@@ -1605,7 +1604,6 @@
         if (kind === 'podium') return { kind, target: clamp(Math.round(n * rf(S, 0.1, 0.3)), 1, n), label: null };
         if (kind === 'top10') return { kind, target: clamp(Math.round(n * rf(S, 0.3, 0.7)), 1, n), label: null };
         return { kind: 'finish', target: clamp(Math.round(n * 0.7), 1, n), label: null };
-        void sd;
     }
     function objLabel(o) {
         if (!o) return '—';

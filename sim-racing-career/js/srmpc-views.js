@@ -215,6 +215,32 @@ window.C = C;
    Views
    ============================================================ */
 const Views = {
+    /* ---------------- Player "what's next" banner ---------------- */
+    // One clear next step for a signed-in player: pick a role → create a
+    // driver → sign up for the next race → report the result.
+    async _playerNextStep(world) {
+        if (!Auth.isPlayer()) return '';
+        const p = Auth.state.profile || {};
+        const today = Util.todayISO();
+        const upcoming = world.races.filter(r => r.status !== 'completed' && (r.date || '') >= today)
+            .sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.time || '').localeCompare(b.time || ''));
+        const banner = (icon, text, btn = '') => `<div class="next-step"><span class="next-step-icon">${icon}</span><div class="next-step-text">${text}</div>${btn}</div>`;
+        const careerBtn = (label) => `<button class="btn btn-primary btn-sm" onclick="App.go('career')">${label}</button>`;
+        if (!p.activeRole) return banner('👋', '<strong>Welcome to the league!</strong> Pick your career role to get started. Most people start as a Driver.', careerBtn('Choose a role'));
+        if (p.activeRole !== 'driver') return '';
+        if (!p.driverId) return banner('🪖', '<strong>Next: create your driver</strong> (name, nationality, helmet colour), then sign up for a race.', careerBtn('Create my driver'));
+        let mine = [];
+        try { mine = (await DB.signups()).filter(s => s.uid === Auth.uid()); } catch (e) { /* signups need auth */ }
+        const due = world.races.find(r => window.Library?.canReport(r) && mine.some(s => s.raceId === r.id && !s.report));
+        const open = (r, label) => `<button class="btn btn-primary btn-sm" onclick="Views.showRace('${Util.attr(r.id)}')">${label}</button>`;
+        if (due) return banner('📝', `<strong>Raced ${Util.esc(due.name || due.track)}?</strong> Report your result so the Game Master can confirm it.`, open(due, 'Report my result'));
+        const entered = upcoming.find(r => mine.some(s => s.raceId === r.id));
+        const nextOpen = upcoming.find(r => !mine.some(s => s.raceId === r.id));
+        if (entered) return banner('🏁', `You're entered in <strong>${Util.esc(entered.name || entered.track)}</strong> on ${Util.esc(Util.fmtDate(entered.date))}. Open it for the setup briefing.`, open(entered, 'Race briefing'));
+        if (nextOpen) return banner('🚦', `<strong>Next race:</strong> ${Util.esc(nextOpen.name || nextOpen.track)} on ${Util.esc(Util.fmtDate(nextOpen.date))}. Get yourself on the grid.`, open(nextOpen, 'Sign up'));
+        return banner('📅', 'No league races are scheduled yet. The Game Master adds them from the Schedule Builder. Meanwhile, you can race the Solo Career.', `<a class="btn btn-secondary btn-sm" href="career.html">🏁 Solo Career</a>`);
+    },
+
     /* ---------------- Dashboard ---------------- */
     async dashboard(el) {
         const world = await DB.loadWorld();
@@ -240,8 +266,10 @@ const Views = {
         } catch (e) { /* challenges are optional on dashboard */ }
 
         const isAdmin = Auth.isAdmin();
+        const nextStep = await this._playerNextStep(world);
 
         el.innerHTML = `
+        ${nextStep}
         <div class="view-head">
             <div>
                 <h1>League Dashboard</h1>

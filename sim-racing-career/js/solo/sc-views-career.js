@@ -375,7 +375,6 @@
     function driverMarketTab(S) {
         const P = S.player;
         const t = S.teams[P.teamId];
-        const sd = E().seriesDef(S, t.sid);
         const f = V._marketFilter;
         let rows = E().marketFor(S);
         if (f === 'fa') rows = rows.filter(r => !r.team);
@@ -389,7 +388,6 @@
                 ${t.facilities.scouting >= 3 ? `<td class="num">${Math.round(r.d.pot)}</td>` : ''}<td class="small">${r.team ? esc(r.team.name) + ` <span class="muted">(${esc(r.series)})</span>` : '<span class="muted">Free agent</span>'}</td>
                 <td class="num">${K.money(r.ask)}</td><td class="num">${r.buyout ? K.money(r.buyout) : '—'}</td><td><button class="btn btn-secondary btn-sm" data-hire="${r.d.id}">Sign…</button></td></tr>`).join('')}
             </tbody></table></div>`);
-        void sd;
     }
 
     function myDriversTab(S) {

@@ -287,12 +287,32 @@ function makeNpcName(usedNames) {
     return fallback;
 }
 
+// A driver name that matches their nationality, drawn from the Solo Career's
+// nation list (so "Freya Lindqvist" isn't flying a French flag). Falls back to
+// the generic pool if the shared library isn't loaded.
+const NPC_NATION_MIX = { USA: 22, GBR: 12, GER: 9, ITA: 8, FRA: 7, BRA: 7, ESP: 6, JPN: 6, AUS: 5, CAN: 5, NED: 4, MEX: 3, SWE: 3, FIN: 3 };
+function makeNpcNationalName(usedNames) {
+    const N = window.SC?.NATIONS;
+    const mix = N ? Object.entries(NPC_NATION_MIX).filter(([code]) => N[code]) : [];
+    if (!mix.length) return { name: makeNpcName(usedNames), nat: null, country: _rand(NPC_POOL.countries) };
+    const total = mix.reduce((t, [, w]) => t + w, 0);
+    for (let i = 0; i < 60; i++) {
+        let r = Math.random() * total, nat = mix[0][0];
+        for (const [code, w] of mix) { r -= w; if (r <= 0) { nat = code; break; } }
+        const name = `${_rand(N[nat].first)} ${_rand(N[nat].last)}`;
+        if (!usedNames.has(name)) { usedNames.add(name); return { name, nat, country: N[nat].name }; }
+    }
+    return { name: makeNpcName(usedNames), nat: null, country: _rand(NPC_POOL.countries) };
+}
+
 function makeNpcDriver(usedNames, teamId = null) {
     const rating = _randInt(55, 95);
+    const who = makeNpcNationalName(usedNames);
     return {
-        name: makeNpcName(usedNames),
+        name: who.name,
+        nat: who.nat,
         number: _randInt(2, 99),
-        country: _rand(NPC_POOL.countries),
+        country: who.country,
         bio: '',
         teamId,
         ownerUid: null,

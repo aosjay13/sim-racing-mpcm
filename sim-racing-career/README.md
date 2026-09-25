@@ -10,6 +10,10 @@ Two ways to run a sim-racing career across every game you play:
 
 Live site: <https://aosjay13.github.io/sim-racing-mpcm/>
 
+**New here? Read [GETTING_STARTED.md](GETTING_STARTED.md)**: how to play the Solo Career,
+join a league as a driver, run one as the Game Master, and the league owner's one-time
+Firebase checklist.
+
 ## Solo Career
 
 Pick a game, a series and a role (driver, owner-driver or team principal). Before
@@ -67,6 +71,7 @@ and score the same:
 - `js/srmpc-library.js` — the league's bridge to the shared library
 - `app.html`, `css/style.css`, `js/srmpc-*.js` — League app (`js/srmpc-core.js` holds the Firebase config)
 - `firestore.rules` — Firestore security rules for the league app
+- `docs/design/` — design notes (contracts, recruitment, car number registry); `docs/archive/` — older notes
 
 ## Local development
 

@@ -119,3 +119,17 @@ age / helmet on driver profiles, and Solo-style achievements.
 - The GM results form contains the import mapping table: select result rows with
   `#results-form .results-table tbody tr`, not `#results-form tbody tr`.
 
+## Whole-app sweep (v3.32.0)
+
+- `node sweep-drive.js` — the "can people start today" check. On an empty league the GM sees
+  the 🚀 *Get your league racing* checklist; then it builds a populated league (Real-World
+  Pack, a library install with AI field, free agents, personas, a simulated season,
+  challenges, dealership) and visits every admin tab, every view, every series page, the
+  common modals, every player role's workspace and the player's dashboard next-step banner.
+  Flags page/console errors, leaked values (NaN / undefined / null / [object …]), the
+  "Something went wrong" error page, sideways scroll at 390px (and Sign out staying on
+  screen), the landing pages on a phone, and the *Can't reach the league server* screen when
+  Firebase is blocked. Screenshots in `harness/sweep-shots/` (git-ignored).
+- `innerText` of the sign-in card is UPPERCASE for buttons (CSS text-transform): match
+  with `/…/i`.
+

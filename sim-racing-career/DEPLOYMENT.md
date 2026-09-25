@@ -1,5 +1,9 @@
 # Deployment Guide
 
+> **Hosting your own copy.** The live league is served by GitHub Pages from `main`
+> (<https://aosjay13.github.io/sim-racing-mpcm/>); pushing to `main` redeploys it.
+> To start playing, see [GETTING_STARTED.md](GETTING_STARTED.md).
+
 This guide covers deploying your Sim Racing Career application to various platforms.
 
 ## Overview of Deployment Options
