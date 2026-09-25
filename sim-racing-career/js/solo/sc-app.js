@@ -43,6 +43,8 @@
         },
 
         async fromHash() {
+            // Navigating away (links, back button) never leaves a dialog stranded.
+            if (document.getElementById('sc-modal')) K.Modal.close();
             const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
             try {
                 if (!parts.length) { this.S = null; this.route = { name: 'launcher' }; }

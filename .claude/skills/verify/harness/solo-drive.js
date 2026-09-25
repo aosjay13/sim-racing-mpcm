@@ -375,6 +375,29 @@ const log = (ok, msg) => { const line = `${ok ? '✅' : '❌'} ${msg}`; steps.pu
     const customAi = await page.innerText('.sc-setup-ai');
     log(/AI Difficulty/i.test(customAi), 'Custom game setup card: ' + customAi.replace(/\n/g, ' '));
 
+    /* ---------------- 14b. Derby + rally formats, modal vs navigation ---------------- */
+    await newCareer({ game: 'wreckfest', series: 'derbyleague', role: 'driver', first: 'Dana', last: 'Derby' });
+    await go('race'); await page.click('#ps-start'); await toast(/underway/);
+    await page.waitForSelector('#rs-form');
+    log(!(await page.$('#rs-dnf')) && !!(await page.$('#rs-wrecks')), 'Derby round: survival position + wrecks, no DNF box');
+    await page.fill('#rs-pos', '2'); await page.fill('#rs-wrecks', '4');
+    await page.click('#rs-form button[type=submit]');
+    await page.waitForSelector('.sc-report-hero');
+    const dz = await page.evaluate(() => { const e = SC.App.S.season.events[0]; return { w: e.res.wrecks.P, pts: e.res.pts.P }; });
+    log(dz.w === 4 && dz.pts === 12, `Derby scoring: P2 (8) + 4 wrecks = ${dz.pts} pts`);
+    await page.evaluate(() => SC.App.go('standings'));
+    await settle(500);
+    log(!(await page.$('#sc-modal')), 'Navigating away closes an open report dialog');
+    await newCareer({ game: 'eawrc', series: 'wrc2', role: 'driver', first: 'Riley', last: 'Rally' });
+    await go('race'); await page.click('#ps-start'); await toast(/underway/);
+    await page.waitForSelector('#rs-form');
+    log(/stages/.test(await page.innerText('.sc-dl')), 'Rally round lists stages, not laps');
+    await page.fill('#rs-pos', '5');
+    await page.click('#rs-form button[type=submit]');
+    await page.waitForSelector('.sc-report-hero');
+    log(/P5 overall/.test(await page.innerText('.sc-report-hero')), 'Rally report: overall classification');
+    await page.click('#sc-modal [data-close]');
+
     /* ---------------- 15. Import a save file ---------------- */
     await page.goto(BASE + '#/');
     await page.waitForSelector('#sc-import-save', { state: 'attached' });

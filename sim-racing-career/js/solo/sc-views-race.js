@@ -442,7 +442,8 @@
         const t = S.teams[P.teamId];
         const head = principal
             ? `${t.drivers.map(id => `${esc(dn(S, id))} ${res.dnf[id] ? 'DNF' : 'P' + (res.order.indexOf(id) + 1)}`).join(' · ')}`
-            : pr.dnf ? `Retired (${pr.dnfReason === 'mech' ? 'mechanical' : 'accident'}) · started P${pr.start}` : `P${pr.pos} from P${pr.start} · ${pr.pts} pts`;
+            : pr.dnf ? `Retired (${pr.dnfReason === 'mech' ? 'mechanical' : 'accident'})${ev.format === 'rally' ? '' : ` · started P${pr.start}`}`
+                : `P${pr.pos}${ev.format === 'rally' ? ' overall' : ` from P${pr.start}`} · ${pr.pts} pts`;
         K.Modal.open(`
             ${K.Modal.head(rep.headline || `Round ${ev.r} report`, `${ev.t} · ${esc(E().seriesDef(S, S.history.length && rep.seasonOver ? S.history[S.history.length - 1].sid : S.season.sid).name)}`)}
             <div class="sc-report-hero ${!principal && !pr.dnf && pr.pos === 1 ? 'win' : ''}">
