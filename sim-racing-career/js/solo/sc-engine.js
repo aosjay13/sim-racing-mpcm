@@ -504,9 +504,12 @@
             P.teamId = t.id;
             t.drivers.push('P');
             // Teammate(s): best cheap free agents.
+            // Teammate(s): a free agent at the series' usual level — a new team
+            // can't attract a star (hire one later from the Market).
             for (let c = 1; c < cars; c++) {
-                const fas = freeAgentsFor(S, sd).sort((a, b) => b.skill - a.skill);
-                const fa = fas[Math.min(3, fas.length - 1)] || makeDriver(S, { tier: sd.tier, quality: 0.3, ladder: sd.ladder });
+                const want = tierSkill(sd.tier) - 3;
+                const fas = freeAgentsFor(S, sd).filter(d => Math.abs(d.skill - want) <= 5).sort((a, b) => Math.abs(a.skill - want) - Math.abs(b.skill - want));
+                const fa = fas[0] || makeDriver(S, { tier: sd.tier, quality: 0.3, ladder: sd.ladder });
                 signDriver(S, fa, t, 1);
             }
             P.contract = { teamId: t.id, seasons: 99, status: 'lead', salary: Math.round(salary * 0.2 / 100) * 100, winBonus: 0, podiumBonus: 0, prizeShare: 0, owner: true };
@@ -1839,7 +1842,8 @@
     function makeOffer(S, t, sd, margin, mid = false) {
         const P = S.player;
         const base = tierSalary(sd);
-        const factor = clamp(0.35 + (t.prestige / 100) * 0.5 + margin * 0.05, 0.15, 3) * DIFF[S.settings.difficulty].money * (P.agent ? 1.12 : 1);
+        // Top teams pay the most; how much they want you adds a premium on top.
+        const factor = clamp(0.3 + (t.prestige / 100) * 0.8 + clamp(margin, -10, 20) * 0.025, 0.15, 3) * DIFF[S.settings.difficulty].money * (P.agent ? 1.12 : 1);
         let salary = Math.round(base * factor / 100) * 100;
         let pay = false;
         if (margin < -2 && sd.tier >= 3) { salary = -Math.round(base * clamp(-margin * 0.05, 0.1, 0.6) / 100) * 100; pay = true; }
@@ -2015,7 +2019,11 @@
                 if (pool[0]) offers.push(makeOffer(S, pool[0], csd, -4));
             }
             // Already signed for next season (mid-season pre-contract)? The market is closed.
-            S.offers = P.nextContract ? [] : S.offers.filter(o => o.mid).concat(offers);
+            // Otherwise keep the mid-season approaches and cap the table at 5 offers.
+            const mids = S.offers.filter(o => o.mid);
+            const renewal = offers.filter(o => o.renewal);
+            const fresh = offers.filter(o => !o.renewal).slice(0, Math.max(1, 5 - mids.length - renewal.length));
+            S.offers = P.nextContract ? [] : renewal.concat(mids, fresh);
             if (S.offers.length) inbox(S, '📨', `${S.offers.length} contract offer${S.offers.length > 1 ? 's' : ''} on the table`, `Review them in Contracts before the new season.${P.contract && P.contract.seasons > 0 ? ` You're still under contract with ${S.teams[P.teamId].name} for ${P.contract.seasons} more season${P.contract.seasons > 1 ? 's' : ''} — moving means they get a buyout.` : ''}`, 'contract');
         }
         // Last season's unsigned offers expire; a fresh batch arrives.
@@ -2381,18 +2389,25 @@
         S.regsResetIn -= 1;
         const reset = S.regsResetIn <= 0;
         if (reset) S.regsResetIn = ri(S, 5, 8);
+        // Every winter the pack is pulled halfway back toward the regulations
+        // baseline, so ratings keep their meaning across 40 seasons (the order
+        // carries over; the absolute numbers don't inflate toward 99).
+        const ANCHOR = { engine: 62, aero: 62, chassis: 62, rel: 72 };
         for (const sid of Object.keys(S.series)) {
             const ts = teamsIn(S, sid);
-            const m = {};
-            ['engine', 'aero', 'chassis', 'rel'].forEach(k => { m[k] = mean(ts.map(t => t.car[k])); });
+            const m = {}, target = {};
+            ['engine', 'aero', 'chassis', 'rel'].forEach(k => {
+                m[k] = mean(ts.map(t => t.car[k]));
+                target[k] = m[k] - (m[k] - ANCHOR[k]) * 0.5;
+            });
             for (const t of ts) {
                 const keep = reset ? 0.35 : 0.72;
                 ['engine', 'aero', 'chassis'].forEach(k => {
-                    const regressed = m[k] + (t.car[k] - m[k]) * keep;
+                    const regressed = target[k] + (t.car[k] - m[k]) * keep;
                     const bonus = (t.player ? (t.nextYear || 0) / 3 : (t.fund - 1) * 2.5 + (t.tech - 50) / 25) + (reset ? gauss(S) * 4 : gauss(S) * 1.2);
                     t.car[k] = round1(clamp(regressed + bonus, 25, 97));
                 });
-                t.car.rel = round1(clamp(m.rel + (t.car.rel - m.rel) * 0.8 + ((t.staff?.td?.skill ?? t.tech) - 50) / 20, 30, 98));
+                t.car.rel = round1(clamp(target.rel + (t.car.rel - m.rel) * 0.8 + ((t.staff?.td?.skill ?? t.tech) - 50) / 20, 30, 98));
                 if (t.player) t.nextYear = 0;
             }
         }
@@ -2460,9 +2475,22 @@
                 if (d.years <= 0) {
                     const sd = seriesDef(S, t.sid);
                     const keep = d.skill >= tierSkill(sd.tier) - 4 + (t.prestige - 50) / 12 && rnd(S) < 0.7;
-                    if (keep) { d.years = ri(S, 1, 3); d.salary = E.driverAsk(S, d, sd); }
-                    else if (!t.player) releaseDriver(S, d);
-                    else { d.years = 1; } // your own drivers stay until you release them — they re-sign for a season
+                    if (t.player) {
+                        // Your own drivers: stars get poached by the series above; the
+                        // rest re-sign for a season at their current market rate.
+                        const up = g.series.some(x => x.ladder === sd.ladder && x.tier === sd.tier - 1);
+                        if (up && d.skill > tierSkill(sd.tier) + 6 && rnd(S) < 0.5) {
+                            releaseDriver(S, d);
+                            d.lastTier = sd.tier;
+                            inbox(S, '🦅', `${d.first} ${d.last} has been poached`, `A team in the series above made ${d.first} ${d.last} an offer you couldn't match. Sign a replacement in the Market before round 1.`, 'team');
+                        } else {
+                            const ask = E.driverAsk(S, d, sd);
+                            const raise = ask > d.salary;
+                            d.years = 1; d.salary = Math.max(d.salary, ask);
+                            inbox(S, '✍️', `${d.first} ${d.last} re-signed`, `One more season at ${fmtMoney(d.salary)}${raise ? ' — a raise, after a strong year' : ''}. Release or extend them from the Market.`, 'team');
+                        }
+                    } else if (keep) { d.years = ri(S, 1, 3); d.salary = E.driverAsk(S, d, sd); }
+                    else releaseDriver(S, d);
                 }
             }
         }

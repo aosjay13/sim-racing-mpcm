@@ -209,7 +209,7 @@
                 </div>
                 <div class="sc-rd-levels">${levels.map(([k, L]) => `<button class="sc-rd-level" data-rd="${k}" ${projects.length >= slots ? 'disabled' : ''}>
                     <strong>${esc(L.label)}</strong><span>${K.money(E().rdCost(S, k))}</span><span class="muted small">${L.rounds} rounds · +${L.gain[0]}–${L.gain[1]} pts · ${Math.round(L.fail * 100)}% risk</span></button>`).join('')}</div>
-                <p class="muted small">Gains scale with your Technical Director, Design Centre, Wind Tunnel (aero) and Dyno (engine)${S.player.role === 'owner' ? ', and your own technical feedback' : ''}. The further ahead of the field you are, the harder each point gets. Every car regresses ~28% toward the pack at season end.</p>`)}
+                <p class="muted small">Gains scale with your Technical Director, Design Centre, Wind Tunnel (aero) and Dyno (engine)${S.player.role === 'owner' ? ', and your own technical feedback' : ''}. The further ahead of the field you are, the harder each point gets. Each winter every car keeps ~72% of its advantage over the pack, and the whole field is pulled back toward the regulations baseline.</p>`)}
         </div>`;
     }
 
