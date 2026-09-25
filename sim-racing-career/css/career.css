@@ -53,7 +53,9 @@ tr.sc-subrow td { border-bottom: 1px solid var(--panel-border); padding-top: 0; 
 .sc-nav-icon { margin-right: .25rem; }
 /* The shell re-renders after every action — no stagger replay on the nav. */
 .sc-header .nav-btn { animation: none; }
-.sc-header .nav-btn:has(.nav-badge) { padding-right: 1.45rem; }
+.sc-header .nav-btn:has(.nav-badge) { padding-right: 1.6rem; }
+.sc-header .nav-badge { top: -2px; right: -4px; }
+.form-row:has(> .btn) { align-items: flex-end; }
 .sc-header .brand-name { font-size: 1rem; white-space: nowrap; }
 
 /* ---------- launcher ---------- */
@@ -178,6 +180,10 @@ tr.sc-subrow td { border-bottom: 1px solid var(--panel-border); padding-top: 0; 
 .sc-rd-level:hover:not(:disabled) { border-color: var(--accent-2); }
 .sc-rd-level:disabled { opacity: .5; cursor: not-allowed; }
 .sc-fac .panel-head { margin-bottom: .5rem; }
+.sc-fac { display: flex; flex-direction: column; }
+.sc-fac > .btn, .sc-fac > p:last-child { margin-top: auto; }
+.sc-wrap-btn { white-space: normal; line-height: 1.25; height: auto; text-align: center; flex-direction: column; gap: .15rem; }
+.sc-wrap-btn .small { font-weight: 500; opacity: .85; text-transform: none; letter-spacing: 0; }
 .sc-level { font-family: var(--font-display); font-weight: 700; color: var(--accent-2); }
 .sc-level-pips { display: flex; gap: 4px; margin-bottom: .5rem; }
 .sc-level-pips span { flex: 1; height: 6px; border-radius: 3px; background: var(--bg-3); }

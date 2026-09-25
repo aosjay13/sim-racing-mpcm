@@ -2684,6 +2684,21 @@
         { id: 'pw-board', icon: '📋', label: 'Board’s Favourite (95% confidence)', principal: true, test: (S) => S.player.role === 'principal' && (S.player.board?.confidence || 0) >= 95 }
     ];
     E.ACHIEVEMENTS = ACH;
+    // The achievements that can actually be earned in this career (plus any already unlocked).
+    function achievementsFor(S) {
+        const role = S.player.role;
+        const g = gameOf(S);
+        const derby = (g.series || []).some(sd => sd.format === 'derby' || sd.format === 'mixed');
+        return ACH.filter(a => {
+            if (S.achievements[a.id]) return true;
+            if (role === 'principal') return a.principal || ['millionaire', 'iron'].includes(a.id);
+            if (a.principal) return false;
+            if (a.id === 'owner-win') return role === 'owner';
+            if (a.id === 'wrecker') return derby;
+            return true;
+        });
+    }
+    E.achievementsFor = achievementsFor;
     function checkAchievements(S, ev) {
         for (const a of ACH) {
             if (S.achievements[a.id]) continue;

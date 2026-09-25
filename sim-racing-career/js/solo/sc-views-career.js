@@ -235,7 +235,7 @@
             return `<article class="panel sc-fac"><div class="panel-head"><h2>${f.icon} ${esc(f.label)}</h2><span class="sc-level">L${lvl}</span></div>
                 <div class="sc-level-pips">${[1, 2, 3, 4, 5].map(i => `<span class="${i <= lvl ? 'on' : ''}"></span>`).join('')}</div>
                 <p class="muted small">${esc(f.desc)}</p>
-                ${b ? `<p class="small">🏗️ Building L${b.to}: ${b.left} round${b.left === 1 ? '' : 's'} left</p>` : c ? `<button class="btn btn-secondary btn-sm" data-fac="${k}">Upgrade to L${c.to} — ${K.money(c.cost)} · ${c.rounds} rounds</button>` : '<p class="small">✅ Maximum level</p>'}
+                ${b ? `<p class="small">🏗️ Building L${b.to}: ${b.left} round${b.left === 1 ? '' : 's'} left</p>` : c ? `<button class="btn btn-secondary btn-sm btn-block sc-wrap-btn" data-fac="${k}"><span>Upgrade to L${c.to}</span><span class="small">${K.money(c.cost)} · ${c.rounds} rounds</span></button>` : '<p class="small">✅ Maximum level</p>'}
             </article>`;
         }).join('')}</div>`;
     }
@@ -445,7 +445,7 @@
         const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
         const income = rows.filter(l => l.a > 0).reduce((s, l) => s + l.a, 0);
         const spend = rows.filter(l => l.a < 0).reduce((s, l) => s + l.a, 0);
-        const seasons = [...new Set(S.ledger.map(l => l.s))].sort((a, b) => b - a);
+        const seasons = [...new Set([S.seasonNo, ...S.ledger.map(l => l.s)])].sort((a, b) => b - a);
         const catLabel = { salary: 'Salaries', bonus: 'Bonuses', prize: 'Prize money', sponsor: 'Sponsors', living: 'Living costs', agent: 'Agent', ops: 'Race operations', staff: 'Staff', facilities: 'Facilities', rd: 'R&D', repairs: 'Repairs', funding: 'Series & owner funding', interest: 'Interest', entry: 'Entry fees', team: 'Team deals', training: 'Training' };
         el.innerHTML = `
         <div class="view-head"><div><h1>💰 Finances</h1><p class="muted">Two separate wallets: your personal money and ${showTeam ? 'the team budget' : 'your team’s (run by the AI)'}.</p></div></div>
@@ -457,7 +457,7 @@
         </div>
         <div class="form-row sc-gap">
             ${showTeam ? `<label class="field sc-narrow"><span>Wallet</span>${K.select('fi-wallet', [['t', '🏢 Team budget'], ['p', '👤 Personal']], wallet)}</label>` : ''}
-            <label class="field sc-narrow"><span>Season</span>${K.select('fi-season', (seasons.length ? seasons : [S.seasonNo]).map(s => [s, `Season ${s} (${S.startYear + s - 1})`]), season)}</label>
+            <label class="field sc-narrow"><span>Season</span>${K.select('fi-season', seasons.map(s => [s, `Season ${s} (${S.startYear + s - 1})`]), season)}</label>
         </div>
         <div class="grid-2">
             ${K.panel('Where the money went', cats.length ? K.hbars(cats.map(([c, v]) => ({ label: catLabel[c] || c, value: v, color: v >= 0 ? 'var(--good)' : 'var(--bad)' })), { fmt: (v) => K.signed(v) }) : '<p class="muted">No transactions yet this season.</p>')}
@@ -509,7 +509,7 @@
         const drChart = principal ? '' : K.lineChart([{ name: 'Driver rating', color: '#3987e5', values: hist.map(h => Math.round(h.dr)) }, { name: 'Reputation', color: '#17a673', values: hist.map(h => Math.round(h.rep)) }], labels, { maxY: 100 });
         const tracks = principal ? [] : E().careerTrackTable(S).slice(0, 30);
         const types = principal ? [] : E().typeRatings(S);
-        const ach = E().ACHIEVEMENTS;
+        const ach = E().achievementsFor(S);
         el.innerHTML = `
         <section class="sc-profile">
             <div class="sc-helmet" style="--hc:${esc(P.color)}">${principal ? '📋' : `<span>${P.num}</span>`}</div>
