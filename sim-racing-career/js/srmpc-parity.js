@@ -126,8 +126,11 @@ const Parity = {
     // The AI principal only opens contract talks it can actually fund: not
     // insolvent / in receivership, and holding sign-on + first payroll.
     async assertAICanBid(teamId, salary) {
-        const t = await DB.get('teams', teamId, { force: true }).catch(() => null);
+        let t = await DB.get('teams', teamId, { force: true }).catch(() => null);
         if (!t || t.ownerUid) return;
+        // Teams created before AI parity never had a wallet — seed the
+        // standard AI operating budget once instead of reading it as $0.
+        if (!Number.isFinite(t.budget)) t = (await Wallet.ensureTeamWallet(teamId, t.tier || 'medium')) || t;
         if (t.financialState === 'insolvent' || t.financialState === 'repossessed') {
             throw new Error(`${t.name} is ${t.financialState === 'insolvent' ? 'insolvent' : 'in league receivership'} — the consortium won't fund new signings until it recovers.`);
         }

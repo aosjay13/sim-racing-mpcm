@@ -1,123 +1,48 @@
 # Phoenix's Sim Racing Multiplayer Career Mode (SRMPC)
 
-A web app for managing a multiplayer sim-racing career: drivers, teams, race schedule, and standings.
+Two ways to run a sim-racing career across every game you play:
 
-Live GitHub Pages site: <https://aosjay13.github.io/sim-racing-mpcm/>
+| | **Solo Career** (`career.html`) | **League app** (`app.html`) |
+| --- | --- | --- |
+| Who | You, single-player | A multiplayer league with a Game Master |
+| Account | None — saved in your browser, works offline | Firebase email/password or GM passcode |
+| What | 40-season careers in one game: contracts, money, sponsors, R&D, facilities, staff, calendars, standings, an evolving AI world | Shared series, schedules, results, standings, deals, teams, garages, dealership, number registry |
 
-## What Changed for GitHub Pages
+Live site: <https://aosjay13.github.io/sim-racing-mpcm/>
 
-This repository now uses:
+## Solo Career
 
-- `index.html` as a public landing page
-- `app.html` as the full SRMPC application
+Pick a game, a series and a role (driver, owner-driver or team principal). Before
+each round the app tells you what to set up in your sim — track, laps, weather and
+the AI level that matches your car against the field. Race it, then log or import
+the result. See **[SOLO_CAREER.md](SOLO_CAREER.md)** for the full guide.
 
-That means your root site URL can act as a clean project home page, while the app stays one click away.
+Supported games: NASCAR Racing 2003 Season, iRacing, Automobilista 2, Assetto
+Corsa, Assetto Corsa Competizione, Project CARS, Project CARS 2, EA SPORTS F1
+(22–25), NASCAR 26 (and 25), GTR 2, RACE 07 (+ GTR Evolution / STCC), RaceRoom,
+Wreckfest, Wreckfest 2, Automobilista, rFactor, rFactor 2, Le Mans Ultimate,
+Gran Turismo 7, Forza Motorsport, BeamNG.drive, NASCAR Heat 5, EA SPORTS WRC,
+DiRT Rally 2.0 — plus a **Custom game** builder for anything else.
 
-## Quick Links
+## League app
 
-- Landing page: `index.html`
-- Main app: `app.html`
-- Core styles: `css/style.css`
-- App bootstrap: `js/app.js`
-- Data layer: `js/database.js`
-- UI handlers: `js/ui.js`
-- Firebase config: `js/firebase-config.js`
+Firebase-backed multiplayer league: players register, pick roles (driver, team
+owner, crew, agent, sponsor…), negotiate contracts in deal rooms, and the Game
+Master runs series, schedules, results and simulations. See `MANUAL.md`.
 
-## Features
+## Project files
 
-- Driver management with profile details
-- Team management with team colors
-- Race calendar and event scheduling
-- Championship standings table
-- Multi-game support
-- Firebase-backed persistence (Firestore)
+- `index.html` — landing page
+- `career.html`, `css/career.css`, `js/solo/` — Solo Career
+- `app.html`, `css/style.css`, `js/srmpc-*.js` — League app (`js/srmpc-core.js` holds the Firebase config)
+- `firestore.rules` — Firestore security rules for the league app
 
-## Supported Sim Titles
-
-- iRacing
-- NASCAR Racing 2003
-- Wreckfest
-- Wreckfest 2
-- Automobilista 1
-- Automobilista 2
-- BeamNG.Drive
-
-## Tech Stack
-
-- HTML5
-- CSS3
-- JavaScript (ES6+)
-- Firebase (Firestore/Auth/Storage SDK loaded in app)
-
-## Local Development
-
-1. Clone repo:
-
-   ```bash
-   git clone https://github.com/aosjay13/sim-racing-mpcm.git
-   cd sim-racing-mpcm
-   ```
-
-2. Run a local static server:
-
-   ```bash
-   python -m http.server 8000
-   ```
-
-3. Open:
-   - `http://localhost:8000/` (landing page)
-   - `http://localhost:8000/app.html` (full app)
-
-## Firebase Setup
-
-1. Create/select a Firebase project in Firebase Console.
-2. Enable Firestore and Anonymous Authentication.
-3. Put your project config in `js/firebase-config.js`.
-
-Expected shape:
-
-```javascript
-const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID",
-  appCheckSiteKey: "YOUR_RECAPTCHA_V3_SITE_KEY",
-  enableAnonymousAuth: true
-};
-```
-
-Notes:
-
-- Firebase web API keys are public by design in browser apps.
-- Protect data with Firestore rules, App Check, and key restrictions.
-
-## Deploy to GitHub Pages
-
-1. Commit and push to `main`.
-2. In GitHub repo settings, open Pages.
-3. Set Source to `Deploy from a branch`.
-4. Select branch `main` and folder `/ (root)`.
-5. Save.
-
-Your live URL: <https://aosjay13.github.io/sim-racing-mpcm/>
-
-App direct URL: <https://aosjay13.github.io/sim-racing-mpcm/app.html>
-
-## Suggested Git Commands
-
-Use these from the repository root:
+## Local development
 
 ```bash
-git add README.md index.html app.html
-git commit -m "Add GitHub Pages landing page and full README"
-git push origin main
+python3 -m http.server 8000   # from the repository root
+# http://localhost:8000/sim-racing-career/career.html  (Solo Career)
+# http://localhost:8000/sim-racing-career/app.html     (League app)
 ```
 
-## Notes
-
-- `index.html` is intentionally lightweight for visitors.
-- `app.html` preserves the original SRMPC interface and scripts.
-- If you want the app at root again later, swap files or redirect root to `app.html`.
+Headless verification lives in `.claude/skills/verify/` (see its `SKILL.md`).

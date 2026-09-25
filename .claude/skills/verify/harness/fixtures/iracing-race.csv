@@ -1,0 +1,8 @@
+"Start Time","Track","Session Name"
+"2026-05-01 20:00","Road America","AI Race"
+
+"Fin Pos","Car ID","Car","Car Class","Team ID","Cust ID","Name","Start Pos","Car #","Out ID","Out","Interval","Laps Led","Qualify Time","Average Lap Time","Fastest Lap Time","Fast Lap#","Laps Comp","Inc","Pts"
+"1","12","Dallara IR18","IndyCar","1","11","__P1__","2","5","0","Running","-","10","","2:05.1","2:03.9","5","20","0","50"
+"2","12","Dallara IR18","IndyCar","2","22","__ME__","6","13","0","Running","-1.234","3","","2:05.3","2:03.8","7","20","2","40"
+"3","12","Dallara IR18","IndyCar","3","33","__P3__","1","8","0","Running","-3.100","7","","2:05.5","2:04.2","9","20","4","35"
+"4","12","Dallara IR18","IndyCar","4","44","__P5__","3","99","1","Contact","-8 L","0","","2:06.0","2:04.9","3","12","12","32"

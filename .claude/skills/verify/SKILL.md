@@ -12,7 +12,7 @@ against it — sim/admin actions write real league data.
 ## Recipe (headless, hermetic)
 
 1. Serve the repo root: `python3 -m http.server 8317` (app at
-   `http://localhost:8317/sim-racing-career/app.html`; it references `../Phoenix SRMPCM Logo.png`).
+   `http://localhost:8317/sim-racing-career/app.html`; it references `../phoenix-logo.png`, a 640px web copy of the 7.6 MB `Phoenix SRMPCM Logo.png`).
 2. Playwright Chromium with **all non-localhost routes fulfilled with empty stubs**
    (blocks gstatic Firebase CDN — a `**/gstatic.com/**` glob does NOT match
    `www.gstatic.com`; gate on `url.startsWith('http://localhost:8317')` instead).
@@ -32,6 +32,9 @@ team founding, prestige-gated hiring, prize payouts). Run:
 
 ```bash
 cd .claude/skills/verify/harness && npm i playwright && npx playwright install chromium
+# In the cloud container Chromium is preinstalled at /opt/pw-browsers/chromium —
+# if Playwright wants a different revision, preload a patch that passes
+# executablePath to chromium.launch (node -r ./patch.js drive.js).
 python3 -m http.server 8317 &   # from repo root
 node drive.js
 ```
@@ -67,3 +70,24 @@ node drive.js
 - `harness/deals-drive.js` covers the negotiation economy: P2P deal rooms, prestige pay caps, multi-team
   contracts, sponsorship deals, race-day settlement, Team Management, garage (v3.12.0). New collections
   `negotiations` + `ledger` need firestore.rules deployed in prod.
+
+## Solo Career (single-player, `career.html`)
+
+Local-only (IndexedDB) — no Firebase, no shim needed; still block non-localhost routes.
+
+- `node solo-engine-test.js [gameId|all] [seasons]` — pure-engine soak: plays a
+  40-season career for every game × role (driver / owner / principal) with a bot,
+  checking world invariants every few rounds (no driver on two teams, the player on
+  exactly one team, finite money, forced retirement at 40, HoF entry). ~1 min for all.
+- `node solo-import-test.js` — every results format (rF2/LMU XML, GTR2/RACE 07 txt,
+  NR2003 HTML, iRacing CSV, AC race_out.json, ACC UTF-16 JSON, generic CSV, paste)
+  parsed, name-matched and fed through `completeRound`.
+- `node solo-drive.js` — drives the real UI: wizard, calendar editing, manual /
+  imported / simulated results, undo, offers, sponsors, training, every screen,
+  export → import, a fast-forward to season 40 → retirement → Hall of Fame,
+  owner-driver R&D/facilities/staff/driver market, principal strategy, a custom
+  game, mobile + light theme. Screenshots land in `harness/solo-shots/`.
+- Engine is deterministic (seeded RNG in `S.rng`). Fast-forward in the browser with
+  `SC.Engine.completeRound(SC.App.S, { mode: 'sim' })` then `SC.Store.save(SC.App.S)`.
+- Views render from `SC.App.S`; every mutation goes through `SC.App.act()` (undo
+  snapshot, autosave, rollback on error).

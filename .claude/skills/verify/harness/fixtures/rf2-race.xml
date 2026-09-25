@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rFactorXML version="1.0">
+<RaceResults>
+  <TrackVenue>Sebring International Raceway</TrackVenue>
+  <Qualify><Driver><Name>Should Ignore</Name><Position>1</Position></Driver></Qualify>
+  <Race>
+    <Driver><Name>__P1__</Name><Position>1</Position><GridPos>3</GridPos><CarNumber>7</CarNumber><Laps>20</Laps><FinishStatus>Finished Normally</FinishStatus><isPlayer>0</isPlayer>
+      <Lap num="1" p="2"/><Lap num="2" p="1"/><Lap num="3" p="1"/></Driver>
+    <Driver><Name>__ME__</Name><Position>2</Position><GridPos>1</GridPos><CarNumber>13</CarNumber><Laps>20</Laps><FinishStatus>Finished Normally</FinishStatus><isPlayer>1</isPlayer>
+      <Lap num="1" p="1"/><Lap num="2" p="2"/><Lap num="3" p="2"/></Driver>
+    <Driver><Name>__P3__</Name><Position>3</Position><GridPos>2</GridPos><Laps>20</Laps><FinishStatus>Finished Normally</FinishStatus><isPlayer>0</isPlayer></Driver>
+    <Driver><Name>Unknown Guest</Name><Position>4</Position><GridPos>5</GridPos><Laps>19</Laps><FinishStatus>Finished Normally</FinishStatus><isPlayer>0</isPlayer></Driver>
+    <Driver><Name>__P5__</Name><Position>5</Position><GridPos>4</GridPos><Laps>7</Laps><FinishStatus>DNF</FinishStatus><isPlayer>0</isPlayer></Driver>
+  </Race>
+</RaceResults>
+</rFactorXML>

@@ -1,0 +1,32 @@
+[Header]
+Game=GTR 2
+Version=1.1
+
+[Race]
+RaceMode=5
+Scene=GAMEDATA\LOCATIONS\Monza\Monza.TRK
+
+[Slot000]
+Driver=__ME__
+Vehicle=Saleen S7-R
+Team=Me Racing
+Laps=20
+RaceTime=0:41:12.345
+
+[Slot001]
+Driver=__P1__
+Vehicle=Ferrari 550
+Laps=20
+RaceTime=0:41:05.111
+
+[Slot002]
+Driver=__P3__
+Vehicle=Viper
+Laps=12
+RaceTime=DNF
+
+[Slot003]
+Driver=__P5__
+Vehicle=Lister Storm
+Laps=20
+RaceTime=0:41:30.000

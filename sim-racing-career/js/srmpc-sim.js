@@ -646,7 +646,8 @@ async function installRealWorldPack(gameId = null) {
                 name: t.name, color: t.color, headquarters: t.hq,
                 description: `AI works team competing in the ${pack.name}.`,
                 recruiting: false, isEstablished: true, isNPC: true,
-                ownerUid: null, status: 'approved', seriesId
+                ownerUid: null, status: 'approved', seriesId,
+                budget: Wallet.TEAM_DIFFICULTIES.medium.teamStart // AI parity: funded from day one
             });
             summary.teams++;
 

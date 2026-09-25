@@ -376,6 +376,9 @@ select.input { cursor: pointer; }
 }
 .gate-brand { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.25rem; }
 .gate-logo { height: 56px; width: auto; }
+.gate-solo { margin-bottom: 1rem; text-align: center; text-decoration: none; }
+.nav-solo { text-decoration: none; color: var(--accent-2); }
+.nav-solo:hover { text-decoration: none; }
 .gate-brand h1 { font-size: 1.4rem; text-transform: uppercase; }
 
 .gate-tabs { display: flex; gap: .4rem; background: var(--bg-0); padding: .3rem; border-radius: var(--r-sm); margin-bottom: 1.25rem; }

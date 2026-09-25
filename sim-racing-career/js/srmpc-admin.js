@@ -1067,7 +1067,10 @@ const Admin = {
                 const file = Util.$('#atf-logo').files[0];
                 if (file) data.logo = await Util.compressImage(file);
                 if (team) await DB.update('teams', team.id, data);
-                else await DB.create('teams', { ...data, ownerUid: null, status: 'approved' });
+                // AI parity: a new unowned team opens with the standard AI
+                // operating budget — a $0 wallet can never sign anyone
+                // (Parity.assertAICanBid) and slides straight into insolvency.
+                else await DB.create('teams', { ...data, ownerUid: null, status: 'approved', budget: Wallet.TEAM_DIFFICULTIES.medium.teamStart });
                 Modal.close();
                 Util.notify(team ? 'Team updated.' : 'Team created. 🛠');
                 this.refresh();

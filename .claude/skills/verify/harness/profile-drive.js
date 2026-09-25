@@ -44,7 +44,6 @@ const log = (m, s) => { steps.push(`${m} ${s}`); console.log(m, s); };
     await toast(/now playing as/);
     await page.click('.onboard-card:has-text("Start from scratch")');
     await page.fill('#ob-name', 'J. May');
-    await page.fill('#ob-number', '13');
     await page.click('#ob-driver-form button[type=submit]');
     await toast(/Welcome to the grid/);
     log('✅', 'Player driver "J. May" created');

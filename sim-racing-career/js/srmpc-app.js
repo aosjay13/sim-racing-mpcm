@@ -194,7 +194,8 @@ const App = {
 
     /* ---------------- Header ---------------- */
     wireHeader() {
-        Util.$$('.nav-btn').forEach(btn =>
+        // Only route buttons (the Solo Career link is a plain page link).
+        Util.$$('.nav-btn[data-view]').forEach(btn =>
             btn.addEventListener('click', () => this.go(btn.dataset.view)));
 
         document.getElementById('signout-btn').addEventListener('click', async () => {

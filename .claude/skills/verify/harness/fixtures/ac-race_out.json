@@ -1,0 +1,4 @@
+{"track":"ks_nurburgring","number_of_sessions":2,
+ "players":[{"name":"__ME__","car":"ks_mazda_mx5_cup","skin":"00"},{"name":"__P1__","car":"ks_mazda_mx5_cup"},{"name":"__P3__","car":"ks_mazda_mx5_cup"},{"name":"__P5__","car":"ks_mazda_mx5_cup"}],
+ "sessions":[{"event":0,"name":"Qualifying","type":2,"lapsCount":0,"raceResult":[1,0,2,3]},
+  {"event":1,"name":"Race","type":3,"lapsCount":10,"lapstotal":[10,10,10,4],"raceResult":[2,0,1,3],"bestLaps":[{"car":0,"time":112345,"lap":3},{"car":1,"time":112999,"lap":4}]}]}

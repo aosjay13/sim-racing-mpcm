@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=3.29.0">
+    <link rel="stylesheet" href="css/style.css?v=3.30.0">
     <!-- Apply saved theme before paint to avoid a flash -->
     <script>
         (function () {
@@ -43,12 +43,14 @@
     <section id="auth-gate" class="auth-gate hidden">
         <div class="gate-card">
             <div class="gate-brand">
-                <img src="../Phoenix SRMPCM Logo.png" alt="Phoenix SRMPC logo" class="gate-logo">
+                <img src="../phoenix-logo.png" alt="Phoenix SRMPC logo" class="gate-logo">
                 <div>
                     <h1>Phoenix SRMPC</h1>
                     <p class="muted">Sim Racing Multiplayer Career — every game, one league.</p>
                 </div>
             </div>
+
+            <a class="btn btn-secondary btn-block gate-solo" href="career.html">🏁 Play Solo Career — single-player, no account needed</a>
 
             <label id="gate-career-field" class="field gate-career-field hidden"><span>Career mode</span>
                 <select id="gate-career" class="input"></select>
@@ -100,7 +102,7 @@
         <header class="header">
             <div class="header-inner">
                 <button class="brand" onclick="App.go('dashboard')">
-                    <img src="../Phoenix SRMPCM Logo.png" alt="" class="brand-logo">
+                    <img src="../phoenix-logo.png" alt="" class="brand-logo">
                     <span class="brand-name">Phoenix <em>SRMPC</em></span>
                 </button>
 
@@ -117,6 +119,7 @@
                     <button class="nav-btn" data-view="dealership">Dealership</button>
                     <button class="nav-btn" data-view="career" id="nav-career">My Career</button>
                     <button class="nav-btn nav-admin" data-view="admin" id="nav-admin">Admin</button>
+                    <a class="nav-btn nav-solo" href="career.html" title="Single-player career mode">Solo Career ↗</a>
                 </nav>
 
                 <div class="header-user">
@@ -141,25 +144,25 @@
     </div>
 
     <!-- App scripts -->
-    <script src="js/srmpc-core.js?v=3.29.0"></script>
-    <script src="js/srmpc-data.js?v=3.29.0"></script>
-    <script src="js/srmpc-wallet.js?v=3.29.0"></script>
-    <script src="js/srmpc-parity.js?v=3.29.0"></script>
-    <script src="js/srmpc-garage.js?v=3.29.0"></script>
-    <script src="js/srmpc-carimg.js?v=3.29.0"></script>
-    <script src="js/srmpc-dealership.js?v=3.29.0"></script>
-    <script src="js/srmpc-clauses.js?v=3.29.0"></script>
-    <script src="js/srmpc-market.js?v=3.29.0"></script>
-    <script src="js/srmpc-deals.js?v=3.29.0"></script>
-    <script src="js/srmpc-sim.js?v=3.29.0"></script>
-    <script src="js/srmpc-crew.js?v=3.29.0"></script>
-    <script src="js/srmpc-hub.js?v=3.29.0"></script>
-    <script src="js/srmpc-views.js?v=3.29.0"></script>
-    <script src="js/srmpc-career.js?v=3.29.0"></script>
-    <script src="js/srmpc-insolvency.js?v=3.29.0"></script>
-    <script src="js/srmpc-numbers.js?v=3.29.0"></script>
-    <script src="js/srmpc-profile.js?v=3.29.0"></script>
-    <script src="js/srmpc-admin.js?v=3.29.0"></script>
-    <script src="js/srmpc-app.js?v=3.29.0"></script>
+    <script src="js/srmpc-core.js?v=3.30.0"></script>
+    <script src="js/srmpc-data.js?v=3.30.0"></script>
+    <script src="js/srmpc-wallet.js?v=3.30.0"></script>
+    <script src="js/srmpc-parity.js?v=3.30.0"></script>
+    <script src="js/srmpc-garage.js?v=3.30.0"></script>
+    <script src="js/srmpc-carimg.js?v=3.30.0"></script>
+    <script src="js/srmpc-dealership.js?v=3.30.0"></script>
+    <script src="js/srmpc-clauses.js?v=3.30.0"></script>
+    <script src="js/srmpc-market.js?v=3.30.0"></script>
+    <script src="js/srmpc-deals.js?v=3.30.0"></script>
+    <script src="js/srmpc-sim.js?v=3.30.0"></script>
+    <script src="js/srmpc-crew.js?v=3.30.0"></script>
+    <script src="js/srmpc-hub.js?v=3.30.0"></script>
+    <script src="js/srmpc-views.js?v=3.30.0"></script>
+    <script src="js/srmpc-career.js?v=3.30.0"></script>
+    <script src="js/srmpc-insolvency.js?v=3.30.0"></script>
+    <script src="js/srmpc-numbers.js?v=3.30.0"></script>
+    <script src="js/srmpc-profile.js?v=3.30.0"></script>
+    <script src="js/srmpc-admin.js?v=3.30.0"></script>
+    <script src="js/srmpc-app.js?v=3.30.0"></script>
 </body>
 </html>
