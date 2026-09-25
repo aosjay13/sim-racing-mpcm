@@ -505,10 +505,12 @@ select.input { cursor: pointer; }
 .race-row-date { text-align: center; min-width: 3.2rem; display: flex; flex-direction: column; }
 .race-day { font-family: var(--font-display); font-weight: 700; font-size: .85rem; }
 .race-time { font-size: .72rem; color: var(--text-faint); }
-.race-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .1rem; }
+.race-row-main { flex: 1 1 11rem; min-width: 9rem; display: flex; flex-direction: column; gap: .1rem; }
 .race-title { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
 .race-sub { font-size: .8rem; color: var(--text-dim); }
-.race-row-side { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; justify-content: flex-end; }
+.race-row-side { display: flex; align-items: center; gap: .4rem .5rem; flex-wrap: wrap; justify-content: flex-end; flex: 0 1 auto; min-width: 0; max-width: 50%; }
+.race-row-side .chip { white-space: nowrap; }
+@media (max-width: 640px) { .race-row { flex-wrap: wrap; } .race-row-side { max-width: none; flex-basis: 100%; justify-content: flex-start; padding-left: 4.1rem; } }
 .race-winner { font-size: .78rem; color: var(--gold); font-weight: 600; }
 
 /* ============================================================
@@ -1086,3 +1088,37 @@ td.right, th.right { text-align: right; }
     border-top: 1px solid var(--panel-border); border-bottom: 1px solid var(--panel-border);
     background: repeating-linear-gradient(90deg, var(--bg-2) 0 10px, var(--bg-1) 10px 20px);
 }
+
+/* ============================================================
+   Racing Library (js/srmpc-library.js) — shared with Solo Career
+   ============================================================ */
+.lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .7rem; max-height: 60vh; overflow: auto; padding: 2px; }
+.lib-game {
+    display: flex; flex-direction: column; gap: .25rem; text-align: left; cursor: pointer;
+    padding: .8rem .9rem; border-radius: var(--r-sm); font: inherit; color: var(--text);
+    background: var(--bg-3, rgba(255,255,255,.04)); border: 1px solid var(--hairline, rgba(255,255,255,.1));
+    border-left: 3px solid var(--gc, var(--accent));
+}
+.lib-game:hover { border-color: var(--accent-2); }
+.lib-game-icon { font-size: 1.4rem; }
+.lib-game-name { font-weight: 700; }
+.lib-series { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: .4rem 1.2rem; max-height: 46vh; overflow: auto; }
+.lib-series h4 { margin: .6rem 0 .2rem; }
+.lib-series .check { align-items: flex-start; }
+.lib-brief, .lib-report, .lib-import {
+    margin-top: 1rem; padding: .9rem 1rem; border-radius: var(--r-sm);
+    background: var(--bg-3, rgba(255,255,255,.04)); border: 1px solid var(--hairline, rgba(255,255,255,.1));
+}
+.lib-brief h3, .lib-report h3 { margin: 0 0 .6rem; }
+.lib-brief-grid { display: grid; grid-template-columns: max-content 1fr; gap: .35rem 1rem; margin: 0 0 .7rem; font-size: .92rem; }
+.lib-brief-grid dt { color: var(--text-faint); }
+.lib-brief-grid dd { margin: 0; }
+.lib-import summary { cursor: pointer; font-weight: 600; }
+.lib-import[open] summary { margin-bottom: .6rem; }
+.lib-import table { margin: .6rem 0; }
+.lib-import select.input { padding: .3rem .5rem; }
+.lib-cal-row { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.lib-cal-row:empty { display: none; }
+.input-sm { width: auto; padding: .35rem .5rem; }
+.lib-reported { padding: .5rem .7rem; border-radius: var(--r-sm); background: rgba(245,179,1,.1); border: 1px solid rgba(245,179,1,.35); }
+@media (max-width: 640px) { .lib-brief-grid { grid-template-columns: 1fr; } .lib-brief-grid dt { margin-top: .3rem; } }

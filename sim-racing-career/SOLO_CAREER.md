@@ -123,6 +123,13 @@ always at the back, lower it.
   improve toward their potential, decline, retire; top performers get promoted;
   rookies arrive; teams rise and fall with results.
 
+## Racing with friends
+
+The league app (`app.html`) uses the same game library: a Game Master can install
+any of these games with its real series, calendars and tracks, and league races get
+the same *Set this up in your game* briefing, results-file import and "report my
+result" flow. See the league section of `README.md`.
+
 ## For developers
 
 - Code: `js/solo/` — `sc-tracks.js` (track library), `sc-gamedb.js` (games,
@@ -136,4 +143,5 @@ always at the back, lower it.
   - `node solo-drive.js` — drives the real UI in headless Chromium (serve the repo
     root on port 8317 first).
 - Adding a game: append a `game({...})` block to `sc-gamedb.js`; any new track
-  names go in `sc-tracks.js`. The engine needs no changes.
+  names go in `sc-tracks.js`. The engine needs no changes, and the league app's
+  Game Library picks the game up automatically.

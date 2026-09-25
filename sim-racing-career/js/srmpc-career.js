@@ -183,10 +183,11 @@ const Career = {
         <div class="driver-hero panel">
             <div class="driver-hero-num">${driver.number ? '#' + Util.esc(String(driver.number)) : '🏎️'}</div>
             <div class="driver-hero-info">
-                <h2>${Util.esc(driver.name)}</h2>
+                <h2>${window.Library ? Library.flag(driver) + ' ' : ''}${Util.esc(driver.name)}${driver.nick ? ` <span class="muted">“${Util.esc(driver.nick)}”</span>` : ''}</h2>
                 <div class="chip-row">
                     ${team ? `<button class="chip chip-btn" onclick="Views.showTeam('${Util.attr(team.id)}')"><span class="team-dot" style="background:${Util.esc(team.color || '#666')}"></span>${Util.esc(team.name)}</button>` : '<span class="chip chip-dim">Free agent</span>'}
-                    ${driver.country ? `<span class="chip chip-dim">${Util.esc(driver.country)}</span>` : ''}
+                    ${driver.country ? `<span class="chip chip-dim">${Util.esc(driver.country)}${driver.age ? ` · age ${Util.esc(String(driver.age))}` : ''}</span>` : ''}
+                    ${driver.helmetColor ? `<span class="chip chip-dim" title="Helmet colour"><span class="team-dot" style="background:${Util.esc(driver.helmetColor)}"></span>Helmet</span>` : ''}
                     ${myContract ? `<span class="chip chip-dim" title="Your active contract">📜 ${Economy.fmt(myContract.salary)}/race${Number(myContract.buyout) ? ` · buyout ${Economy.fmt(myContract.buyout)}` : ''}</span>` : ''}
                 </div>
                 ${Prestige.progressBar(prestigeProg, 'Your prestige — points, wins, poles, and titles earn XP')}
@@ -242,7 +243,7 @@ const Career = {
                     <tbody>${history.slice(0, 12).map(h => `
                         <tr>
                             <td>${C.posBadge(h.result)}</td>
-                            <td>${Util.esc(h.race.name || h.race.track || 'Race')}<span class="muted"> · ${Util.esc(Util.fmtDateShort(h.race.date))}</span></td>
+                            <td>${Util.esc(h.race.name || h.race.track || 'Race')}<span class="muted">${h.race.track && h.race.name && !h.race.name.includes(h.race.track) ? ' · ' + Util.esc(h.race.track) : ''} · ${Util.esc(Util.fmtDateShort(h.race.date))}</span></td>
                             <td class="muted">${Util.esc(h.game?.name || '—')}</td>
                             <td class="num strong">${h.points}</td>
                         </tr>`).join('')}</tbody></table>`
@@ -276,8 +277,15 @@ const Career = {
         Modal.open(`
             ${Modal.header(startMode === 'scratch' ? '🌱 Fresh Career' : '🏢 Join an Established Team', 'Create your driver profile')}
             <form id="ob-driver-form" class="form-grid">
-                <label class="field"><span>Driver name *</span><input id="ob-name" class="input" required value="${Util.esc(Auth.state.profile?.displayName || '')}" maxlength="40"></label>
-                <label class="field"><span>Country</span><input id="ob-country" class="input" placeholder="e.g. USA" maxlength="30"></label>
+                <div class="form-row">
+                    <label class="field"><span>Driver name *</span><input id="ob-name" class="input" required value="${Util.esc(Auth.state.profile?.displayName || '')}" maxlength="40"></label>
+                    <label class="field"><span>Nickname (optional)</span><input id="ob-nick" class="input" maxlength="24" placeholder="e.g. The Firebird"></label>
+                </div>
+                <div class="form-row">
+                    <label class="field"><span>Nationality</span>${window.Library ? Library.nationSelect('ob-country', '') : '<input id="ob-country" class="input" placeholder="e.g. USA" maxlength="30">'}</label>
+                    <label class="field"><span>Age</span><input id="ob-age" class="input" type="number" min="14" max="80" placeholder="e.g. 21"></label>
+                    <label class="field"><span>Helmet colour</span><input id="ob-helmet" class="input input-color" type="color" value="#e11d2e"></label>
+                </div>
                 ${teamsHtml}
                 <label class="field"><span>Bio (optional)</span><textarea id="ob-bio" class="input" rows="2" maxlength="300" placeholder="Tell the league who you are…"></textarea></label>
                 <p class="muted small">⭐ Every career begins at <strong>1 ★ ${Prestige.levelName(1)}</strong> (${Prestige.stars(1)}). Points, wins, poles, and championships
@@ -300,10 +308,17 @@ const Career = {
                 // as a free agent, and picking a team here sends an APPLICATION
                 // that the team (or the GM / AI principal) must negotiate.
                 const teamId = Util.$('#ob-team')?.value || null;
+                const nation = window.Library ? Library.readNation('ob-country') : { nat: null, country: Util.$('#ob-country').value.trim() };
+                const age = Number(Util.$('#ob-age').value) || null;
+                if (age !== null && (age < 14 || age > 80)) throw new Error('Age must be between 14 and 80.');
                 const driverId = await DB.create('drivers', {
                     name,
                     number: null,   // never player-picked — won or leased via the Number Registry
-                    country: Util.$('#ob-country').value.trim(),
+                    country: nation.country,
+                    nat: nation.nat,
+                    nick: Util.$('#ob-nick').value.trim(),
+                    age,
+                    helmetColor: Util.$('#ob-helmet').value,
                     bio: Util.$('#ob-bio').value.trim(),
                     teamId: null,
                     ownerUid: Auth.uid(),
@@ -341,8 +356,15 @@ const Career = {
         Modal.open(`
             ${Modal.header('Edit Driver Profile')}
             <form id="edit-driver-form" class="form-grid">
-                <label class="field"><span>Driver name *</span><input id="ed-name" class="input" required value="${Util.esc(driver.name)}" maxlength="40"></label>
-                <label class="field"><span>Country</span><input id="ed-country" class="input" value="${Util.esc(driver.country || '')}" maxlength="30"></label>
+                <div class="form-row">
+                    <label class="field"><span>Driver name *</span><input id="ed-name" class="input" required value="${Util.esc(driver.name)}" maxlength="40"></label>
+                    <label class="field"><span>Nickname</span><input id="ed-nick" class="input" maxlength="24" value="${Util.esc(driver.nick || '')}"></label>
+                </div>
+                <div class="form-row">
+                    <label class="field"><span>Nationality</span>${window.Library && (Library.natOf(driver) || !driver.country) ? Library.nationSelect('ed-country', Library.natOf(driver)) : `<input id="ed-country" class="input" value="${Util.esc(driver.country || '')}" maxlength="30">`}</label>
+                    <label class="field"><span>Age</span><input id="ed-age" class="input" type="number" min="14" max="80" value="${Util.esc(driver.age || '')}"></label>
+                    <label class="field"><span>Helmet colour</span><input id="ed-helmet" class="input input-color" type="color" value="${Util.esc(driver.helmetColor || '#e11d2e')}"></label>
+                </div>
                 <label class="field"><span>Race number</span>
                     <input class="input" disabled value="${driver.number ? '#' + Util.esc(String(driver.number)) : '— unassigned —'}">
                     <span class="muted small">🔢 Won or leased through the Number Registry — not editable here.</span></label>
@@ -356,9 +378,16 @@ const Career = {
         Util.$('#edit-driver-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             try {
+                const nation = window.Library && Util.$('#ed-country').tagName === 'SELECT' ? Library.readNation('ed-country') : { nat: driver.nat || null, country: Util.$('#ed-country').value.trim() };
+                const age = Number(Util.$('#ed-age').value) || null;
+                if (age !== null && (age < 14 || age > 80)) throw new Error('Age must be between 14 and 80.');
                 await DB.update('drivers', driver.id, {
                     name: Util.$('#ed-name').value.trim(),
-                    country: Util.$('#ed-country').value.trim(),
+                    country: nation.country,
+                    nat: nation.nat,
+                    nick: Util.$('#ed-nick').value.trim(),
+                    age,
+                    helmetColor: Util.$('#ed-helmet').value,
                     bio: Util.$('#ed-bio').value.trim()
                 });
                 Modal.close();

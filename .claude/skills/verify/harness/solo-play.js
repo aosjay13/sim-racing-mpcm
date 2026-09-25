@@ -51,7 +51,7 @@ const ROLE = process.argv[3] || 'driver';
     await page.click('a[href="#/new"], [data-new], .sc-hero .btn-primary');
     await page.waitForSelector('.sc-game-card');
     log(true, 'Opened the new-career wizard from the launcher');
-    await page.fill('#wz-filter', GAME === 'nr2003' ? '2003' : GAME);
+    await page.fill('#wz-filter', await page.evaluate(id => SC.game(id).short, GAME));
     await settle(200);
     await shot('01-games', false);
     await page.click(`[data-game="${GAME}"]`);
@@ -125,7 +125,13 @@ const ROLE = process.argv[3] || 'driver';
         const N = await page.evaluate(() => SC.Engine.driversIn(SC.App.S, SC.App.S.season.sid).length);
         await page.fill('#rs-start', String(Math.min(12, N)));
         await page.fill('#rs-pos', String(Math.min(4, N)));
-        if (await page.$('#rs-dnf') && await page.isChecked('#rs-dnf')) { log(true, 'Team gave a reliability order (DNF pre-ticked); racing to the flag anyway'); await page.uncheck('#rs-dnf'); }
+        if (await page.$('#rs-dnf')) log(!(await page.isChecked('#rs-dnf')), 'DNF is never pre-ticked');
+        if (await page.$('#rs-order')) {
+            await page.click('#rs-order');
+            const o = await page.evaluate(() => ({ dnf: document.getElementById('rs-dnf').checked, reason: document.getElementById('rs-reason').value, laps: document.getElementById('rs-laps').value }));
+            log(o.dnf && o.reason === 'mech' && Number(o.laps) > 0, `Team order button logs a mechanical DNF at ${o.laps}; racing to the flag instead`);
+            await page.uncheck('#rs-dnf');
+        }
         const laps = await page.evaluate(() => SC.App.S.season.events[0].laps || 99);
         ledWant = Math.min(7, laps);
         log(laps >= 5 || laps === 99, `Round 1 distance is a real race (${laps === 99 ? 'timed/stages' : laps + ' laps'})`);

@@ -344,7 +344,9 @@
 
     // entrants: [{ id, first, last, num, nick? }]
     // Returns rows with .id (matched or auto-filled) and .how ('file-player'|'name'|'number'|'auto').
-    I.match = function (rows, entrants, { playerId = 'P' } = {}) {
+    // autoFill: hand unmatched rows to the remaining entrants in skill order
+    // (right for an AI field; the league turns it off — humans are never guessed).
+    I.match = function (rows, entrants, { playerId = 'P', autoFill = true } = {}) {
         const out = rows.map(r => ({ ...r, id: null, how: null, conf: 0 }));
         const taken = new Set();
         // 1. File says "this is the player".
@@ -368,6 +370,7 @@
             if (e) { r.id = e.id; r.how = 'number'; r.conf = 0.65; taken.add(e.id); }
         });
         // 4. Everyone else: remaining AI entrants in skill order (keeps your position exact).
+        if (!autoFill) return out;
         const rest = entrants.filter(e => !taken.has(e.id) && e.id !== playerId).sort((a, b) => (b.skill || 0) - (a.skill || 0));
         out.forEach(r => {
             if (r.id) return;

@@ -304,8 +304,9 @@
                         <label class="field"><span>${derby ? 'Starting slot' : rally ? 'Start order' : 'Started (grid)'}</span><input id="rs-start" class="input" type="number" min="1" max="${N}" placeholder="1–${N}"></label>
                         <label class="field"><span>${esc(posLabel)} *</span><input id="rs-pos" class="input" type="number" min="1" max="${N}" placeholder="1–${N}" autofocus></label>
                     </div>
-                    ${derby ? '' : `<label class="check"><input id="rs-dnf" type="checkbox" ${ev.order ? 'checked' : ''}> Did not finish</label>
-                    <div class="form-row ${ev.order ? '' : 'hidden'}" id="rs-dnf-row">
+                    ${derby ? '' : `${ev.order ? `<button type="button" class="btn btn-ghost btn-sm" id="rs-order">📻 I followed the team order (retired at ${ev.order.unit} ${ev.order.at})</button>` : ''}
+                    <label class="check"><input id="rs-dnf" type="checkbox"> Did not finish</label>
+                    <div class="form-row hidden" id="rs-dnf-row">
                         <label class="field"><span>Reason</span>${K.select('rs-reason', [['crash', 'Accident / damage'], ['mech', 'Mechanical']], ev.order ? 'mech' : 'crash')}</label>
                         <label class="field"><span>${ev.laps ? 'Laps completed' : ev.stages ? 'Stages completed' : 'Completed'}</span><input id="rs-laps" class="input" type="number" min="0" value="${ev.order ? ev.order.at : ''}"></label>
                     </div>`}
@@ -343,6 +344,14 @@
             K.$$('.sc-rtab', el).forEach(p => p.classList.toggle('hidden', p.dataset.pane !== b.dataset.rtab));
         }));
         K.$('#rs-dnf', el)?.addEventListener('change', (e) => K.$('#rs-dnf-row', el).classList.toggle('hidden', !e.target.checked));
+        K.$('#rs-order', el)?.addEventListener('click', () => {
+            K.$('#rs-dnf', el).checked = true;
+            K.$('#rs-dnf-row', el).classList.remove('hidden');
+            K.$('#rs-reason', el).value = 'mech';
+            K.$('#rs-laps', el).value = ev.order.at;
+            K.$('#rs-pos', el).value = '';
+            K.toast('Logged as a mechanical DNF — add your grid slot and save.', 'info');
+        });
         K.$('#rs-form', el).addEventListener('submit', (e) => {
             e.preventDefault();
             const num = (id) => { const v = K.$('#' + id, el)?.value; return v === '' || v == null ? null : Number(v); };

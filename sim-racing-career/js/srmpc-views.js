@@ -66,7 +66,8 @@ const C = {
 
     gameChip(game) {
         if (!game) return '<span class="chip chip-dim">No game</span>';
-        return `<span class="chip" style="border-color:${Util.esc(game.color || '#3d4d5c')}">${Util.esc(game.name)}</span>`;
+        // Library games carry a short name (NR2003, ACC…) — keeps race rows compact.
+        return `<span class="chip" style="border-color:${Util.esc(game.color || '#3d4d5c')}" title="${Util.esc(game.name)}">${game.icon ? game.icon + ' ' : ''}${Util.esc(game.short || game.name)}</span>`;
     },
 
     statusBadge(status) {
@@ -120,7 +121,7 @@ const C = {
         const n = labels ? labels.length : 0;
         if (!series.length || n < 2) return '<p class="muted small" style="padding:1rem 0">Not enough completed races to chart yet — needs at least two rounds.</p>';
 
-        const W = 560, H = height, padL = 30, padR = 96, padT = 14, padB = 26;
+        const W = 560, H = height, padL = 30, padR = 124, padT = 14, padB = 26;
         const maxY = Math.max(1, ...series.flatMap(s => s.values));
         const yStep = maxY <= 5 ? 1 : Math.ceil(maxY / 4);
         const X = i => padL + i * (W - padL - padR) / (n - 1);
@@ -138,6 +139,15 @@ const C = {
         const xIdx = n <= 6 ? labels.map((_, i) => i) : [0, Math.floor((n - 1) / 2), n - 1];
         const xLabels = xIdx.map(i => `<text x="${X(i).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="var(--text-faint)">${Util.esc(labels[i])}</text>`).join('');
 
+        // End labels: nudge apart so close points totals never print on top of each other.
+        const labelY = series.map((s, si) => ({ si, y: Y(s.values[s.values.length - 1]) + 3 })).sort((a, b) => a.y - b.y);
+        const GAP = 12;
+        for (let i = 1; i < labelY.length; i++) labelY[i].y = Math.max(labelY[i].y, labelY[i - 1].y + GAP);
+        const overflow = labelY.length ? labelY[labelY.length - 1].y - (H - padB + 3) : 0;
+        if (overflow > 0) labelY.forEach(l => { l.y -= overflow; });
+        for (let i = labelY.length - 2; i >= 0; i--) labelY[i].y = Math.min(labelY[i].y, labelY[i + 1].y - GAP);
+        const endY = Object.fromEntries(labelY.map(l => [l.si, l.y]));
+
         const paths = series.map((s, si) => {
             const color = colors[si % colors.length];
             const pts = s.values.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
@@ -147,7 +157,7 @@ const C = {
             const markers = s.values.map((v, i) =>
                 `<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="7" fill="transparent"><title>${Util.esc(s.name)} — ${Util.esc(labels[i])}: ${v} pts</title></circle>
                  <circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="3" fill="${color}" stroke="var(--bg-1)" stroke-width="1.5"/>`).join('');
-            const endLabel = `<text x="${(X(last) + 8).toFixed(1)}" y="${(Y(s.values[last]) + 3).toFixed(1)}" font-size="11" font-weight="700" fill="${color}">${Util.esc(s.name)}</text>`;
+            const endLabel = `<text x="${(X(last) + 8).toFixed(1)}" y="${endY[si].toFixed(1)}" font-size="10" font-weight="700" fill="${color}">${Util.esc(s.name)}</text>`;
             return `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>${area}${markers}${endLabel}`;
         }).join('');
 
@@ -164,6 +174,20 @@ const C = {
         return w ? (world.driversById[w.driverId]?.name || 'Unknown') : null;
     },
 
+    // Driver name with their nationality flag (shared with the Solo Career).
+    flagName(driver) {
+        const f = window.Library && driver ? Library.flag(driver) : '';
+        return `${f ? f + ' ' : ''}${Util.esc(driver?.name || 'Unknown driver')}`;
+    },
+
+    // Track type + forecast for an upcoming race, e.g. "🔄 ☀️ 24°C".
+    raceHint(race) {
+        if (!window.Library?.ok() || race.status === 'completed') return '';
+        const tr = Library.track(race.track);
+        const wx = Library.conditions(race);
+        return ` · ${tr ? `<span title="${Util.esc(Library.typeInfo(tr.type).label)}">${Library.typeInfo(tr.type).icon}</span> ` : ''}<span title="${Util.esc(wx.cond)} · ${Util.esc(wx.time)}">${Library.wxIcon(wx.cond)} ${wx.temp}°C</span>`;
+    },
+
     raceRow(race, world, { showSeries = true } = {}) {
         const series = world.seriesById[race.seriesId];
         const game = world.gamesById[race.gameId];
@@ -175,7 +199,7 @@ const C = {
             </div>
             <div class="race-row-main">
                 <span class="race-title">${Util.esc(race.name || race.track || 'Race')}</span>
-                <span class="race-sub">${Util.esc(race.track || '')}${showSeries && series ? ` · ${Util.esc(series.name)}` : ''}</span>
+                <span class="race-sub">${Util.esc(race.track || '')}${this.raceHint(race)}${showSeries && series ? ` · ${Util.esc(series.name)}` : ''}</span>
             </div>
             <div class="race-row-side">
                 ${winner ? `<span class="race-winner">🏆 ${Util.esc(winner)}</span>` : ''}
@@ -252,7 +276,7 @@ const Views = {
                         <tbody>${standings.map(row => `
                             <tr onclick="Views.showDriver('${Util.attr(row.driverId)}')">
                                 <td class="rank">${row.rank}</td>
-                                <td>${Util.esc(row.driver.name)}</td>
+                                <td>${C.flagName(row.driver)}</td>
                                 <td class="num strong">${row.points}</td>
                                 <td class="num">${row.wins}</td>
                             </tr>`).join('')}
@@ -394,7 +418,7 @@ const Views = {
                     <tbody>${standings.map(row => `
                         <tr onclick="Views.showDriver('${Util.attr(row.driverId)}')">
                             <td class="rank">${row.rank}</td>
-                            <td>${Util.esc(row.driver.name)}</td>
+                            <td>${C.flagName(row.driver)}</td>
                             <td class="muted">${Util.esc(world.teamsById[row.driver.teamId]?.name || '—')}</td>
                             <td class="num strong">${row.points}</td>
                             <td class="num">${row.wins}</td>
@@ -549,6 +573,7 @@ const Views = {
             <div class="chip-row" style="margin-bottom:1rem">
                 ${C.gameChip(game)}
                 ${race.track ? `<span class="chip chip-dim">📍 ${Util.esc(race.track)}</span>` : ''}
+                ${window.Library ? Library.trackChip(race.track) : ''}
                 ${race.laps ? `<span class="chip chip-dim">${Util.esc(String(race.laps))} laps</span>` : ''}
                 ${C.statusBadge(race.status)}
             </div>
@@ -559,12 +584,13 @@ const Views = {
                     <thead><tr><th>Pos</th><th>Driver</th><th>Team</th><th class="num">Pts</th><th></th></tr></thead>
                     <tbody>${results.map(res => {
                         const drv = world.driversById[res.driverId];
+                        const gain = !res.dnf && Number(res.start) && Number(res.position) ? Number(res.start) - Number(res.position) : null;
                         return `<tr>
                             <td>${C.posBadge(res)}</td>
-                            <td>${Util.esc(drv?.name || res.driverName || 'Unknown')}</td>
+                            <td>${drv ? C.flagName(drv) : Util.esc(res.driverName || 'Unknown')}${res.start ? ` <span class="muted small">from P${Util.esc(String(res.start))}${gain ? ` (${gain > 0 ? '+' : ''}${gain})` : ''}</span>` : ''}</td>
                             <td class="muted">${Util.esc(world.teamsById[drv?.teamId]?.name || '—')}</td>
-                            <td class="num strong">${pointsForResult(res, series)}</td>
-                            <td>${res.pole ? '<span title="Pole position">🅿️</span>' : ''}${res.fastestLap ? '<span title="Fastest lap">⚡</span>' : ''}</td>
+                            <td class="num strong">${pointsForResult(res, series, race)}</td>
+                            <td>${res.pole ? '<span title="Pole position">🅿️</span>' : ''}${res.fastestLap ? '<span title="Fastest lap">⚡</span>' : ''}${Number(res.lapsLed) > 0 ? `<span class="muted small" title="Laps led"> ${Util.esc(String(res.lapsLed))} led</span>` : ''}</td>
                         </tr>`;
                     }).join('')}</tbody>
                 </table>`
@@ -582,6 +608,9 @@ const Views = {
                     ? `<p class="muted" style="margin-top:1rem">Create your driver profile in <a href="#" onclick="Modal.close();App.go('career');return false">My Career</a> to sign up for races.</p>` : '')}
             `}
 
+            ${race.status !== 'completed' && window.Library?.ok() ? Library.briefing(race, world, signups.length) : ''}
+            ${mySignup && window.Library && Library.canReport(race) ? Library.reportPanel(race, mySignup, world) : ''}
+
             ${crewHtml}
 
             ${isAdmin ? `<div class="modal-actions">
@@ -591,7 +620,11 @@ const Views = {
                 <button class="btn btn-secondary" onclick="Admin.raceForm('${Util.attr(race.id)}')">✎ Edit Race</button>
                 <button class="btn btn-danger" onclick="Admin.deleteRace('${Util.attr(race.id)}')">Delete</button>
             </div>` : ''}
-        `, { wide: race.status === 'completed' });
+        `, { wide: race.status === 'completed' || !!window.Library?.ok() });
+        if (window.Library) {
+            Library.wireBriefing(Util.$('.modal-card') || document);
+            if (mySignup) Library.wireReport(race, mySignup);
+        }
     },
 
     async toggleSignup(raceId) {
@@ -708,7 +741,7 @@ const Views = {
                     <tbody>${drivers.map(row => `
                         <tr onclick="Views.showDriver('${Util.attr(row.driverId)}')">
                             <td class="rank">${row.rank <= 3 ? ['🥇', '🥈', '🥉'][row.rank - 1] : row.rank}</td>
-                            <td>${Util.esc(row.driver.name)}</td>
+                            <td>${C.flagName(row.driver)}</td>
                             <td class="muted">${Util.esc(world.teamsById[row.driver.teamId]?.name || 'Free agent')}</td>
                             <td class="prestige-cell" title="Career prestige ${starsOf(row.driverId)}/5">${'★'.repeat(starsOf(row.driverId))}</td>
                             <td class="num strong">${row.points}</td>
@@ -766,7 +799,7 @@ const Views = {
                 <tbody>${rows.map(r => `
                     <tr onclick="Views.showDriver('${Util.attr(r.driverId)}')">
                         <td class="rank">${r.rank}</td>
-                        <td>${Util.esc(r.driver.name)}</td>
+                        <td>${C.flagName(r.driver)}</td>
                         <td class="num">${r.starts}</td>
                         <td class="num strong">${r.wins}</td>
                         <td class="num">${r.winPct.toFixed(0)}%</td>
@@ -860,7 +893,7 @@ const Views = {
         const prog = isPlayerDriver ? Stats.pointsProgression(world.races, world, {}, [driverId]) : { labels: [], series: [] };
 
         Modal.open(`
-            ${Modal.header(`${driver.number ? '#' + driver.number + ' ' : ''}${driver.name}`, `${team?.name || 'Free agent'}${driver.country ? ' · ' + driver.country : ''}`)}
+            ${Modal.header(`${driver.number ? '#' + driver.number + ' ' : ''}${window.Library ? Library.flag(driver) + ' ' : ''}${driver.name}${driver.nick ? ` “${driver.nick}”` : ''}`, `${team?.name || 'Free agent'}${driver.country ? ' · ' + driver.country : ''}${driver.age ? ' · age ' + driver.age : ''}`)}
             <div class="chip-row" style="margin-bottom:.6rem">
                 <span class="chip chip-dim" title="Market worth per race — grows with prestige">💵 worth ${Economy.fmt(worth)}/race</span>
                 ${driver.rating ? `<span class="chip rating-chip" title="Skill rating">⭐ ${driver.rating}</span>` : ''}

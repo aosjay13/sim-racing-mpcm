@@ -82,6 +82,11 @@ Local-only (IndexedDB) — no Firebase, no shim needed; still block non-localhos
 - `node solo-import-test.js` — every results format (rF2/LMU XML, GTR2/RACE 07 txt,
   NR2003 HTML, iRacing CSV, AC race_out.json, ACC UTF-16 JSON, generic CSV, paste)
   parsed, name-matched and fed through `completeRound`.
+- `node solo-play.js [gameId] [driver|owner|principal]` — plays like a person: builds
+  a character in the wizard, logs a full race by hand (grid, finish, laps led,
+  incidents, damage, teammate), simulates the next round, scans every screen for
+  leaked values (NaN / undefined), undoes, reloads. Handles derby and rally rounds.
+  Screenshots land in `harness/solo-play-shots/` (git-ignored).
 - `node solo-drive.js` — drives the real UI: wizard, calendar editing, manual /
   imported / simulated results, undo, offers, sponsors, training, every screen,
   export → import, a fast-forward to season 40 → retirement → Hall of Fame,
@@ -91,3 +96,26 @@ Local-only (IndexedDB) — no Firebase, no shim needed; still block non-localhos
   `SC.Engine.completeRound(SC.App.S, { mode: 'sim' })` then `SC.Store.save(SC.App.S)`.
 - Views render from `SC.App.S`; every mutation goes through `SC.App.act()` (undo
   snapshot, autosave, rollback on error).
+
+## League ↔ Solo shared library (v3.31.0)
+
+`app.html` loads the Solo Career's pure data modules (`js/solo/sc-tracks.js`,
+`sc-gamedb.js`, `sc-names.js`, `sc-import.js`) and `js/srmpc-library.js` (`Library`):
+game library install (Admin → Games → 📚 Add from library: series with their Solo
+points systems, tracks with types, optional AI field), "Load the real calendar" in
+the Schedule Builder (`Track | laps` lines), the race briefing card, results import
+in the GM results form, driver self-reports (stored as `report` on the driver's own
+`raceSignups` doc — no new collection, no rules change), nationality / nickname /
+age / helmet on driver profiles, and Solo-style achievements.
+
+- `node league-race-drive.js` — the whole multiplayer loop on the shim: GM installs
+  NR2003 from the library, builds a season from the real calendar, a player registers
+  and creates a character, signs up, reads the briefing, reports their result; the GM
+  sees it pre-filled, imports an NR2003 results page (name matching, guest skipped),
+  saves; standings (library points), prize money, history and achievements are
+  checked; round 2 is simulated with the AI field. Screenshots in `harness/league-shots/`.
+- The shim state lives in the page — never `page.reload()` mid-drive; sign out and
+  back in instead.
+- The GM results form contains the import mapping table: select result rows with
+  `#results-form .results-table tbody tr`, not `#results-form tbody tr`.
+

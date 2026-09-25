@@ -33,20 +33,49 @@ const POINTS_SYSTEMS = {
         points: [10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
         fastestLapBonus: 0, poleBonus: 0
     },
+    // Shared with the Solo Career (js/solo/sc-gamedb.js SC.POINTS) so a series
+    // installed from the game library scores the same in both modes.
+    f1fl: { label: 'Formula 1 + fastest lap (top 10)', points: [25, 18, 15, 12, 10, 8, 6, 4, 2, 1], fastestLapBonus: 1, flTop: 10, poleBonus: 0 },
+    f2: { label: 'Formula 2 feature race (+2 pole, +1 FL)', points: [25, 18, 15, 12, 10, 8, 6, 4, 2, 1], fastestLapBonus: 1, flTop: 10, poleBonus: 2 },
+    nascar_classic: {
+        label: 'NASCAR 1975–2003 (175-170-165… +5 led, +5 most led)',
+        points: [175, 170, 165, 160, 155, 150, 146, 142, 138, 134, 130, 127, 124, 121, 118, 115, 112, 109, 106, 103, 100, 97, 94, 91, 88, 85, 82, 79, 76, 73, 70, 67, 64, 61, 58, 55, 52, 49, 46, 43, 40, 37, 34],
+        fastestLapBonus: 0, poleBonus: 0, ledBonus: 5, mostLedBonus: 5
+    },
+    wec: { label: 'WEC (25-18-15… + pole)', points: [25, 18, 15, 12, 10, 8, 6, 4, 2, 1], fastestLapBonus: 0, poleBonus: 1 },
+    btcc: { label: 'BTCC (20-17-15… + FL + led)', points: [20, 17, 15, 13, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1], fastestLapBonus: 1, poleBonus: 0, ledBonus: 1 },
+    wtcc: { label: 'WTCC (10-8-6-5-4-3-2-1)', points: [10, 8, 6, 5, 4, 3, 2, 1], fastestLapBonus: 0, poleBonus: 0 },
+    dtm: { label: 'DTM (25-18-15… + pole 3)', points: [25, 18, 15, 12, 10, 8, 6, 4, 2, 1], fastestLapBonus: 0, poleBonus: 3 },
+    supergt: { label: 'Super GT (20-15-11…)', points: [20, 15, 11, 8, 6, 5, 4, 3, 2, 1], fastestLapBonus: 0, poleBonus: 0 },
+    arca: { label: 'ARCA / short track (50-45-43…)', points: [50, 45, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10], fastestLapBonus: 0, poleBonus: 0 },
+    karting: { label: 'Karting (25-20-17…)', points: [25, 20, 17, 15, 13, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1], fastestLapBonus: 0, poleBonus: 0 },
+    rally: { label: 'Rally (25-18-15…)', points: [25, 18, 15, 12, 10, 8, 6, 4, 2, 1], fastestLapBonus: 0, poleBonus: 0 },
+    wreck: { label: 'Wreckfest (10-8-6… + 1 per wreck)', points: [10, 8, 6, 5, 4, 3, 2, 1], fastestLapBonus: 0, poleBonus: 0, wreckBonus: 1 },
     custom: { label: 'Custom', points: [], fastestLapBonus: 0, poleBonus: 0 }
 };
 
-function pointsForResult(result, series) {
+// Did this result lead the most laps in its race? (ties: every tied leader counts)
+function ledMostLaps(result, race) {
+    const led = Number(result?.lapsLed) || 0;
+    if (!led || !race || !Array.isArray(race.results)) return !!result?.mostLed;
+    return led >= Math.max(0, ...race.results.map(r => Number(r.lapsLed) || 0));
+}
+
+// `race` is optional — pass it so "most laps led" bonuses can be scored.
+function pointsForResult(result, series, race = null) {
     if (!result) return 0;
     const systemId = series?.pointsSystem || 'f1';
     const system = POINTS_SYSTEMS[systemId] || POINTS_SYSTEMS.f1;
 
-    // A DNF scores no finishing points, but pole / fastest-lap bonuses still
-    // count if the league's points system awards them (matches real series).
+    // Bonuses a DNF can still earn (pole, laps led, wrecks) — matches real series.
+    let bonus = 0;
+    if (result.pole && system.poleBonus) bonus += system.poleBonus;
+    if (system.ledBonus && Number(result.lapsLed) > 0) bonus += system.ledBonus;
+    if (system.mostLedBonus && ledMostLaps(result, race)) bonus += system.mostLedBonus;
+    if (system.wreckBonus && Number(result.wrecks) > 0) bonus += Number(result.wrecks) * system.wreckBonus;
+
     if (result.dnf) {
-        let bonus = 0;
-        if (result.fastestLap && system.fastestLapBonus) bonus += system.fastestLapBonus;
-        if (result.pole && system.poleBonus) bonus += system.poleBonus;
+        if (result.fastestLap && system.fastestLapBonus && !system.flTop) bonus += system.fastestLapBonus;
         return bonus;
     }
 
@@ -55,9 +84,8 @@ function pointsForResult(result, series) {
         : system.points;
     const idx = Number(result.position) - 1;
     let pts = (idx >= 0 && idx < table.length) ? Number(table[idx]) || 0 : 0;
-    if (result.fastestLap && system.fastestLapBonus) pts += system.fastestLapBonus;
-    if (result.pole && system.poleBonus) pts += system.poleBonus;
-    return pts;
+    if (result.fastestLap && system.fastestLapBonus && (!system.flTop || (idx >= 0 && idx < system.flTop))) pts += system.fastestLapBonus;
+    return pts + bonus;
 }
 
 /* ---------------- Firestore CRUD with a light cache ---------------- */
@@ -251,6 +279,7 @@ const DB = {
 window.DB = DB;
 window.POINTS_SYSTEMS = POINTS_SYSTEMS;
 window.pointsForResult = pointsForResult;
+window.ledMostLaps = ledMostLaps;
 
 /* ============================================================
    Stats engine — everything derived live from race results.
@@ -292,7 +321,8 @@ const Stats = {
                         driver: driver || { name: res.driverName || 'Unknown driver', teamId: null },
                         starts: 0, wins: 0, podiums: 0, top5: 0, poles: 0,
                         fastestLaps: 0, dnfs: 0, points: 0,
-                        bestFinish: null, finishSum: 0, finishCount: 0
+                        bestFinish: null, finishSum: 0, finishCount: 0,
+                        lapsLed: 0, wrecks: 0, bestGain: 0, lastToFirst: 0, grandSlams: 0
                     };
                     rows.set(res.driverId, row);
                 }
@@ -310,7 +340,16 @@ const Stats = {
                 }
                 if (res.pole) row.poles += 1;
                 if (res.fastestLap) row.fastestLaps += 1;
-                row.points += pointsForResult(res, series);
+                row.lapsLed += Number(res.lapsLed) || 0;
+                row.wrecks += Number(res.wrecks) || 0;
+                // Same race feats the Solo Career tracks (needs the grid slot).
+                const start = Number(res.start) || null;
+                if (!res.dnf && pos && start) {
+                    row.bestGain = Math.max(row.bestGain, start - pos);
+                    if (pos === 1 && start === race.results.length && start > 1) row.lastToFirst += 1;
+                }
+                if (!res.dnf && pos === 1 && res.pole && res.fastestLap && ledMostLaps(res, race)) row.grandSlams += 1;
+                row.points += pointsForResult(res, series, race);
             }
         }
 
@@ -431,7 +470,7 @@ const Stats = {
                 series: world.seriesById[race.seriesId] || null,
                 game: world.gamesById[race.gameId] || null,
                 result: res,
-                points: pointsForResult(res, world.seriesById[race.seriesId])
+                points: pointsForResult(res, world.seriesById[race.seriesId], race)
             });
         }
         rows.sort((a, b) => (b.race.date || '').localeCompare(a.race.date || ''));
@@ -479,7 +518,7 @@ const Stats = {
         for (const race of completed) {
             for (const s of series) {
                 const res = race.results.find(r => r.driverId === s.driverId);
-                if (res) totals[s.driverId] += pointsForResult(res, world.seriesById[race.seriesId]);
+                if (res) totals[s.driverId] += pointsForResult(res, world.seriesById[race.seriesId], race);
                 s.values.push(totals[s.driverId]);
             }
         }
@@ -522,8 +561,12 @@ function generateScheduleRaces({ series, cadence, startDate, time, tracks, laps,
     const d = new Date(start);
     const base = Number(startRound) || 1;
 
-    trackList.forEach((track, i) => {
+    trackList.forEach((line, i) => {
         const round = base + i;
+        // "Track | laps" sets that round's distance (same notation as the Solo
+        // Career calendars); a plain line uses the builder's default laps.
+        const [track, lapsTxt] = line.split('|').map(x => x.trim());
+        const roundLaps = Number(lapsTxt) > 0 ? Math.round(Number(lapsTxt)) : (laps || null);
         const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         races.push({
             seriesId: series.id,
@@ -534,7 +577,7 @@ function generateScheduleRaces({ series, cadence, startDate, time, tracks, laps,
             track,
             date: iso,
             time: time || '',
-            laps: laps || null,
+            laps: roundLaps,
             // The GM's eligible-car tokens for this event (space-delimited in
             // the builder, parsed to an array). Empty/absent = open entry.
             // Falls back to series.carChoices at validation time — see

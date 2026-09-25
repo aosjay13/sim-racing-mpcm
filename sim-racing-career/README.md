@@ -30,10 +30,41 @@ Firebase-backed multiplayer league: players register, pick roles (driver, team
 owner, crew, agent, sponsor…), negotiate contracts in deal rooms, and the Game
 Master runs series, schedules, results and simulations. See `MANUAL.md`.
 
+### Shared with the Solo Career
+
+Both modes run on the same game library, so a league race and a solo race look
+and score the same:
+
+- **Game library** — *Admin → Games → 📚 Add from library* installs any of the 24
+  games with its real series (same points systems as the Solo Career), its track
+  list (with track types and lap lengths) and, optionally, an AI field of rival
+  teams and drivers for each series.
+- **Real calendars** — the Schedule Builder's *Load the real calendar* fills in the
+  season's tracks with per-round laps (`Track | laps`), scaled to a race length.
+- **Race briefing** — every upcoming race shows *Set this up in your game*: car,
+  track type, distance, weather and time of day (the same for every driver), grid,
+  lobby realism settings and which results file to save. *Copy setup* puts it on
+  the clipboard for the host.
+- **Report my result** — on race day, signed-up drivers log their own finish, grid
+  slot, laps led and incidents, just like the Solo Career. The Game Master's results
+  form arrives pre-filled from those reports.
+- **Results import** — the GM can load the sim's results file (rFactor / LMU / AMS
+  XML, GTR2 / RACE 07 logs, NR2003 HTML, iRacing CSV, AC / ACC JSON, any CSV) or paste
+  a finishing order. Names are matched to league drivers; guests and AI in the
+  lobby are skipped and positions re-numbered.
+- **Characters** — driver profiles take a nationality (with flag), nickname, age
+  and helmet colour, like the Solo Career's character creator.
+- **Points & achievements** — the league gains the Solo points systems (NASCAR
+  classic with laps-led bonuses, ARCA, BTCC, DTM, WEC, Super GT, karting, rally,
+  Wreckfest wrecks…) and Solo-style achievements (Last to First, Grand Slam,
+  Charger, 10 Wins, 100 Starts…).
+
 ## Project files
 
 - `index.html` — landing page
-- `career.html`, `css/career.css`, `js/solo/` — Solo Career
+- `career.html`, `css/career.css`, `js/solo/` — Solo Career (`sc-tracks.js`, `sc-gamedb.js`,
+  `sc-names.js` and `sc-import.js` are also loaded by the league app)
+- `js/srmpc-library.js` — the league's bridge to the shared library
 - `app.html`, `css/style.css`, `js/srmpc-*.js` — League app (`js/srmpc-core.js` holds the Firebase config)
 - `firestore.rules` — Firestore security rules for the league app
 

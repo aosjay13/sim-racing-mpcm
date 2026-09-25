@@ -155,8 +155,8 @@ const Prestige = {
     VENUE_XP: 25,      // track owner: per league race hosted at their venue
 
     // Same XP currency as driverScore, for one race result.
-    _resultXP(res, series) {
-        let xp = pointsForResult(res, series);
+    _resultXP(res, series, race = null) {
+        let xp = pointsForResult(res, series, race);
         const pos = Number(res.position);
         if (!res.dnf && pos === 1) xp += 15;
         if (!res.dnf && pos && pos <= 3) xp += 6;
@@ -172,7 +172,7 @@ const Prestige = {
             for (const res of race.results || []) {
                 const d = world.driversById[res.driverId];
                 if (!d) continue;
-                const xp = this._resultXP(res, series);
+                const xp = this._resultXP(res, series, race);
                 driverXP[d.id] = xp;
                 if (d.teamId) teamXP[d.teamId] = (teamXP[d.teamId] || 0) + xp;
             }
@@ -752,16 +752,17 @@ const Sim = {
         const laps = Number(race.laps) || 20;
         const ledPool = [finishers[0], finishers[1], quali[0] && finishers.find(f => f.d.id === quali[0].d.id)]
             .filter(Boolean);
+        const gridSlot = Object.fromEntries(quali.map((q, i) => [q.d.id, i + 1]));
         const results = [
             ...finishers.map((r, i) => ({
-                driverId: r.d.id, position: i + 1, dnf: false,
+                driverId: r.d.id, position: i + 1, dnf: false, start: gridSlot[r.d.id],
                 pole: r.d.id === poleId, fastestLap: r.d.id === flId,
                 incidents: Math.random() < (i < 3 ? 0.55 : 0.35) ? 0 : 1 + Math.floor(Math.random() * 3),
                 lapsLed: ledPool.some(p => p.d.id === r.d.id) ? Math.max(1, Math.floor(laps * (i === 0 ? 0.5 : 0.2) * Math.random() + (i === 0 ? laps * 0.2 : 0))) : 0,
                 lapsCompleted: laps
             })),
             ...runners.filter(r => r.dnf).map(r => ({
-                driverId: r.d.id, position: null, dnf: true,
+                driverId: r.d.id, position: null, dnf: true, start: gridSlot[r.d.id],
                 pole: r.d.id === poleId, fastestLap: false,
                 incidents: 1 + Math.floor(Math.random() * 4),
                 lapsLed: 0, lapsCompleted: Math.floor(laps * Math.random() * 0.9)

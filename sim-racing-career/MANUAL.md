@@ -259,13 +259,22 @@ Click **Save Profile** to apply changes.
 
 ### Signing Up for Races
 
-1. Open the **Calendar** tab and click on an upcoming race, or find it in **Driver Hub → Available Races**.
-2. In the **Race Details** modal, review the race information (date, game, track, current participants).
-3. Select a **car from your Garage** that is compatible with the race's simulation.
-4. Click **Sign Me Up**.
-5. Your name now appears in the participants list.
+1. Open **Races** and click an upcoming race.
+2. Read **🎮 Set this up in your game**: car, track type, distance, weather and time
+   of day (the same forecast for everyone), grid size, lobby realism settings and the
+   results file to save. **📋 Copy setup** copies it for the lobby host.
+3. If the series requires a car, you need an eligible one in your garage (or your team's).
+4. Click **🏁 Sign me up**. Your name appears on the entry list.
 
-> You must have a linked and approved Driver Profile before signing up. If you do not have one, submit a driver profile request (via the **Drivers** tab → **Request Driver Profile**) and wait for Game Master approval.
+### Reporting your result
+
+On race day (or once the GM marks the race live) the race window shows **📝 Report
+my result**. Enter your finishing position (or DNF), starting slot, laps led,
+incidents and fastest lap, then submit. You can update it until the official results
+are saved; the Game Master sees it pre-filled when entering results.
+
+> You need a driver profile first: **My Career → Driver → Start from scratch** (name,
+> nickname, nationality, age and helmet colour).
 
 ---
 
@@ -370,20 +379,24 @@ The race appears in the Calendar and the Race Director Desk with status **Schedu
 
 After a race is run, submit the results to award points and update standings.
 
-1. In the **Race Director Desk** or **Race Schedule Control**, find the race.
-2. Click **Results** (or **View Details** and then **Submit Results**).
-3. In the **Submit Results** form:
-   - For each driver who signed up, enter their **Finish Position** (1, 2, 3, etc.).
-   - Check the **DNF** box for any driver who did not finish.
-   - Positions must be unique integers starting at 1.
-4. Click **Submit Results**.
+1. Open the race (calendar, series page, or **Admin → Races**) and click **🏁 Enter Results**.
+2. Drivers who used **📝 Report my result** on race day are already filled in and
+   marked *reported* — check them.
+3. Either type the classification, or open **📂 Import a results file** and load
+   the file your sim wrote (rFactor / LMU / AMS XML, GTR2 / RACE 07 logs, NR2003
+   HTML, iRacing CSV, AC / ACC JSON, any CSV) or paste the finishing order. Fix any
+   row the name matcher flags, then **Apply to the results form**. Lobby guests and
+   AI are skipped and positions re-numbered (untick that box to keep the file's
+   positions).
+4. Optional columns: **Grid** (starting slot), **Inc**, **Led**, **Laps**; pick the
+   pole-sitter and fastest lap.
+5. Click **Save Results**.
 
 The system automatically:
-- Calculates points based on the active **Points System** (F1, IndyCar, or NASCAR style).
-- Awards 0 points to DNF drivers.
-- Updates both Driver and Team Championship Standings.
-- Processes any sponsor contract bonuses and penalties.
-- Logs the submission to the Operations Feed with a timestamp and your UID.
+- Calculates points from the series' points system, including laps-led, most-laps-led,
+  pole, fastest-lap and wreck bonuses where that system awards them.
+- Updates driver and team standings, stats, records and achievements.
+- Pays prize money, salaries and sponsor deals, and awards prestige XP (first save only).
 
 ---
 
@@ -503,19 +516,28 @@ Every adjustment is logged in the **Payout Audit List** with timestamp, actor UI
 
 ### Games Catalog
 
-The **Games Catalog** defines which racing simulations are available for race scheduling and car assignments.
+**Admin → Games** lists the sims your league races.
 
-#### Adding a Game
+#### Adding a game from the library (recommended)
 
-1. Open **Games Catalog** in the Racing Manager.
-2. Enter:
-   - **Game Key** — A short identifier, e.g., `iracing` or `wreckfest2` (no spaces)
-   - **Display Name** — The name shown in the UI, e.g., `iRacing` or `Wreckfest 2`
-3. Click **Add Game**.
+1. Click **📚 Add from library** and pick one of the 24 games (the same library the
+   Solo Career uses: NR2003, iRacing, AMS2, AC, ACC, rFactor 2, LMU, F1, Wreckfest…).
+2. Tick the series you want. Each comes with its real points system and car.
+3. Choose the season year, whether to add the game's tracks to the track library,
+   and the **AI field per series** (rival AI teams of two cars each, 0 for none).
+4. Click **Install**. Installing again later only adds what's missing.
 
-#### Removing a Game
+Library games unlock the race briefing, track info, real calendars and results-file
+import. An existing hand-made game can be linked to a library profile from its
+**Edit** form.
 
-Click the **Delete** button next to any game in the list. This does not remove existing races or cars linked to that game.
+#### Adding a custom game
+
+Click **＋ Custom game**, give it a name, platform and colour.
+
+#### Removing a game
+
+Click **Delete** next to it. Series and races that used it keep working.
 
 ---
 

@@ -140,12 +140,15 @@ const Admin = {
         el.innerHTML = `
         <section class="panel">
             <div class="panel-head"><h2>🎮 Games (${world.games.length})</h2>
-                <button class="btn btn-primary btn-sm" onclick="Admin.gameForm()">＋ Add Game</button></div>
+                <div class="btn-row">
+                    ${window.Library?.ok() ? `<button class="btn btn-primary btn-sm" onclick="Library.installForm()">📚 Add from library</button>` : ''}
+                    <button class="btn btn-secondary btn-sm" onclick="Admin.gameForm()">＋ Custom game</button>
+                </div></div>
             ${world.games.length ? `<table class="table">
                 <thead><tr><th>Game</th><th>Platform</th><th class="num">Series</th><th class="num">Races</th><th></th></tr></thead>
                 <tbody>${world.games.map(g => `
                     <tr>
-                        <td><span class="team-dot" style="background:${Util.esc(g.color || '#666')}"></span><span class="strong">${Util.esc(g.name)}</span></td>
+                        <td><span class="team-dot" style="background:${Util.esc(g.color || '#666')}"></span><span class="strong">${Util.esc(g.name)}</span>${window.Library?.libGameFor(g) ? ' <span class="badge badge-blue" title="Uses the shared game library: tracks, briefings, results import">📚 Library</span>' : ''}</td>
                         <td class="muted">${Util.esc(g.platform || '—')}</td>
                         <td class="num">${world.series.filter(s => s.gameId === g.id).length}</td>
                         <td class="num">${world.races.filter(r => r.gameId === g.id).length}</td>
@@ -154,8 +157,8 @@ const Admin = {
                             <button class="btn btn-danger btn-sm" onclick="Admin.deleteGame('${Util.attr(g.id)}')">Delete</button>
                         </td>
                     </tr>`).join('')}</tbody></table>`
-            : C.empty('🎮', 'No games yet', 'Add the sims your league races — F1, iRacing, Gran Turismo, Forza, anything.',
-                `<button class="btn btn-primary" onclick="Admin.gameForm()">Add your first game</button>`)}
+            : C.empty('🎮', 'No games yet', 'Add the sims your league races — pick from the library (24 games with their real series and tracks) or add any game by hand.',
+                `${window.Library?.ok() ? `<button class="btn btn-primary" onclick="Library.installForm()">📚 Browse the game library</button>` : ''}<button class="btn btn-secondary" onclick="Admin.gameForm()">Add a custom game</button>`)}
         </section>`;
     },
 
@@ -170,6 +173,8 @@ const Admin = {
                     <label class="field"><span>Platform</span><input id="gf-platform" class="input" value="${Util.esc(game?.platform || '')}" maxlength="40" placeholder="PC / PS5 / Xbox / Cross-play"></label>
                     <label class="field"><span>Accent color</span><input id="gf-color" class="input input-color" type="color" value="${Util.esc(game?.color || '#29d1a5')}"></label>
                 </div>
+                ${window.Library?.ok() ? `<label class="field"><span>Library profile (race briefings, track info, results import)</span>
+                    <select id="gf-lib" class="input"><option value="">— None —</option>${SC.GAMES.map(lg => `<option value="${Util.attr(lg.id)}" ${Library.libGameFor(game)?.id === lg.id ? 'selected' : ''}>${Util.esc(lg.name)}</option>`).join('')}</select></label>` : ''}
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
                     <button type="submit" class="btn btn-primary">${game ? 'Save' : 'Add Game'}</button>
@@ -184,6 +189,7 @@ const Admin = {
                     platform: Util.$('#gf-platform').value.trim(),
                     color: Util.$('#gf-color').value
                 };
+                if (Util.$('#gf-lib')) data.libraryId = Util.$('#gf-lib').value || null;
                 if (!data.name) throw new Error('Game name is required.');
                 if (game) await DB.update('games', game.id, data);
                 else await DB.create('games', { ...data, active: true });
@@ -580,8 +586,9 @@ const Admin = {
                 <label class="field"><span>Eligible cars — space-separated car IDs (blank = open entry)</span>
                     <input id="sb-cars" class="input" value="${Util.esc((series.find(s => s.id === initialSid)?.carChoices || []).join(' '))}" placeholder="e.g. phoenix-gt-r-street-spec falcon-rs-coupe">
                     <span class="muted small">Stamped on every generated race — entrants must own one of these cars (personal or team garage). ${knownCarIds ? `Catalog IDs: ${Util.esc(knownCarIds)}` : 'Stock the Dealership (Admin → Dealership) to get car IDs.'}</span></label>
-                <label class="field"><span>Tracks — one per line, in order *</span>
-                    <textarea id="sb-tracks" class="input" rows="8" placeholder="Silverstone&#10;Spa-Francorchamps&#10;Monza&#10;Suzuka&#10;Interlagos" required></textarea></label>
+                <div class="lib-cal-row" id="sb-libcal"></div>
+                <label class="field"><span>Tracks — one per line, in order (add <code>| laps</code> to set a round's distance) *</span>
+                    <textarea id="sb-tracks" class="input" rows="8" placeholder="Silverstone&#10;Spa-Francorchamps | 20&#10;Monza&#10;Suzuka&#10;Interlagos" required></textarea></label>
                 <div class="field"><span id="sb-lib-label">Track library — click to add</span>
                     <div id="sb-lib" class="chip-cloud"></div></div>
                 <p class="muted small" id="sb-preview">Each line becomes a round, spaced by your cadence.</p>
@@ -624,11 +631,31 @@ const Admin = {
         });
         renderLib(initialSid);
 
+        // Library series (installed from the Game Library) can load their real
+        // calendar — tracks and lap counts, scaled to a race length.
+        const renderLibCal = (sid) => {
+            const box = Util.$('#sb-libcal');
+            const s = series.find(x => x.id === sid);
+            const game = games.find(g => g.id === s?.gameId) || null;
+            const sd = window.Library ? Library.libSeriesFor(s, game) : null;
+            if (!sd) { box.innerHTML = ''; return; }
+            box.innerHTML = `<span class="muted small">📚 ${Util.esc(sd.name)} has a real calendar${sd.cal ? ` (${sd.cal.length} rounds)` : ''}.</span>
+                <select id="sb-libpct" class="input input-sm">${[[1, 'Full distance'], [0.75, '75%'], [0.5, '50%'], [0.33, '33%'], [0.25, '25%'], [0.1, '10%']].map(([v, l]) => `<option value="${v}" ${v === 0.5 ? 'selected' : ''}>${l}</option>`).join('')}</select>
+                <button type="button" class="btn btn-secondary btn-sm" id="sb-libload">Load the real calendar</button>`;
+            Util.$('#sb-libload').addEventListener('click', () => {
+                const lg = Library.libGameFor(game) || SC.game(s.libraryGame);
+                Util.$('#sb-tracks').value = Library.calendarLines(lg, sd, Number(Util.$('#sb-libpct').value)).join('\n');
+                preview();
+            });
+        };
+        renderLibCal(initialSid);
+
         // Keep the season dropdown and track library in sync with the chosen series.
         Util.$('#sb-series').addEventListener('change', (e) => {
             Util.$('#sb-season').innerHTML = seasonOptions(e.target.value);
             Util.$('#sb-cars').value = (series.find(s => s.id === e.target.value)?.carChoices || []).join(' ');
             renderLib(e.target.value);
+            renderLibCal(e.target.value);
         });
 
         Util.$('#sched-form').addEventListener('submit', async (e) => {
@@ -878,6 +905,15 @@ const Admin = {
 
         const existing = {};
         (race.results || []).forEach(r => { existing[r.driverId] = r; });
+        // Drivers' own reports (Report my result) pre-fill rows that have no
+        // official result yet — the GM checks them and saves.
+        const reported = {};
+        signups.forEach(s => { if (s.report && s.driverId) reported[s.driverId] = s.report; });
+        const reportCount = Object.keys(reported).filter(id => !existing[id]).length;
+        Object.entries(reported).forEach(([id, rep]) => {
+            if (existing[id]) return;
+            existing[id] = { driverId: id, position: rep.position ?? null, dnf: !!rep.dnf, start: rep.start, incidents: rep.incidents, lapsLed: rep.lapsLed, wrecks: rep.wrecks, pole: rep.start === 1, fastestLap: !!rep.fastestLap, _reported: true };
+        });
 
         // Signed-up drivers first, then everyone else.
         const drivers = world.drivers.slice().sort((a, b) => {
@@ -894,6 +930,8 @@ const Admin = {
         Modal.open(`
             ${Modal.header(`🏁 Results — ${race.name || race.track || 'Race'}`, `${Util.fmtDate(race.date)} · Points are computed automatically from the series points system`)}
             <form id="results-form">
+                ${reportCount ? `<p class="small lib-reported">📝 ${Util.plural(reportCount, 'driver')} reported their own result — pre-filled below (marked <span class="badge badge-amber">reported</span>). Check them, then save.</p>` : ''}
+                ${window.Library ? Library.importPanel(race, world) : ''}
                 <div class="form-row">
                     <label class="field"><span>🅿️ Pole position</span>
                         <select id="res-pole" class="input">
@@ -908,6 +946,7 @@ const Admin = {
                 </div>
                 <table class="table table-tight results-table">
                     <thead><tr><th>Pos</th><th>Driver</th><th>DNF</th>
+                        <th title="Starting position — used for places gained and last-to-first">Grid</th>
                         <th title="Incident points — 0 pays clean-race clause bonuses">Inc</th>
                         <th title="Laps led — most laps led pays clause bonuses">Led</th>
                         <th title="Laps completed — full distance pays clause bonuses">Laps</th></tr></thead>
@@ -915,10 +954,11 @@ const Admin = {
                         ${drivers.map(d => {
                             const ex = existing[d.id];
                             const tv = (v) => (v === undefined || v === null) ? '' : v;
-                            return `<tr data-driver="${Util.attr(d.id)}">
+                            return `<tr data-driver="${Util.attr(d.id)}" data-wrecks="${tv(ex?.wrecks)}">
                                 <td><input class="input input-pos" type="number" min="1" max="99" value="${ex && !ex.dnf ? ex.position || '' : ''}" placeholder="—"></td>
-                                <td>${Util.esc(d.name)} ${signedIds.has(d.id) ? '<span class="badge badge-blue">signed up</span>' : ''}</td>
+                                <td>${Util.esc(d.name)} ${signedIds.has(d.id) ? '<span class="badge badge-blue">signed up</span>' : ''}${ex?._reported ? ' <span class="badge badge-amber" title="Pre-filled from the driver\'s own report">reported</span>' : ''}</td>
                                 <td><input type="checkbox" class="chk-dnf" ${ex?.dnf ? 'checked' : ''}></td>
+                                <td><input class="input input-grid" type="number" min="1" max="99" style="width:4rem" value="${tv(ex?.start)}" placeholder="—"></td>
                                 <td><input class="input input-inc" type="number" min="0" max="99" style="width:4rem" value="${tv(ex?.incidents)}" placeholder="—"></td>
                                 <td><input class="input input-led" type="number" min="0" max="999" style="width:4rem" value="${tv(ex?.lapsLed)}" placeholder="—"></td>
                                 <td><input class="input input-laps" type="number" min="0" max="999" style="width:4rem" value="${tv(ex?.lapsCompleted)}" placeholder="—"></td>
@@ -935,6 +975,29 @@ const Admin = {
                 </div>
             </form>
         `, { wide: true });
+
+        // Results import fills the table (positions, DNFs, telemetry, pole/FL).
+        if (window.Library) Library.wireImport(race, world, drivers, (results) => {
+            const byId = Object.fromEntries(results.map(r => [r.driverId, r]));
+            const put = (row, cls, v) => { row.querySelector(cls).value = v === null || v === undefined ? '' : v; };
+            Util.$$('#results-form .results-table tbody tr').forEach(row => {
+                const r = byId[row.dataset.driver];
+                put(row, '.input-pos', r && !r.dnf ? r.position : '');
+                row.querySelector('.chk-dnf').checked = !!r?.dnf;
+                put(row, '.input-grid', r?.start); put(row, '.input-inc', r?.incidents);
+                put(row, '.input-led', r?.lapsLed); put(row, '.input-laps', r?.lapsCompleted);
+                row.dataset.wrecks = r?.wrecks ?? '';
+            });
+            const pole = results.find(r => r.start === 1);
+            if (pole) Util.$('#res-pole').value = pole.driverId;
+            const fl = results.find(r => r.fastestLap);
+            if (fl) Util.$('#res-fl').value = fl.driverId;
+            // Put the classified drivers at the top so the GM can check them.
+            const tbody = Util.$('#results-form .results-table tbody');
+            Array.from(tbody.querySelectorAll('tr')).map(row => ({ row, r: byId[row.dataset.driver] }))
+                .sort((a, b) => (a.r ? (a.r.dnf ? 500 : a.r.position || 400) : 1000) - (b.r ? (b.r.dnf ? 500 : b.r.position || 400) : 1000))
+                .forEach(({ row }) => tbody.appendChild(row));
+        });
 
         Util.$('#res-reopen')?.addEventListener('click', async () => {
             if (!confirm('Clear all results and set this race back to scheduled?')) return;
@@ -954,7 +1017,7 @@ const Admin = {
                 const results = [];
                 const seenPositions = new Set();
 
-                Util.$$('#results-form tbody tr').forEach(row => {
+                Util.$$('#results-form .results-table tbody tr').forEach(row => {
                     const driverId = row.dataset.driver;
                     const posVal = row.querySelector('.input-pos').value;
                     const dnf = row.querySelector('.chk-dnf').checked;
@@ -968,7 +1031,8 @@ const Admin = {
                     // clause evaluation can tell "0 incidents" from "not tracked".
                     const telemetry = {};
                     const tRead = (cls, key) => { const v = row.querySelector(cls).value; if (v !== '') telemetry[key] = Number(v); };
-                    tRead('.input-inc', 'incidents'); tRead('.input-led', 'lapsLed'); tRead('.input-laps', 'lapsCompleted');
+                    tRead('.input-inc', 'incidents'); tRead('.input-led', 'lapsLed'); tRead('.input-laps', 'lapsCompleted'); tRead('.input-grid', 'start');
+                    if (row.dataset.wrecks !== undefined && row.dataset.wrecks !== '') telemetry.wrecks = Number(row.dataset.wrecks);
                     if (!position && !dnf) {
                         // Pole/FL only, didn't finish scoring — count as entrant with no classification.
                         results.push({ driverId, position: null, dnf: false, pole: driverId === poleId, fastestLap: driverId === flId, ...telemetry });
@@ -1134,7 +1198,7 @@ const Admin = {
                 <label class="field"><span>Name *</span><input id="adf-name" class="input" required value="${Util.esc(driver?.name || '')}" maxlength="40"></label>
                 <div class="form-row">
                     <label class="field"><span>Number</span><input id="adf-number" class="input" type="number" min="0" max="999" value="${driver?.number ?? ''}"></label>
-                    <label class="field"><span>Country</span><input id="adf-country" class="input" value="${Util.esc(driver?.country || '')}" maxlength="30"></label>
+                    <label class="field"><span>Nationality</span>${window.Library?.ok() && (!driver?.country || Library.natOf(driver)) ? Library.nationSelect('adf-country', Library.natOf(driver)) : `<input id="adf-country" class="input" value="${Util.esc(driver?.country || '')}" maxlength="30">`}</label>
                     <label class="field"><span>Skill rating (AI pace, 50–99)</span><input id="adf-rating" class="input" type="number" min="50" max="99" value="${driver?.rating ?? ''}" placeholder="75"></label>
                 </div>
                 <label class="field"><span>Team</span>
@@ -1155,7 +1219,7 @@ const Admin = {
                 const data = {
                     name: Util.$('#adf-name').value.trim(),
                     number: Util.$('#adf-number').value ? Number(Util.$('#adf-number').value) : null,
-                    country: Util.$('#adf-country').value.trim(),
+                    ...(Util.$('#adf-country').tagName === 'SELECT' ? Library.readNation('adf-country') : { country: Util.$('#adf-country').value.trim() }),
                     teamId: Util.$('#adf-team').value || null,
                     rating: Util.$('#adf-rating').value ? Math.min(99, Math.max(50, Number(Util.$('#adf-rating').value))) : null,
                     bio: Util.$('#adf-bio').value.trim()

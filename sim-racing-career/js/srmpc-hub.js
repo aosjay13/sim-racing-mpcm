@@ -31,7 +31,15 @@ const ACHIEVEMENTS = [
     { id: 'pole-sitter', icon: '🅿️', label: 'Pole Sitter', desc: 'Take a pole position', check: r => r.poles >= 1 },
     { id: 'flying-lap', icon: '⚡', label: 'Flying Lap', desc: 'Set a fastest lap', check: r => r.fastestLaps >= 1 },
     { id: 'century', icon: '💯', label: 'Century Club', desc: '100 career points', check: r => r.points >= 100 },
-    { id: 'iron', icon: '🛡', label: 'Iron Reliability', desc: '5+ starts without a DNF', check: r => r.starts >= 5 && r.dnfs === 0 }
+    { id: 'iron', icon: '🛡', label: 'Iron Reliability', desc: '5+ starts without a DNF', check: r => r.starts >= 5 && r.dnfs === 0 },
+    // Shared with the Solo Career's achievement list.
+    { id: 'on-the-board', icon: '🔢', label: 'On the Board', desc: 'Score your first championship points', check: r => r.points > 0 },
+    { id: 'wins10', icon: '🔟', label: '10 Wins', desc: 'Win 10 league races', check: r => r.wins >= 10 },
+    { id: 'starts100', icon: '📅', label: '100 Starts', desc: 'Start 100 league races', check: r => r.starts >= 100 },
+    { id: 'charger', icon: '📈', label: 'Charger', desc: 'Gain 10+ places in one race', check: r => (r.bestGain || 0) >= 10 },
+    { id: 'last-to-first', icon: '🚀', label: 'Last to First', desc: 'Win from the back of the grid', check: r => (r.lastToFirst || 0) >= 1 },
+    { id: 'grand-slam', icon: '🎰', label: 'Grand Slam', desc: 'Pole, win, fastest lap and most laps led in one race', check: r => (r.grandSlams || 0) >= 1 },
+    { id: 'wrecker', icon: '💥', label: 'Wrecking Ball', desc: '50 wrecks caused in derby racing', check: r => (r.wrecks || 0) >= 50 }
 ];
 const ACH_CHAMPION = { id: 'champion', icon: '🌟', label: 'League Champion', desc: 'Crowned champion of a completed season' };
 window.ACHIEVEMENTS = ACHIEVEMENTS;

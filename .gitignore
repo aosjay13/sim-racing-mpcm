@@ -2,3 +2,4 @@
 # Solo Career harness: exported test save (regenerated every run)
 .claude/skills/verify/harness/solo-shots/export.json
 .claude/skills/verify/harness/solo-play-shots/
+.claude/skills/verify/harness/league-shots/
