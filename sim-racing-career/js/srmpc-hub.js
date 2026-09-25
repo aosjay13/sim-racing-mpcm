@@ -52,6 +52,7 @@ const Hub = {
     // center lets owners offer custom terms instead.
     STANDARD_SALARY: 200,
     buyoutFor(salary) { return Math.max(1000, Math.round(Number(salary) || 0) * 10); },
+    AI_REPLY_MSG(teamName) { return `${teamName}'s team principal already replied with an offer. Accept or counter it in League Hub → Recruitment. ✍️`; },
 
     /* ---------------- Recruitment profiles (per-role attributes) ---------------- */
     // What teams filter candidates by, per position. num = 1-10 self-rating.
@@ -638,8 +639,10 @@ const Hub = {
                 teamId, teamName: team.name, ownerUid: team.ownerUid || null,
                 driverId: driver.id, driverName: driver.name, driverUid: Auth.uid()
             });
+            const answered = team.ownerUid ? 0 : await Director.answerMyApplicationsNow().catch(() => 0);
             Util.notify(team.ownerUid
                 ? `Application sent to ${team.name}. 🤞`
+                : answered ? this.AI_REPLY_MSG(team.name)
                 : `Application sent to ${team.name} — the league office (Game Master) will open contract talks. 🏛️`);
             this.refresh();
         } catch (e) { Util.notify(e.message, 'error'); }
@@ -759,8 +762,10 @@ const Hub = {
                     attrs: p.recruit || null
                 });
             }
+            const answered = v.ownerUid ? 0 : await Director.answerMyApplicationsNow().catch(() => 0);
             Util.notify(v.ownerUid
                 ? `Application sent to ${v.teamName}. 🤞`
+                : answered ? this.AI_REPLY_MSG(v.teamName)
                 : `Application sent to ${v.teamName} — the league office (Game Master) will review it. 🏛️`);
             this.refresh();
         } catch (e) { Util.notify(e.message, 'error'); }
@@ -787,8 +792,10 @@ const Hub = {
                 attrs: p.recruit || null
             });
             Modal.close();
+            const answered = team?.ownerUid ? 0 : await Director.answerMyApplicationsNow().catch(() => 0);
             Util.notify(team?.ownerUid
                 ? `Application sent to ${team.name}. 🤞`
+                : answered ? this.AI_REPLY_MSG(team?.name || 'The team')
                 : `Application sent to ${team?.name || 'the team'} — the league office (Game Master) will review it. 🏛️`);
         } catch (e) { Util.notify(e.message, 'error'); }
     },

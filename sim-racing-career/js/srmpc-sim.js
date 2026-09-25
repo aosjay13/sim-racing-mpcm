@@ -708,7 +708,9 @@ const Sim = {
     // series) + player drivers signed up for the race.
     async gridFor(race, world) {
         const seriesTeamIds = new Set(world.teams.filter(t => t.seriesId === race.seriesId).map(t => t.id));
-        const grid = world.drivers.filter(d => d.teamId && seriesTeamIds.has(d.teamId));
+        // Human drivers only race when they've signed up — a player who joined
+        // an AI team must never "win" a simulated round they didn't drive.
+        const grid = world.drivers.filter(d => d.teamId && seriesTeamIds.has(d.teamId) && !d.ownerUid);
         try {
             const signups = (await DB.signups({ force: true })).filter(s => s.raceId === race.id);
             for (const s of signups) {
@@ -786,7 +788,7 @@ const Sim = {
     async simulateSeason(seriesId, { onlyNext = false } = {}) {
         const world = await DB.loadWorld(true);
         const pending = world.races
-            .filter(r => r.seriesId === seriesId && r.status !== 'completed')
+            .filter(r => r.seriesId === seriesId && (r.status !== 'completed' && r.status !== 'cancelled'))
             .sort((a, b) => (Number(a.round) || 999) - (Number(b.round) || 999) || (a.date || '').localeCompare(b.date || ''));
         if (!pending.length) throw new Error('No scheduled races left in this series.');
 

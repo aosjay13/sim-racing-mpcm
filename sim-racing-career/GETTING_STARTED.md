@@ -33,21 +33,50 @@ The full guide is [SOLO_CAREER.md](SOLO_CAREER.md).
 
 Forgot your password? Type your email on the sign-in screen and press **Forgot password**.
 
-## Run a league as the Game Master
+## Run a league as the Game Master (the hands-off way)
+
+The **League Director** runs the league for you. Your only regular job is entering race
+results.
+
+**Set up once (about 5 minutes):**
 
 1. On the sign-in screen choose **⚙️ Game Master** and enter the league passcode.
-2. **Admin → Overview** shows a *Get your league racing* checklist:
-   - **Add a game** with **📚 Game library**: pick a game, tick its series, and choose
-     whether to add its tracks and an AI field (rival AI teams and drivers).
-   - **Schedule races** with the **Schedule Builder**: pick the series, press
-     **Load the real calendar** (or type tracks, one per line, `Track | laps`), set the first
-     date and cadence, and generate.
-   - **Invite your drivers**: copy the app link and send it round.
-   - **Run the first race**: after it, open the race and press **Enter Results**. Drivers'
-     own reports are pre-filled; you can also import the sim's results file or paste the
-     finishing order. Save, and standings and payouts update.
-3. **Admin → Settings** is where you change the Game Master passcode. Do this before you
-   share the link, because the built-in default passcode is public.
+2. **Admin → Settings → 🔑 Passcode**: change it from the built-in default (it's public).
+3. **Admin → Overview → 📚 Game library**: pick your game, tick the series you want, and
+   keep an **AI field** (rival AI teams and drivers) so every series has a full grid.
+4. On the same page, the **🤖 League Director** panel: check the race day, time and race
+   length for new seasons, then press **▶ Run now**. It schedules a season for every
+   series with an AI field.
+5. Copy the app link from the checklist and send it to your drivers.
+
+**Every race after that:**
+
+- Open the app. The Director catches up as soon as you sign in.
+- **Needs your attention** lists only races your drivers entered. Open each one and press
+  **Enter Results**. Drivers' own reports are already filled in; you can also import the
+  sim's results file or paste the finishing order. Leave **🤖 Race the AI field around these
+  results** ticked and save.
+
+**What the Director handles for you:**
+
+- Races nobody entered are simulated with the AI field a couple of days after race day.
+- The AI field races around your results, so the whole championship moves.
+- When every round is done it crowns the champion, pays title bonuses, rolls car numbers
+  over, and schedules the next season.
+- Drivers and crew who apply to AI teams get an offer in their deal room straight away;
+  release requests are granted; empty AI seats get filled.
+- Car-number auctions close after 3 days and renewal windows after 7. Team owners and 5★
+  drivers can request a number themselves.
+- Weekly challenges get posted, checked against race results, and approved.
+- Series proposed by players go live.
+
+Every switch is in the Director panel, along with a log of everything it did. Want even
+less to do? Tick **Confirm results from driver reports** and races confirm themselves once
+every entered driver has reported. (You can still edit any result.)
+
+The Director runs whenever a Game Master has the app open: on sign-in, right after you
+save results, and every 10 minutes. There's no server, so if nobody opens the app for a
+week it simply catches up next time.
 
 ## League owner: one-time Firebase checklist
 

@@ -75,7 +75,7 @@ const C = {
             scheduled: ['Scheduled', 'badge-blue'], live: ['Live', 'badge-red'],
             completed: ['Completed', 'badge-green'], active: ['Active', 'badge-green'],
             finished: ['Finished', 'badge-dim'], pending: ['Pending', 'badge-amber'],
-            proposed: ['Proposed', 'badge-amber']
+            proposed: ['Proposed', 'badge-amber'], cancelled: ['Cancelled', 'badge-dim'], expired: ['Expired', 'badge-dim']
         };
         const [label, cls] = map[status] || [status || '—', 'badge-dim'];
         return `<span class="badge ${cls}">${Util.esc(label)}</span>`;
@@ -169,7 +169,7 @@ const C = {
     },
 
     winnerOf(race, world) {
-        if (race.status !== 'completed' || !race.results?.length) return null;
+        if ((race.status !== 'completed' && race.status !== 'cancelled') || !race.results?.length) return null;
         const w = race.results.find(r => Number(r.position) === 1 && !r.dnf);
         return w ? (world.driversById[w.driverId]?.name || 'Unknown') : null;
     },
@@ -222,7 +222,7 @@ const Views = {
         if (!Auth.isPlayer()) return '';
         const p = Auth.state.profile || {};
         const today = Util.todayISO();
-        const upcoming = world.races.filter(r => r.status !== 'completed' && (r.date || '') >= today)
+        const upcoming = world.races.filter(r => (r.status !== 'completed' && r.status !== 'cancelled') && (r.date || '') >= today)
             .sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.time || '').localeCompare(b.time || ''));
         const banner = (icon, text, btn = '') => `<div class="next-step"><span class="next-step-icon">${icon}</span><div class="next-step-text">${text}</div>${btn}</div>`;
         const careerBtn = (label) => `<button class="btn btn-primary btn-sm" onclick="App.go('career')">${label}</button>`;
@@ -247,7 +247,7 @@ const Views = {
         const { races, series, games, teams, drivers } = world;
 
         const completed = races.filter(r => r.status === 'completed');
-        const upcoming = races.filter(r => r.status !== 'completed' && !Util.isPast(r.date))
+        const upcoming = races.filter(r => (r.status !== 'completed' && r.status !== 'cancelled') && !Util.isPast(r.date))
             .sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999')).slice(0, 4);
         const recent = completed.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 4);
 
@@ -415,7 +415,7 @@ const Views = {
                 <button class="btn btn-secondary btn-sm" onclick="Admin.seriesForm('${Util.attr(s.id)}')">✎ Edit Series</button>
                 <button class="btn btn-secondary btn-sm" onclick="Admin.scheduleBuilder('${Util.attr(s.id)}')">📅 Schedule Builder</button>
                 <button class="btn btn-secondary btn-sm" onclick="Admin.raceForm(null,'${Util.attr(s.id)}')">＋ Add Race</button>
-                ${seriesRaces.some(r => r.status !== 'completed') ? `
+                ${seriesRaces.some(r => (r.status !== 'completed' && r.status !== 'cancelled')) ? `
                 <button class="btn btn-primary btn-sm" onclick="Admin.simSeries('${Util.attr(s.id)}', true)">▶ Simulate Next Round</button>
                 <button class="btn btn-secondary btn-sm" onclick="Admin.simSeries('${Util.attr(s.id)}')">⏩ Simulate Season</button>` : ''}
             </div>` : ''}
@@ -481,7 +481,7 @@ const Views = {
 
         const filtered = world.races.filter(r =>
             (!f.gameId || r.gameId === f.gameId) && (!f.seriesId || r.seriesId === f.seriesId));
-        const upcoming = filtered.filter(r => r.status !== 'completed')
+        const upcoming = filtered.filter(r => (r.status !== 'completed' && r.status !== 'cancelled'))
             .sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
         const completed = filtered.filter(r => r.status === 'completed')
             .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -576,7 +576,7 @@ const Views = {
 
         const uid = Auth.uid();
         const mySignup = uid ? signups.find(s => s.uid === uid) : null;
-        const canSignUp = Auth.isPlayer() && Auth.state.profile?.driverId && race.status !== 'completed';
+        const canSignUp = Auth.isPlayer() && Auth.state.profile?.driverId && (race.status !== 'completed' && race.status !== 'cancelled');
 
         // Vehicle-ownership gate (js/srmpc-garage.js): entrants need an
         // eligible car — personally or via their team — when the GM set one.
@@ -632,17 +632,17 @@ const Views = {
                         : `<button class="btn btn-primary" ${elig.eligible ? '' : 'disabled'} onclick="Views.toggleSignup('${Util.attr(race.id)}')">🏁 Sign me up</button>`}
                     ${mySignup ? '' : Garage.eligibilityHtml(elig)}
                     ${!mySignup && !elig.eligible ? `<div class="btn-row" style="margin-top:.5rem"><button class="btn btn-secondary btn-sm" onclick="Modal.close();App.go('dealership')">🏬 Visit the Dealership</button></div>` : ''}
-                </div>` : (Auth.isPlayer() && !Auth.state.profile?.driverId && race.status !== 'completed'
+                </div>` : (Auth.isPlayer() && !Auth.state.profile?.driverId && (race.status !== 'completed' && race.status !== 'cancelled')
                     ? `<p class="muted" style="margin-top:1rem">Create your driver profile in <a href="#" onclick="Modal.close();App.go('career');return false">My Career</a> to sign up for races.</p>` : '')}
             `}
 
-            ${race.status !== 'completed' && window.Library?.ok() ? Library.briefing(race, world, signups.length) : ''}
+            ${(race.status !== 'completed' && race.status !== 'cancelled') && window.Library?.ok() ? Library.briefing(race, world, signups.length) : ''}
             ${mySignup && window.Library && Library.canReport(race) ? Library.reportPanel(race, mySignup, world) : ''}
 
             ${crewHtml}
 
             ${isAdmin ? `<div class="modal-actions">
-                ${race.status !== 'completed'
+                ${(race.status !== 'completed' && race.status !== 'cancelled')
                     ? `<button class="btn btn-primary" onclick="Admin.resultsForm('${Util.attr(race.id)}')">🏁 Enter Results</button>`
                     : `<button class="btn btn-secondary" onclick="Admin.resultsForm('${Util.attr(race.id)}')">✎ Edit Results</button>`}
                 <button class="btn btn-secondary" onclick="Admin.raceForm('${Util.attr(race.id)}')">✎ Edit Race</button>

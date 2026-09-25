@@ -133,3 +133,26 @@ age / helmet on driver profiles, and Solo-style achievements.
 - `innerText` of the sign-in card is UPPERCASE for buttons (CSS text-transform): match
   with `/…/i`.
 
+## League Director (v3.33.0)
+
+`js/srmpc-director.js` is the Game Master autopilot. It runs only in GM sessions (on sign-in
+via `App.onAuthChange → Director.onSession`, after results are saved, every 10 minutes)
+and stores settings + an activity log in the career's `config/director` doc (no new
+collection). Player sessions only use it for instant AI-principal replies
+(`Director.answerMyApplicationsNow`, via `Deals.aiPrincipalOffer(id, { auto: true })`).
+
+- **The shim seeds `config/director = { enabled: false }` for every career world**, so the
+  older drives keep their manual-GM behaviour. A drive that tests the Director adds
+  `page.addInitScript(() => { window.__directorOn = true; })` *before* the shim script.
+- `node director-drive.js` — GM installs a library game; the Director schedules the season,
+  a player applies to an AI team and gets an instant offer, accepts, signs up and reports;
+  time is moved forward by re-dating races; GM sign-in simulates the unentered round,
+  refills an AI seat, approves a series proposal, closes an expired number auction; the GM
+  enters one result with the AI field raced around it (player keeps P3); a podium challenge
+  is verified from results; the season is crowned and the next scheduled; switching the
+  Director off stops it. 20/20.
+- `Sim.gridFor` no longer includes player-owned drivers who didn't sign up (they used to
+  "win" simulated rounds they never drove).
+- `page.waitForFunction` with an async predicate returns immediately — poll from Node when
+  waiting on Firestore-backed state.
+

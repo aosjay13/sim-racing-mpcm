@@ -178,6 +178,8 @@ const App = {
         gate.classList.toggle('hidden', signedIn);
         shell.classList.toggle('hidden', !signedIn);
         this.updateHeader();
+        // Game Master sessions run the League Director (catch-up now, then a heartbeat).
+        if (window.Director) Director.onSession();
 
         if (signedIn && !this._started) {
             this._started = true;

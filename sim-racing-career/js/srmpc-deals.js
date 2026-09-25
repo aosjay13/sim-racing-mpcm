@@ -315,7 +315,9 @@ const Deals = {
     async _npcTeamRespond(neg, patchHistory) {
         const world = await DB.loadWorld();
         const collection = neg.personKind === 'driver' ? 'drivers' : 'staff';
-        const person = await DB.get(collection, neg.personId).catch(() => null);
+        // Player crew live in roleProfiles, NPC crew in staff.
+        const person = await DB.get(collection, neg.personId).catch(() => null)
+            || (neg.roleProfileId ? await DB.get('roleProfiles', neg.roleProfileId).catch(() => null) : null);
         if (!person) { await DB.update('negotiations', neg.id, { status: 'declined', state: this.STATE.REJECTED, turnUid: null }); return; }
         const stars = neg.personKind === 'driver' ? Prestige.driverStars(neg.personId, world) : Prestige.stored(person);
         const cap = Economy.payCap(stars);
@@ -336,8 +338,10 @@ const Deals = {
     // GM hands a pending application to the AI: the unowned team's principal
     // opens the deal room with a market-rate offer and generated dialogue, and
     // the player accepts / counters / declines like any other negotiation.
-    async aiPrincipalOffer(recruitmentId) {
-        if (!Auth.isAdmin()) throw new Error('Only the Game Master can send in the AI principal.');
+    // `auto`: the League Director answering on the principal's behalf (can run
+    // in the applicant's own session, so no Game Master is needed).
+    async aiPrincipalOffer(recruitmentId, { auto = false } = {}) {
+        if (!Auth.isAdmin() && !(auto && window.Director && await Director.isOn('recruiting'))) throw new Error('Only the Game Master can send in the AI principal.');
         const app = await DB.get('recruitment', recruitmentId);
         if (!app || app.status !== 'pending') throw new Error('That application is no longer pending.');
         if (!app.driverUid) throw new Error('Only player applications can go to the AI principal.');

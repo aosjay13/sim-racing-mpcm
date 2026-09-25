@@ -34,6 +34,16 @@ Firebase-backed multiplayer league: players register, pick roles (driver, team
 owner, crew, agent, sponsor…), negotiate contracts in deal rooms, and the Game
 Master runs series, schedules, results and simulations. See `MANUAL.md`.
 
+### League Director (Game Master autopilot)
+
+The GM's only regular job is entering race results. The **🤖 League Director**
+(`js/srmpc-director.js`, *Admin → Overview*) simulates races nobody entered, races the AI
+field around the GM's results, crowns champions and schedules the next season, has AI team
+principals answer applications on the spot, refills AI seats, runs number auctions and
+weekly challenges, and approves series proposals. It runs in Game Master sessions (on
+sign-in, after results are saved, every 10 minutes) and logs everything it does. See
+[GETTING_STARTED.md](GETTING_STARTED.md#run-a-league-as-the-game-master-the-hands-off-way).
+
 ### Shared with the Solo Career
 
 Both modes run on the same game library, so a league race and a solo race look

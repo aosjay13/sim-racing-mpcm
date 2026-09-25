@@ -598,20 +598,20 @@ window.generateScheduleRaces = generateScheduleRaces;
    {TRACK} and {GAME} get filled from live league data when possible.
    ============================================================ */
 const CHALLENGE_TEMPLATES = [
-    { title: 'Podium Push', description: 'Finish on the podium in any league race this period.', mode: 'solo', points: 3, reward: 'Bragging rights + 3 challenge points' },
-    { title: 'Clean Sweep', description: 'Complete a race with zero incidents or penalties.', mode: 'solo', points: 2, reward: '2 challenge points' },
-    { title: 'Qualifying Ace', description: 'Take pole position in any series this period.', mode: 'solo', points: 3, reward: '3 challenge points' },
-    { title: 'Iron Driver', description: 'Enter and finish every scheduled race this period — no DNFs, no absences.', mode: 'solo', points: 4, reward: '4 challenge points' },
-    { title: 'Charge Through the Field', description: 'Gain 5 or more positions from your starting spot in a single race.', mode: 'solo', points: 3, reward: '3 challenge points' },
-    { title: 'Fastest Lap Hunter', description: 'Set the fastest lap in any league race this period.', mode: 'solo', points: 2, reward: '2 challenge points' },
-    { title: 'New Frontier', description: 'Run a race in a game you have never raced in the league before.', mode: 'solo', points: 2, reward: '2 challenge points' },
+    { title: 'Podium Push', check: 'podium', description: 'Finish on the podium in any league race this period.', mode: 'solo', points: 3, reward: 'Bragging rights + 3 challenge points' },
+    { title: 'Clean Sweep', check: 'clean', description: 'Complete a race with zero incidents or penalties.', mode: 'solo', points: 2, reward: '2 challenge points' },
+    { title: 'Qualifying Ace', check: 'pole', description: 'Take pole position in any series this period.', mode: 'solo', points: 3, reward: '3 challenge points' },
+    { title: 'Iron Driver', check: 'iron', description: 'Enter and finish every scheduled race this period — no DNFs, no absences.', mode: 'solo', points: 4, reward: '4 challenge points' },
+    { title: 'Charge Through the Field', check: 'gain5', description: 'Gain 5 or more positions from your starting spot in a single race.', mode: 'solo', points: 3, reward: '3 challenge points' },
+    { title: 'Fastest Lap Hunter', check: 'fl', description: 'Set the fastest lap in any league race this period.', mode: 'solo', points: 2, reward: '2 challenge points' },
+    { title: 'New Frontier', check: 'newgame', description: 'Run a race in a game you have never raced in the league before.', mode: 'solo', points: 2, reward: '2 challenge points' },
     { title: 'Track Specialist', description: 'Post your personal best lap time at {TRACK} and share proof in the league chat.', mode: 'solo', points: 2, reward: '2 challenge points' },
-    { title: 'Team Stack', description: 'Get both teammates into the top 5 of the same race.', mode: 'multiplayer', points: 4, reward: '4 challenge points each' },
+    { title: 'Team Stack', check: 'teamstack', description: 'Get both teammates into the top 5 of the same race.', mode: 'multiplayer', points: 4, reward: '4 challenge points each' },
     { title: 'Convoy', description: 'Complete a full multiplayer endurance session (45+ min) with at least 3 league members.', mode: 'multiplayer', points: 3, reward: '3 challenge points each' },
     { title: 'Mentor Session', description: 'Pair up: a veteran coaches a newer member for a practice session at {TRACK}.', mode: 'multiplayer', points: 3, reward: '3 challenge points each' },
     { title: 'Rivals Duel', description: 'Challenge another driver to a best-of-3 sprint duel and report the result.', mode: 'multiplayer', points: 3, reward: 'Winner gets 3 points, loser 1' },
     { title: 'Team Time Attack', description: 'Combine your team’s best lap times at {TRACK} — beat the rival team’s combined time.', mode: 'multiplayer', points: 4, reward: '4 challenge points each' },
-    { title: 'Full Grid Night', description: 'Help fill a full public/league lobby — 8+ league members in one race.', mode: 'multiplayer', points: 2, reward: '2 challenge points each' },
+    { title: 'Full Grid Night', check: 'fullgrid', description: 'Help fill a full public/league lobby — 8+ league members in one race.', mode: 'multiplayer', points: 2, reward: '2 challenge points each' },
     { title: 'Photo Finish', description: 'Finish within 1 second of another league driver (any position) — both get credit.', mode: 'multiplayer', points: 2, reward: '2 challenge points each' },
     { title: 'Reverse Grid Hero', description: 'Organize and complete a reverse-grid race with 4+ members.', mode: 'multiplayer', points: 3, reward: '3 challenge points each' }
 ];
@@ -642,6 +642,7 @@ function generateChallenges({ cadence, count, tracks = [], games = [] }) {
             cadence,
             points: t.points || 0,
             reward: t.reward,
+            check: t.check || null,   // the League Director verifies these from race results
             startDate: iso(start),
             endDate: iso(end),
             status: 'active'

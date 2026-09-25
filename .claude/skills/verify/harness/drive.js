@@ -288,6 +288,8 @@ const log = (mark, msg) => { steps.push(`${mark} ${msg}`); console.log(`${mark} 
         const driverId = await DB.create('drivers', { name: 'Tester Driver', teamId: mine.id, ownerUid: Auth.uid(), rating: 90, status: 'approved', prestige: 1 });
         // fresh scheduled race in that series
         const raceId = await DB.create('races', { seriesId: sid, name: 'Payout GP', track: 'Silverstone Circuit', date: '2026-07-07', status: 'scheduled', results: [] });
+        // Human drivers only race a simulated round they've entered.
+        await DB.create('raceSignups', { raceId, uid: Auth.uid(), driverId });
         const before = Number((await DB.get('users', Auth.uid())).balance) || 0;
         await Sim.simulateRace(raceId, { quiet: true });
         const after = Number((await DB.get('users', Auth.uid())).balance) || 0;

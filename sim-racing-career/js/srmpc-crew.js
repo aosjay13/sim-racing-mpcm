@@ -274,7 +274,7 @@ const Crew = {
     _upcoming(world, days = 30) {
         const today = Util.todayISO();
         return world.races
-            .filter(r => r.status !== 'completed' && (r.date || '') >= today)
+            .filter(r => (r.status !== 'completed' && r.status !== 'cancelled') && (r.date || '') >= today)
             .sort((a, b) => (a.date || '').localeCompare(b.date || '')).slice(0, 6);
     },
 

@@ -34,6 +34,9 @@ const Numbers = {
     DRIVER_STAR_GATE: 5,     // only 5★ drivers may hold a personal number
     LEASE_FEE: 2000,         // first-right-of-refusal renewal fee
     SURRENDER_REFUND: 0.5,   // fraction of feePaid refunded on surrender
+    AUCTION_DAYS: 3,         // auctions close this many days after opening (League Director)
+    RENEWAL_DAYS: 7,         // renewal windows last this long before the number goes to auction
+    _addDays(n) { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; },
 
     regId(seriesId, number) { return `${seriesId}__${number}`; },
     seriesNumberMax(series) { return Math.min(999, Math.max(0, Number(series?.numberMax) || 99)); },
@@ -52,7 +55,8 @@ const Numbers = {
         const auctionId = 'auc_' + Util.uid();
         await DB.set('numberRegistry', this.regId(seriesId, number), {
             seriesId, number: Number(number), status: 'auction', auctionId, seasonId,
-            ownerType: null, ownerId: null, ownerUid: null, leaseId: null
+            ownerType: null, ownerId: null, ownerUid: null, leaseId: null,
+            closesAt: this._addDays(this.AUCTION_DAYS), renewalUntil: null
         });
         return auctionId;
     },
@@ -201,7 +205,7 @@ const Numbers = {
                 News.post('🔢', `#${r.number} revoked in ${seriesId} — never fielded this season.`);
                 revoked++;
             } else {
-                await DB.set('numberRegistry', this.regId(seriesId, r.number), { status: 'renewal', seasonId: newSeasonId });
+                await DB.set('numberRegistry', this.regId(seriesId, r.number), { status: 'renewal', seasonId: newSeasonId, renewalUntil: this._addDays(this.RENEWAL_DAYS) });
                 renewals++;
             }
         }
@@ -229,6 +233,48 @@ const Numbers = {
         return pending.length;
     },
 
+    // A team owner (or 5★ driver) asks for a free number: the auction opens
+    // with their sealed bid in it, and closes on its own after AUCTION_DAYS.
+    async requestNumber(seriesId) {
+        const world = await DB.loadWorld();
+        const bidders = this._myBidders(world);
+        if (!bidders.length) { Util.notify(`Own a team, or be a ${this.DRIVER_STAR_GATE}★ driver, to hold a number.`, 'info'); return; }
+        const series = world.seriesById[seriesId];
+        const max = this.seriesNumberMax(series);
+        const taken = new Set((await this.listForSeries(seriesId)).filter(r => r.status !== 'available').map(r => Number(r.number)));
+        Modal.open(`
+            ${Modal.header('🔢 Request a car number', `${Util.esc(series?.name || 'Series')} · pick a free number and place the opening sealed bid. Others can bid for ${this.AUCTION_DAYS} days; the highest bid wins.`)}
+            <form id="num-req-form" class="form-grid">
+                <div class="form-row">
+                    <label class="field"><span>Number (0–${max})</span><input id="nr-number" class="input" type="number" min="0" max="${max}" required></label>
+                    <label class="field"><span>Opening bid</span><input id="nr-amount" class="input" type="number" min="10" step="10" value="100" required></label>
+                </div>
+                <label class="field"><span>Bid as</span><select id="nr-bidder" class="input">${bidders.map((b, i) => `<option value="${i}">${Util.esc(b.label)}</option>`).join('')}</select></label>
+                <p class="muted small">Taken: ${taken.size ? [...taken].sort((a, b) => a - b).map(n => '#' + n).join(', ') : 'none yet'}.</p>
+                <p id="nr-error" class="form-error"></p>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Open the auction 🔢</button>
+                </div>
+            </form>`);
+        document.getElementById('num-req-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const number = Number(document.getElementById('nr-number').value);
+            const b = bidders[Number(document.getElementById('nr-bidder').value)];
+            try {
+                if (!Number.isInteger(number) || number < 0 || number > max) throw new Error(`Pick a number from 0 to ${max}.`);
+                if (taken.has(number)) throw new Error(`#${number} is already taken or up for auction — bid on it from the series page instead.`);
+                const seasonId = (world.seasons || []).find(se => se.seriesId === seriesId && se.status !== 'completed')?.id || null;
+                await this.openAuction(seriesId, number, seasonId);
+                await this.placeBid(seriesId, number, { bidderType: b.type, bidderId: b.id, bidderUid: b.uid, amount: document.getElementById('nr-amount').value });
+                News.post('🔢', `#${number} is up for auction in ${series?.name || 'a series'} — sealed bids close in ${this.AUCTION_DAYS} days`);
+                Modal.close();
+                Util.notify(`Auction for #${number} is open with your bid in. It closes in ${this.AUCTION_DAYS} days. 🔢`);
+                App.go(App.current.view, App.current.param);
+            } catch (err) { document.getElementById('nr-error').textContent = err.message; }
+        });
+    },
+
     /* ---------------- Player-facing UI ---------------- */
     // Wallets the signed-in player can bid from: their owned team, and their
     // own driver if 5★+ (personal brand number).
@@ -249,7 +295,7 @@ const Numbers = {
         const bidders = this._myBidders(world);
         if (!bidders.length) { Util.notify(`Own a team, or be a ${this.DRIVER_STAR_GATE}★ driver, to bid on a number.`, 'info'); return; }
         Modal.open(`
-            ${Modal.header(`🔢 Bid on #${number}`, `${Util.esc(world.seriesById[seriesId]?.name || 'Series')} · blind sealed bid — rivals can't see your amount. The winner is charged when the Game Master closes the auction.`)}
+            ${Modal.header(`🔢 Bid on #${number}`, `${Util.esc(world.seriesById[seriesId]?.name || 'Series')} · blind sealed bid — rivals can't see your amount. The winner is charged when the auction closes.`)}
             <form id="num-bid-form" class="form-grid">
                 <label class="field"><span>Bid as</span><select id="nb-bidder" class="input">
                     ${bidders.map((b, i) => `<option value="${i}">${Util.esc(b.label)}</option>`).join('')}</select></label>
@@ -288,7 +334,7 @@ const Numbers = {
         const iOwn = (r) => (r.ownerType === 'team' && world.teamsById[r.ownerId]?.ownerUid === uid) || (r.ownerType === 'driver' && r.ownerUid === uid);
         const badge = { auction: '<span class="badge badge-green">Auction open</span>', renewal: '<span class="badge badge-purple">Renewal window</span>', owned: '<span class="badge badge-blue">Owned</span>', retired: '<span class="badge badge-dim">Retired</span>' };
         return `<section class="panel">
-            <div class="panel-head"><h2>🔢 Car Numbers</h2></div>
+            <div class="panel-head"><h2>🔢 Car Numbers</h2>${Auth.isPlayer() && this._myBidders(world).length ? `<button class="btn btn-secondary btn-sm" onclick="Numbers.requestNumber('${Util.attr(seriesId)}')">＋ Request a number</button>` : ''}</div>
             <p class="muted small">Numbers are series-scoped assets. Teams charter a number for their seat; ${this.DRIVER_STAR_GATE}★ drivers can hold a personal brand number. Blind sealed-bid auctions; field it at least once a season or lose it.</p>
             ${regs.length ? `<table class="table">
                 <thead><tr><th>#</th><th>Status</th><th>Holder</th><th></th></tr></thead>
@@ -297,11 +343,11 @@ const Numbers = {
                     <td>${badge[r.status] || r.status}</td>
                     <td>${r.status === 'owned' || r.status === 'renewal' ? Util.esc(nameOf(r)) : '—'}</td>
                     <td class="right">
-                        ${r.status === 'auction' ? `<button class="btn btn-primary btn-sm" onclick="Numbers.bidModal('${Util.attr(seriesId)}',${r.number})">Bid</button>` : ''}
+                        ${r.status === 'auction' ? `${r.closesAt ? `<span class="muted small">closes ${Util.esc(Util.fmtDateShort(r.closesAt))}</span> ` : ''}<button class="btn btn-primary btn-sm" onclick="Numbers.bidModal('${Util.attr(seriesId)}',${r.number})">Bid</button>` : ''}
                         ${r.status === 'renewal' && iOwn(r) ? `<button class="btn btn-secondary btn-sm" onclick="Numbers.renewFlow('${Util.attr(seriesId)}',${r.number})">Renew ${Economy.fmt(this.LEASE_FEE)}</button>` : ''}
                     </td>
                 </tr>`).join('')}</tbody></table>`
-                : '<p class="muted small">No numbers in play yet — the Game Master opens auctions from the Admin console.</p>'}
+                : '<p class="muted small">No numbers in play yet. Team owners (and 5★ drivers) can request one; the auction runs for a few days.</p>'}
         </section>`;
     }
 };

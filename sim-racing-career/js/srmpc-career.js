@@ -154,7 +154,7 @@ const Career = {
         let mySignups = [];
         try {
             const signups = await DB.signups();
-            const upcoming = world.races.filter(r => r.status !== 'completed');
+            const upcoming = world.races.filter(r => (r.status !== 'completed' && r.status !== 'cancelled'));
             mySignups = signups.filter(s => s.uid === Auth.uid())
                 .map(s => upcoming.find(r => r.id === s.raceId)).filter(Boolean)
                 .sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
@@ -335,7 +335,9 @@ const Career = {
                         driverId, driverName: name, driverUid: Auth.uid()
                     });
                     News.post('🌱', `Rookie ${name} joins the league and applies to ${team?.name || 'a team'}`);
-                    Util.notify(`Welcome to the grid! Your application is with ${team?.name || 'the team'} — the contract gets negotiated before you sign. ✍️`);
+                    const answered = team?.ownerUid ? 0 : await Director.answerMyApplicationsNow().catch(() => 0);
+                    Util.notify(answered ? `Welcome to the grid! ${Hub.AI_REPLY_MSG(team?.name || 'The team')}`
+                        : `Welcome to the grid! Your application is with ${team?.name || 'the team'} — the contract gets negotiated before you sign. ✍️`);
                 } else {
                     News.post('🌱', `Rookie ${name} joins the league as a free agent`);
                     Util.notify('Welcome to the grid! Your career starts now. 🏁');
@@ -1020,7 +1022,7 @@ const Career = {
             const mySeries = world.series.filter(s => s.ownerUid === Auth.uid());
             const seriesIds = new Set(mySeries.map(s => s.id));
             const myRaces = world.races.filter(r => seriesIds.has(r.seriesId));
-            const needResults = myRaces.filter(r => r.status !== 'completed' && Util.isPast(r.date));
+            const needResults = myRaces.filter(r => (r.status !== 'completed' && r.status !== 'cancelled') && Util.isPast(r.date));
             const mySeasons = (world.seasons || []).filter(se => seriesIds.has(se.seriesId));
 
             kpis = `${kpi(mySeries.length, 'My series')}${kpi(myRaces.length, 'Races')}${kpi(mySeasons.length, 'Seasons')}${kpi(needResults.length, 'Need results')}`;
@@ -1029,7 +1031,7 @@ const Career = {
                     <button class="btn btn-secondary btn-sm" onclick="Career.proposeSeries()">＋ Propose Series</button></div>
                 ${mySeries.length ? mySeries.map(s => {
                     const sRaces = world.races.filter(r => r.seriesId === s.id);
-                    const pending = sRaces.filter(r => r.status !== 'completed' && Util.isPast(r.date)).length;
+                    const pending = sRaces.filter(r => (r.status !== 'completed' && r.status !== 'cancelled') && Util.isPast(r.date)).length;
                     return `<div class="race-row" onclick="App.go('series-detail','${Util.attr(s.id)}')">
                         ${C.logoBox(s)}
                         <div class="race-row-main"><span class="race-title">${Util.esc(s.name)}</span>

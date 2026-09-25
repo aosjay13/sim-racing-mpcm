@@ -71,7 +71,15 @@ const Admin = {
         try { [claims, users] = await Promise.all([DB.claims({ force: true }), DB.users({ force: true })]); } catch (e) { /* */ }
         const pendingClaims = claims.filter(c => c.status === 'pending');
         const proposedSeries = world.series.filter(s => s.status === 'proposed');
-        const unresulted = world.races.filter(r => r.status !== 'completed' && Util.isPast(r.date));
+        // Races waiting on the GM: ones people entered. With the League Director
+        // on, races nobody entered get simulated for you, so they don't count.
+        const dirOn = await Director.config().then(c => c.enabled && c.simAiRaces).catch(() => false);
+        let raceSignups = [];
+        try { raceSignups = await DB.signups({ force: true }); } catch (e) { /* */ }
+        // Today's races count too once a driver has reported their result.
+        const unresulted = world.races.filter(r => (r.status !== 'completed' && r.status !== 'cancelled')
+            && (Util.isPast(r.date) || (r.date === Util.todayISO() && raceSignups.some(s => s.raceId === r.id && s.report)))
+            && (!dirOn || raceSignups.some(s => s.raceId === r.id)));
 
         // First-run checklist: what a brand-new league needs before anyone can race.
         const today = Util.todayISO();
@@ -81,7 +89,7 @@ const Admin = {
                 btn: window.Library?.ok() ? `<button class="btn btn-primary btn-sm" onclick="Library.installForm()">📚 Game library</button>` : `<button class="btn btn-primary btn-sm" onclick="Admin.gameForm()">🎮 Add game</button>` },
             { done: world.series.length > 0, title: 'Create a series', body: 'Library installs add series for you; or make your own championship.',
                 btn: `<button class="btn btn-secondary btn-sm" onclick="Admin.seriesForm()">🏆 New series</button>` },
-            { done: world.races.some(r => r.status !== 'completed' && (r.date || '') >= today) || world.races.some(r => r.status === 'completed'), title: 'Schedule races', body: 'The Schedule Builder turns a track list (or the real calendar) into a season.',
+            { done: world.races.some(r => (r.status !== 'completed' && r.status !== 'cancelled') && (r.date || '') >= today) || world.races.some(r => r.status === 'completed'), title: 'Schedule races', body: 'The League Director schedules any series with an AI field for you (Run now below), or use the Schedule Builder.',
                 btn: world.series.length ? `<button class="btn btn-secondary btn-sm" onclick="Admin.scheduleBuilder()">📅 Schedule builder</button>` : '' },
             { done: users.length > 0, title: 'Invite your drivers', body: `Share the app link. Drivers create an account, pick <strong>My Career → Driver</strong>, and sign up for races.<br><span class="setup-link">${Util.esc(appLink)}</span>`,
                 btn: `<button class="btn btn-secondary btn-sm" data-copy-link="${Util.esc(appLink)}">📋 Copy link</button>` },
@@ -89,6 +97,7 @@ const Admin = {
                 btn: '' }
         ];
         const setupDone = steps.every(x => x.done);
+        const directorHtml = await Director.panelHtml().catch(e => `<section class="panel"><p class="muted">League Director unavailable: ${Util.esc(e.message)}</p></section>`);
 
         el.innerHTML = `
         ${setupDone ? '' : `<section class="panel setup-panel">
@@ -100,7 +109,8 @@ const Admin = {
                     ${x.done ? '' : x.btn}
                 </li>`).join('')}</ol>
         </section>`}
-        <div class="stat-strip" ${setupDone ? '' : 'style="margin-top:1.1rem"'}>
+        ${directorHtml}
+        <div class="stat-strip" style="margin-top:1.1rem">
             ${C.statChip(world.games.length, 'Games')}
             ${C.statChip(world.series.length, 'Series')}
             ${C.statChip(world.races.length, 'Races')}
@@ -135,7 +145,7 @@ const Admin = {
                 ${unresulted.map(r => `
                     <div class="race-row">
                         <div class="race-row-main"><span class="race-title">Enter results: ${Util.esc(r.name || r.track || 'Race')}</span>
-                        <span class="race-sub">Raced ${Util.esc(Util.fmtDateShort(r.date))}</span></div>
+                        <span class="race-sub">Raced ${Util.esc(Util.fmtDateShort(r.date))}${(() => { const e = raceSignups.filter(s => s.raceId === r.id); const rep = e.filter(s => s.report).length; return e.length ? ` · ${e.length} entered, ${rep} reported` : ''; })()}</span></div>
                         <button class="btn btn-primary btn-sm" onclick="Admin.resultsForm('${Util.attr(r.id)}')">Enter results</button>
                     </div>`).join('')}
                 ${pendingClaims.length ? `
@@ -155,6 +165,7 @@ const Admin = {
             </section>
         </div>`;
 
+        Director.wirePanel(el);
         Util.$('[data-copy-link]', el)?.addEventListener('click', (e) => {
             const link = e.currentTarget.dataset.copyLink;
             const done = () => Util.notify('App link copied — send it to your drivers. 📋');
@@ -378,6 +389,18 @@ const Admin = {
             if (!snapshot.championDriverId) {
                 if (!confirm('No completed races are assigned to this season yet, so there is no champion to crown. Close it anyway?')) return;
             }
+            const { champName } = await this.closeSeasonCore(seasonId, seriesId);
+            Util.notify(champName ? `Season closed — 🏆 ${champName} is your champion!` : 'Season closed.');
+            this.seasonsModal(seriesId);
+        } catch (e) { Util.notify(e.message, 'error'); }
+    },
+
+    // Crown + settle a season with no UI (the GM's Close button and the
+    // League Director both use this). Returns { snapshot, champName }.
+    async closeSeasonCore(seasonId, seriesId) {
+        {
+            const world = await DB.loadWorld(true);
+            const snapshot = Stats.crownSeason(world.races, world, seasonId);
             await DB.update('seasons', seasonId, { ...snapshot, status: 'completed' });
             // Title prestige: champion team's staff & sponsors + the promoter bank XP.
             await Prestige.awardTitleXP(snapshot, seriesId);
@@ -420,9 +443,10 @@ const Admin = {
             } catch (e) { console.warn('Number rollover failed:', e); }
 
             const champ = snapshot.championDriverId ? (world.driversById[snapshot.championDriverId]?.name || 'Champion') : null;
-            Util.notify(champ ? `Season closed — 🏆 ${champ} is your champion!` : 'Season closed.');
-            this.seasonsModal(seriesId);
-        } catch (e) { Util.notify(e.message, 'error'); }
+            const season = world.seasonsById[seasonId];
+            if (champ) News.post('🏆', `${champ} is the ${season?.name || 'season'} champion!`);
+            return { snapshot, champName: champ };
+        }
     },
 
     async reopenSeason(seasonId, seriesId) {
@@ -781,8 +805,8 @@ const Admin = {
                         <td class="muted">${Util.esc(world.seriesById[r.seriesId]?.name || '—')}</td>
                         <td>${C.statusBadge(r.status)}</td>
                         <td class="row-actions">
-                            ${r.status !== 'completed' ? `<button class="btn btn-ghost btn-sm" onclick="Admin.simRace('${Util.attr(r.id)}')">▶ Simulate</button>` : ''}
-                            ${r.status !== 'completed' ? `<button class="btn btn-ghost btn-sm" onclick="Admin.toggleLive('${Util.attr(r.id)}')">${r.status === 'live' ? '⏹ End live' : '🔴 Go live'}</button>` : ''}
+                            ${(r.status !== 'completed' && r.status !== 'cancelled') ? `<button class="btn btn-ghost btn-sm" onclick="Admin.simRace('${Util.attr(r.id)}')">▶ Simulate</button>` : ''}
+                            ${(r.status !== 'completed' && r.status !== 'cancelled') ? `<button class="btn btn-ghost btn-sm" onclick="Admin.toggleLive('${Util.attr(r.id)}')">${r.status === 'live' ? '⏹ End live' : '🔴 Go live'}</button>` : ''}
                             <button class="btn ${r.status === 'completed' ? 'btn-ghost' : 'btn-primary'} btn-sm" onclick="Admin.resultsForm('${Util.attr(r.id)}')">${r.status === 'completed' ? 'Edit results' : 'Enter results'}</button>
                             <button class="btn btn-ghost btn-sm" onclick="Admin.raceForm('${Util.attr(r.id)}')">Edit</button>
                             <button class="btn btn-danger btn-sm" onclick="Admin.deleteRace('${Util.attr(r.id)}')">Delete</button>
@@ -938,6 +962,8 @@ const Admin = {
 
         const existing = {};
         (race.results || []).forEach(r => { existing[r.driverId] = r; });
+        const dirCfg = await Director.config().catch(() => Director.DEFAULTS);
+        const aiField = Director.aiGridFor(race.seriesId, world, new Set((race.results || []).map(r => r.driverId)));
         // Drivers' own reports (Report my result) pre-fill rows that have no
         // official result yet — the GM checks them and saves.
         const reported = {};
@@ -1001,6 +1027,8 @@ const Admin = {
                 </table>
                 <p class="muted small">Leave position blank for drivers who didn’t race. Check DNF for drivers who started but didn’t finish (a DNF needs no position).
                     Inc / Led / Laps are optional telemetry for contract performance clauses — blank fields simply skip those clauses.</p>
+                ${aiField.length ? `<label class="check lib-aifill"><input type="checkbox" id="res-aifill" ${race.status !== 'completed' && dirCfg.aiFill !== false ? 'checked' : ''}>
+                    🤖 Race the AI field around these results: ${aiField.length} AI car${aiField.length === 1 ? '' : 's'} fill the places you leave empty (your drivers keep the positions you enter)</label>` : ''}
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
                     ${race.status === 'completed' ? `<button type="button" class="btn btn-secondary" id="res-reopen">Reopen race (clear results)</button>` : ''}
@@ -1075,20 +1103,16 @@ const Admin = {
                 });
 
                 if (!results.length) throw new Error('Enter at least one finishing position or DNF.');
-                const wasCompleted = race.status === 'completed';
-                await DB.update('races', raceId, { status: 'completed', results });
-                const winner = results.find(r => Number(r.position) === 1 && !r.dnf);
-                const winnerName = winner ? world.driversById[winner.driverId]?.name : null;
-                if (winnerName) News.post('🏆', `${winnerName} wins ${race.name || race.track || 'a league race'}!`);
-                // Prize money + sponsor payouts + prestige XP — only on first
-                // completion, so editing results never double-pays.
-                if (!wasCompleted) {
-                    await Sim.payoutRace({ ...race, results }, world);
-                    await Prestige.awardRaceXP({ ...race, results }, world);
-                }
+                // The AI field races around the humans' results (League Director).
+                const final = Util.$('#res-aifill')?.checked ? Director.withAIField(race, results, world) : results;
+                // Prize money + sponsor payouts + prestige XP run on the first
+                // save only, so editing results never double-pays.
+                await Director.saveResults(race, final, world);
                 Modal.close();
-                Util.notify('Results saved — standings, stats, and race earnings updated. 🏆');
+                Util.notify(`Results saved — standings, stats, and race earnings updated${final.length > results.length ? `, with ${final.length - results.length} AI cars raced around them` : ''}. 🏆`);
                 this.refresh();
+                // Season over? The Director crowns the champion and schedules the next one.
+                Director.tick({ reason: 'results' }).catch(e => console.warn('Director:', e));
             } catch (err) { Util.notify(err.message, 'error'); }
         });
     },

@@ -102,7 +102,8 @@ decide which teams and deals you can reach.
 - **Contracts and deals**: every seat and sponsorship is negotiated in a deal room with
   offers and counter-offers (salary, buyout, exclusivity, performance clauses). Nothing is
   signed automatically.
-- **Car numbers**: won or leased through the registry (auctions and renewals run by the GM).
+- **Car numbers**: won or leased through the registry. Team owners and 5★ drivers can
+  **＋ Request a number** on a series page, which opens a 3-day sealed-bid auction.
 
 ## League Hub
 
@@ -123,8 +124,30 @@ a player). Everything lives under **Admin**.
 
 A **🚀 Get your league racing** checklist appears until the league is set up (add a game,
 create a series, schedule races, invite drivers, run the first race), with a button for each
-step. **Quick Actions** and **Needs Your Attention** (races waiting for results, challenge
-claims, series proposals) sit below.
+step. Below it are the **🤖 League Director**, **Quick Actions** and **Needs Your Attention**
+(races your drivers entered that are waiting for results, challenge claims, series
+proposals).
+
+### League Director (autopilot)
+
+The Director does the routine Game Master work whenever a GM has the app open (on sign-in,
+right after results are saved, and every 10 minutes), and logs everything it does in its
+panel. Each job can be switched off:
+
+| Switch | What it does |
+| --- | --- |
+| Simulate races nobody entered | After the grace period (default 2 days) a race with no entries is simulated with the AI field, or cancelled if the series has no AI |
+| Race the AI field around your results | The results form's AI option is ticked by default: your drivers keep the positions you enter, AI drivers fill the rest |
+| Close seasons and crown champions | When every round of a season is done: champion, title bonuses and termination clauses, car-number rollover, league news |
+| Schedule the next season | Real calendar for library series (scaled to your race length), otherwise last season's tracks; on your race day, time and cadence |
+| AI principals answer applications | Applications to AI teams get an opening offer in the applicant's deal room straight away; release requests are granted |
+| Keep AI teams' seats filled | Empty AI seats go to the best free agent, or a new rookie |
+| Run car-number auctions | Auctions close 3 days after opening; renewal windows last 7 days, then the number goes to auction |
+| Run challenges | Keeps a weekly set posted, verifies measurable ones (podium, pole, fastest lap, clean race, places gained…) from results, approves the rest after 2 days |
+| Approve series proposals | Player-proposed series go live |
+| Confirm results from driver reports (off by default) | When every entered driver has reported, the race confirms itself |
+
+**Run now** runs it on demand. Turning the master switch off stops everything.
 
 ### Games
 

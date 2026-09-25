@@ -3,8 +3,15 @@
     const store = new Map(); // collection -> Map(id -> data)
     let idSeq = 1;
     const newId = () => 'doc' + (idSeq++);
+    // Test fixture: every career world (config, c__<id>__config) starts with the
+    // League Director OFF so drives that exercise the manual Game Master flows
+    // stay deterministic. Drives that test the Director set
+    // window.__directorOn = true in an init script first.
     const coll = (name) => {
-        if (!store.has(name)) store.set(name, new Map());
+        if (!store.has(name)) {
+            store.set(name, new Map());
+            if (!window.__directorOn && /(^|__)config$/.test(name)) store.get(name).set('director', { enabled: false });
+        }
         return store.get(name);
     };
     const snapshotOf = (id, data) => ({

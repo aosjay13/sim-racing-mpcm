@@ -471,7 +471,7 @@ const Library = {
     /* ---------------- Driver self-report (race modal) ---------------- */
     // Open once the race is live or its date has arrived, until results are in.
     canReport(race) {
-        return race.status !== 'completed' && (race.status === 'live' || (!!race.date && race.date <= Util.todayISO()));
+        return (race.status !== 'completed' && race.status !== 'cancelled') && (race.status === 'live' || (!!race.date && race.date <= Util.todayISO()));
     },
     reportPanel(race, signup, world) {
         const rep = signup.report || {};
