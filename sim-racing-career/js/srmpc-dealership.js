@@ -94,10 +94,27 @@ const Dealership = {
        Public storefront — flat 2D, checkered markers, dynamic filters.
        ============================================================ */
     _filters: { gameId: '', seriesId: '', condition: '', sort: 'price-desc' },
+    _tab: 'showroom', // 'showroom' (Phoenix Motors) | 'used' | 'market' (js/srmpc-paddock-trade.js)
 
     async storefront(el) {
         if (!Auth.isSignedIn()) {
             el.innerHTML = C.empty('🔒', 'Sign in to visit the Dealership', 'Every player can buy cars here — drivers keep their own garage and can bring cars to a new team.');
+            return;
+        }
+        // Used lots + the Player Market live in the paddock trade module.
+        if (this._tab !== 'showroom' && window.PaddockTrade) {
+            const world = await DB.loadWorld();
+            const myTeam = world.teams.find(t => t.ownerUid === Auth.uid()) || null;
+            const body = this._tab === 'used' ? await PaddockTrade.usedHtml() : await PaddockTrade.marketHtml();
+            el.innerHTML = `
+            <div class="view-head">
+                <div><h1>🏬 Dealership</h1><p class="muted">🏁 New at Phoenix Motors, bargains on the used lots, and cars from other players.</p></div>
+                <div class="btn-row">${Economy.walletChip()}${myTeam ? `<span class="chip wallet-chip">🛠 ${Util.esc(myTeam.name)}: ${Economy.fmt(Wallet.teamBalance(myTeam.id))}</span>` : ''}</div>
+            </div>
+            ${PaddockTrade.tabRow(this._tab)}
+            ${body}`;
+            PaddockTrade.wireTabs(el);
+            if (this._tab === 'used') PaddockTrade.wireUsed(el);
             return;
         }
         const [inv, world] = await Promise.all([this.availableInventory(), DB.loadWorld()]);
@@ -142,6 +159,7 @@ const Dealership = {
                         <button class="btn btn-primary btn-sm" ${canBuy ? '' : 'disabled title="Player accounts with a started career can buy"'}
                             onclick="Dealership.buy('${Util.attr(c.id)}')">🔑 Buy</button>
                         ${myTeam ? `<button class="btn btn-secondary btn-sm" onclick="Dealership.buy('${Util.attr(c.id)}','${Util.attr(myTeam.id)}')">🛠 For team</button>` : ''}
+                        ${window.PaddockTrade && canBuy ? `<button class="btn btn-ghost btn-sm" title="Trade in a car, finance it, or stock your dealer lot" onclick="PaddockTrade.dealModal('${Util.attr(c.id)}')">💳 Finance / trade</button>` : ''}
                     </div>
                 </div>
             </div>`;
@@ -152,6 +170,8 @@ const Dealership = {
             <div><h1>🏬 Dealership</h1><p class="muted">🏁 The league's global inventory — curated by the Game Master. Cars bought here unlock series entry (Garage rules apply).</p></div>
             <div class="btn-row">${Economy.walletChip()}${myTeam ? `<span class="chip wallet-chip">🛠 ${Util.esc(myTeam.name)}: ${Economy.fmt(Wallet.teamBalance(myTeam.id))}</span>` : ''}</div>
         </div>
+        ${window.PaddockTrade ? PaddockTrade.tabRow('showroom') : ''}
+        ${window.PaddockTrade ? `<p class="muted small" style="margin:-.3rem 0 .8rem">🏬 <strong>Phoenix Motors</strong> — new cars come with a 5-race factory warranty (free repairs at the Factory Works Service Centre).</p>` : ''}
 
         <section class="panel" style="margin-bottom:1.1rem">
             <div class="panel-head"><h2>🏁 Showroom (${cars.length})</h2><span class="chip chip-dim">🏁 ${inv.length} in the league catalog</span></div>
@@ -183,6 +203,7 @@ const Dealership = {
 
         ${Market.garagePanel()}`;
 
+        if (window.PaddockTrade) PaddockTrade.wireTabs(el);
         [['deal-f-game', 'gameId'], ['deal-f-series', 'seriesId'], ['deal-f-cond', 'condition'], ['deal-f-sort', 'sort']]
             .forEach(([id, key]) => Util.$('#' + id, el)?.addEventListener('change', (e) => {
                 this._filters[key] = e.target.value;
@@ -208,7 +229,13 @@ const Dealership = {
             price: Number(car.price) || 0, boughtAt: Util.todayISO(),
             // The promo shot travels with the sale — garages render the same
             // image (or reference) the showroom listing carried, forever.
-            imageUrl: CarImg.normalize(car.imageUrl)
+            imageUrl: CarImg.normalize(car.imageUrl),
+            // Paddock (js/paddock-core.js): fresh condition, an empty odometer,
+            // and a factory warranty on new cars.
+            ...(window.PaddockCore ? { cond: PaddockCore.fullCond(100) } : {}),
+            races: 0, km: 0, parts: {}, title: 'clean',
+            warranty: (car.condition || 'new') === 'new' ? 5 : 0,
+            history: [{ at: Util.todayISO(), icon: '🏬', text: `Bought from Phoenix Motors for ${Economy.fmt(Number(car.price) || 0)}` }]
         };
     },
 

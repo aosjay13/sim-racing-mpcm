@@ -718,21 +718,31 @@ const Market = {
     // existing "🏬 Dealership" button working.)
     dealership(el) { return Dealership.storefront(el); },
 
+    // Dealer buy-back: 60% of what the car is worth today (js/paddock-core.js
+    // — wear, mileage, title and upgrades). A car that has never raced is
+    // worth its price, so a fresh car still sells back at 60% of it.
+    sellBackFor(car) {
+        return window.PaddockCore ? PaddockCore.sellBackValue(car) : Math.round((Number(car?.price) || 0) * this.SELL_RATIO);
+    },
+
     // Reusable garage panel — shown at the Dealership AND on the driver page.
     garagePanel() {
         const cars = this.myGarage();
+        const PC = window.PaddockCore;
         return `<section class="panel">
             <div class="panel-head"><h2>🚗 My Garage (${cars.length})</h2>
-                <button class="btn btn-secondary btn-sm" onclick="App.go('dealership')">🏬 Dealership</button></div>
+                <div class="btn-row">
+                    ${PC ? `<button class="btn btn-secondary btn-sm" onclick="App.go('paddock','garage')">🔧 Paddock garage</button>` : ''}
+                    <button class="btn btn-secondary btn-sm" onclick="App.go('dealership')">🏬 Dealership</button></div></div>
             ${cars.length ? cars.map(c => `
                 <div class="race-row">
                     ${CarImg.normalize(c.imageUrl) ? CarImg.thumb(c.imageUrl, c.name)
                         : `<div class="driver-hero-num" style="font-size:1.2rem;min-width:2.8rem;height:2.8rem">${c.emoji || '🚗'}</div>`}
                     <div class="race-row-main">
-                        <span class="race-title">${Util.esc(c.name)}</span>
-                        <span class="race-sub">${Util.esc(c.tag || '')} · bought ${Util.esc(Util.fmtDateShort(c.boughtAt))} for ${Economy.fmt(c.price)}</span>
+                        <span class="race-title">${Util.esc(c.nick ? `“${c.nick}” ${c.name}` : c.name)}${PC ? ` <span class="chip chip-dim" title="Overall condition">🔧 ${PC.overall(c)}%</span> <span class="chip chip-dim" title="Performance index">⚡ ${PC.pi(c)}</span>` : ''}</span>
+                        <span class="race-sub">${Util.esc(c.tag || '')} · bought ${Util.esc(Util.fmtDateShort(c.boughtAt))} for ${Economy.fmt(c.paidPrice ?? c.price)}${c.finance ? ` · 💳 ${Economy.fmt(c.finance.balance)} owed` : ''}</span>
                     </div>
-                    <button class="btn btn-ghost btn-sm" onclick="Market.sellCar('${Util.attr(c.id)}')">Sell ${Economy.fmt(Math.round(c.price * this.SELL_RATIO))}</button>
+                    <button class="btn btn-ghost btn-sm" ${c.job ? 'disabled title="In a shop"' : ''} onclick="Market.sellCar('${Util.attr(c.id)}')">Sell ${Economy.fmt(this.sellBackFor(c))}</button>
                 </div>`).join('')
             : C.empty('🏚', 'Your garage is empty', 'Cars you buy at the Dealership live here — take them street racing or lend them to your team.')}
         </section>`;
@@ -743,13 +753,17 @@ const Market = {
             const cars = this.myGarage();
             const car = cars.find(c => c.id === carId);
             if (!car) return;
-            const back = Math.round(car.price * this.SELL_RATIO);
-            if (!confirm(`Sell your ${car.name} back to the Dealership for ${Economy.fmt(back)}? (You paid ${Economy.fmt(car.price)}.)`)) return;
+            if (car.job) throw new Error('That car is in a shop — collect it first.');
+            const back = this.sellBackFor(car);
+            const owed = Number(car.finance?.balance) || 0;
+            if (owed > back && Economy.balance() < owed - back) throw new Error(`You owe ${Economy.fmt(owed)} on it — you need ${Economy.fmt(owed - back)} more to clear the finance.`);
+            if (!confirm(`Sell your ${car.name} back to the Dealership for ${Economy.fmt(back)}? (You paid ${Economy.fmt(car.paidPrice ?? car.price)}.)${owed ? `\n${Economy.fmt(Math.min(owed, back))} of it clears your finance.` : ''}`)) return;
             // Two isolated writes (garage, then wallet) — matches buyCar's
             // pattern and keeps wallet changes a single-purpose operation.
             await Garage.persistPlayerGarage(cars.filter(c => c.id !== carId));
-            await Auth.updateProfile({ balance: Economy.balance() + back });
-            Economy.logTx(Auth.uid(), back, '🚗', `Sold ${car.name} (Dealership)`);
+            const net = back - owed;
+            await Auth.updateProfile({ balance: Economy.balance() + net });
+            Economy.logTx(Auth.uid(), net, '🚗', `Sold ${car.name} (Dealership)${owed ? ' — finance cleared' : ''}`);
             Util.notify(`Sold the ${car.name} for ${Economy.fmt(back)}. 💵`);
             App.go(App.current.view, App.current.param);
         } catch (e) { Util.notify(e.message, 'error'); }

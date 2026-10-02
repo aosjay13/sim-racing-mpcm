@@ -7,10 +7,17 @@
 const path = require('path');
 global.window = global;
 const SOLO = path.join(__dirname, '../../../../sim-racing-career/js/solo');
-['sc-tracks', 'sc-gamedb', 'sc-names', 'sc-engine', 'sc-import'].forEach(f => {
+require(path.join(SOLO, '../paddock-core.js'));
+['sc-tracks', 'sc-gamedb', 'sc-names', 'sc-engine', 'sc-import', 'sc-paddock'].forEach(f => {
     try { require(path.join(SOLO, f + '.js')); } catch (e) { if (f !== 'sc-import') throw e; }
 });
 const E = SC.Engine;
+const PD = SC.Paddock;
+const paddockUse = { buys: 0, used: 0, jobs: 0, diy: 0, events: 0, cards: 0, loans: 0, sold: 0, haggles: 0 };
+// Paddock money flows (every paddock ledger line goes through E._ledger).
+let pdIn = 0, pdOut = 0;
+const _ledger = E._ledger;
+E._ledger = (S, w, a, l, c) => { if (c === 'paddock' && w === 'p') { if (a > 0) pdIn += a; else pdOut -= a; } return _ledger(S, w, a, l, c); };
 
 const onlyGame = process.argv[2] && process.argv[2] !== 'all' ? process.argv[2] : null;
 const SEASONS = Number(process.argv[3]) || 40;
@@ -48,6 +55,11 @@ function checkWorld(S, ctx) {
         else if (holders[0].id !== P.teamId) fail(ctx, `player teamId ${P.teamId} but racing for ${holders[0].id}`);
     }
     finiteDeep(S.player, 'player', ctx);
+    if (S.paddock) {
+        finiteDeep(S.paddock, 'paddock', ctx);
+        if (S.paddock.ap < 0 || S.paddock.ap > 20) fail(ctx, `paddock time out of range: ${S.paddock.ap}`);
+        if (S.paddock.garage.some(c => !c.id || !c.cond)) fail(ctx, 'paddock car without id/cond');
+    }
     for (const t of Object.values(S.teams)) if (t.player) finiteDeep(t, 'team', ctx);
 }
 
@@ -83,6 +95,41 @@ function botPreseason(S) {
         const c = E.facilityCost(S, k);
         if (c && t.budget > c.cost * 3) { try { E.upgradeFacility(S, k); } catch (e) { /* */ } }
     }
+}
+
+// The paddock between rounds: buy, fix, upgrade, race side events, play the
+// cards, borrow and flip cars — every call is allowed to fail (money, room…).
+const QUIET = /Not enough|No room|nothing to do|Nothing to|already|isn't equipped|needs a car|over your credit|bigger name|walks|sold|left the lot|feedback 40|only works|personal sponsor|already done/i;
+function botPaddock(S) {
+    const pd = PD.state(S);
+    const tryIt = (key, fn) => { try { fn(); paddockUse[key]++; } catch (e) { if (!QUIET.test(e.message)) fail('paddock', `${key}: ${e.message}`); } };
+    if (pd.card && r() < 0.8) {
+        const card = PaddockCore.cardById(pd.card);
+        tryIt('cards', () => PD.playCard(S, card.id, card.choices[Math.floor(r() * card.choices.length)].id));
+    }
+    if (!pd.garage.length && r() < 0.5) {
+        const models = PD.models(S).filter(m => m.price < S.player.money * 0.5);
+        if (models.length) tryIt('buys', () => PD.buyNew(S, models[Math.floor(r() * models.length)].id, { finance: r() < 0.3 }));
+        else {
+            const lot = PD.lot(S, PaddockCore.USED_DEALERS[Math.floor(r() * 4)]);
+            const l = lot.find(x => x.asking < S.player.money * 0.6);
+            if (l) {
+                if (r() < 0.5) tryIt('haggles', () => PD.haggle(S, l.id, Math.round(l.asking * 0.85)));
+                tryIt('used', () => PD.buyUsed(S, l.id));
+            }
+        }
+    }
+    const car = pd.garage[0];
+    if (car) {
+        if (PaddockCore.overall(car) < 60 && r() < 0.6) tryIt('jobs', () => PD.shopJob(S, car.id, r() < 0.5 ? 'mainst' : 'wrench', { service: 'service' }));
+        if (car.cond?.tyres < 50 && r() < 0.5) tryIt('diy', () => PD.diyJob(S, car.id, { service: 'tyres' }));
+        if (r() < 0.15) tryIt('jobs', () => PD.shopJob(S, car.id, 'apex', { service: 'install', part: 'intake', tier: 1 }));
+        if (r() < 0.05) tryIt('sold', () => PD.sellCar(S, car.id));
+    }
+    const keys = Object.keys(PaddockCore.SIDE_EVENTS);
+    for (let i = 0; i < 2 && pd.ap >= 3; i++) tryIt('events', () => PD.sideEvent(S, keys[Math.floor(r() * keys.length)], car?.id));
+    if (r() < 0.03 && !pd.loans.length) tryIt('loans', () => PD.takeLoan(S, 'micro'));
+    if (r() < 0.05 && pd.garageLevel < 3) tryIt('buys', () => PD.upgradeGarage(S));
 }
 
 function botRD(S) {
@@ -165,6 +212,7 @@ function runCareer(gameId, seriesId, role, difficulty, seed) {
             E.beginSeason(S);
             while (S.phase === 'season') {
                 botRD(S);
+                if (!process.env.NO_PADDOCK && r() < 0.5) botPaddock(S);
                 const rep = botRound(S);
                 if (!rep || !rep.ev.done) { fail(ctx, 'round did not complete'); break; }
                 rounds++;
@@ -193,6 +241,9 @@ function runCareer(gameId, seriesId, role, difficulty, seed) {
         } catch (e) { fail(ctx, 'retire threw ' + e.message); }
         try { E.advanceSeason(S); fail(ctx, 'advanced past retirement'); } catch (e) { /* expected */ }
     }
+    const pdShare = S.player.career.earn ? pdIn / S.player.career.earn : 0;
+    if (process.env.PADDOCK_ECON) console.log(`   paddock: in ${Math.round(pdIn)} out ${Math.round(pdOut)} · ${Math.round(pdShare * 100)}% of career earnings`);
+    pdIn = 0; pdOut = 0;
     const size = JSON.stringify(S).length;
     const ms = Date.now() - t0;
     return { ctx, rounds, ms, size, tiers: tierPath.join(''), money: Math.round(S.player.money), titles: S.player.career.titles, wins: S.player.career.w, dr: S.player.dr, team: S.teams[S.player.teamId]?.budget };
@@ -221,5 +272,8 @@ for (const [g, s, role, d] of extra) {
     if (res) console.log(`✅ ${res.ctx}: ${res.rounds} rounds, ${res.ms}ms, ${(res.size / 1024).toFixed(0)}KB, tiers ${res.tiers}, $${res.money}, titles ${res.titles}, wins ${res.wins}`);
 }
 const maxSize = Math.max(...results.map(r => r.size));
+console.log(`Paddock actions: ${Object.entries(paddockUse).map(([k, v]) => `${k} ${v}`).join(', ')}`);
+if (!paddockUse.buys && !paddockUse.used) fail('paddock', 'the bot never managed to buy a car');
+if (!paddockUse.events || !paddockUse.cards) fail('paddock', 'the bot never ran a side event or played a card');
 console.log(`\n${results.length} careers, max save ${(maxSize / 1024).toFixed(0)}KB, ${problems.length} problem(s)`);
 process.exit(problems.length ? 1 : 0);

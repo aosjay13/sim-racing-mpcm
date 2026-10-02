@@ -210,6 +210,14 @@ const Profile = {
                     [hosted, 'Races hosted'],
                     [myTracks.filter(n => trackStats.find(t => t.track.toLowerCase() === n.toLowerCase())?.kingOfTrack).length, 'Track kings']
                 ]));
+            } else if (p.role === 'car-dealer') {
+                const d = p.dealer || {};
+                roleCards.push(roleCard(p.role, prog, [
+                    [(p.lot || []).length, 'On the lot'],
+                    [d.sales || 0, 'Cars sold'],
+                    [Economy.fmt(d.revenue || 0), 'Revenue'],
+                    [Economy.fmt(d.profit || 0), 'Profit']
+                ], { note: d.name ? Util.esc(d.name) : '' }));
             } else if (p.role !== 'driver' && p.role !== 'team-owner') {
                 roleCards.push(roleCard(p.role, prog, []));
             }

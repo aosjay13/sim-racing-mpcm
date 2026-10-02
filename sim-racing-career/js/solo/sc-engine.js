@@ -1130,6 +1130,9 @@
         midSeasonEvents(S, report);
         raceNews(S, ev, res, report);
         checkAchievements(S, ev);
+        // The between-rounds paddock (js/solo/sc-paddock.js): paddock time,
+        // a new event card, merch, loan + car-finance repayments.
+        if (SC.Paddock) SC.Paddock.afterRound(S, report);
         if (S.season.round >= S.season.events.length) {
             report.seasonOver = true;
             E.endSeason(S);
@@ -2353,6 +2356,7 @@
         startSeason(S);
         // Owner/principal staff contracts
         if (P.role !== 'driver') staffRollover(S);
+        if (SC.Paddock) SC.Paddock.newSeason(S);
         return S;
     };
 

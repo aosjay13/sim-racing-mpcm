@@ -16,6 +16,8 @@ Phoenix SRMPC has two ways to play:
 4. Press **Start season**. The Race screen tells you exactly what to set up in your sim
    (track, laps, weather, AI level). Race it, then log the result or import the results file.
 
+Between rounds, the **🅿️ Paddock** has your own cars, dealers, shops, side events and the bank.
+
 Saves live in your browser. Use **Settings → Export save** to back up or move a career.
 The full guide is [SOLO_CAREER.md](SOLO_CAREER.md).
 
@@ -30,6 +32,12 @@ The full guide is [SOLO_CAREER.md](SOLO_CAREER.md).
 6. Read the race's **Set this up in your game** card and race it.
 7. After the race, open it again and use **📝 Report my result**. The Game Master confirms
    the official results, and points, prize money and achievements update automatically.
+
+**Between races**, open the **🅿️ Paddock** tab: service and upgrade your car (worn cars break
+down), sign personal sponsors, train your skills, run side events for money and fans, and deal
+with whatever paddock event turns up. Your paddock time refills after every race you run.
+Want a different game? Pick the **🔧 Mechanic** role to run a shop, or **🚘 Car Dealer** to buy
+and sell cars.
 
 Forgot your password? Type your email on the sign-in screen and press **Forgot password**.
 
