@@ -740,9 +740,12 @@ const Sim = {
             throw new Error('No AI grid for this race. Enter its teams in the series (Admin → Teams → Edit → Series) or install the Real-World Pack.');
         }
 
-        // Qualifying → pole; race pace + DNF roll → classification. Human
-        // drivers' cars and skills count (js/srmpc-paddock.js).
-        const bonus = window.Paddock ? await Paddock.simPaceMap(race, world, grid) : {};
+        // Qualifying → pole; race pace + DNF roll → classification. Cars,
+        // skills and team efficiency count (js/srmpc-paddock.js, srmpc-racesheet.js).
+        // Series rules (js/srmpc-racesheet.js): spec / BoP races turn on team
+        // efficiency, open races on equipment; success ballast slows leaders.
+        const bonus = window.RaceSheet?.ok() ? await RaceSheet.simPaceMap(race, world, grid)
+            : window.Paddock ? await Paddock.simPaceMap(race, world, grid) : {};
         const quali = grid.map(d => ({ d, q: this._pace(d, bonus[d.id]) })).sort((a, b) => b.q - a.q);
         const poleId = quali[0].d.id;
         const runners = grid.map(d => ({ d, pace: this._pace(d, bonus[d.id]), dnf: Math.random() < this.DNF_CHANCE }));

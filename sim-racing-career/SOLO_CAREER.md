@@ -67,7 +67,9 @@ always at the back, lower it.
 - **Import:** load the file your sim writes, or paste a finishing order. Names are
   matched to the career grid (you can fix any row), and you always pick which row
   is you. Use **Race → Show the field → Copy roster** to name the AI in your game
-  after the career drivers so imports match automatically.
+  after the career drivers so imports match automatically. A results file is checked
+  against the round (track, race session, laps or minutes): one from a different race is
+  blocked unless you tick *Use it anyway*. A pasted order is taken at your word.
 - **Simulate:** for rounds you can't run. Counts in the championship but only
   nudges your rating/reputation.
 
@@ -78,7 +80,7 @@ always at the back, lower it.
 | NR2003 | Opponent Strength (80–110 %) | Export results → `exports_imports/*.html` |
 | iRacing | AI Skill (0–125) | Results page → Export CSV |
 | Automobilista 2 | Opponent Skill (70–120) | Paste / CSV (no native file) |
-| Assetto Corsa | AI Level (70–100 %) | `Documents/Assetto Corsa/out/race_out.json` |
+| Assetto Corsa | AI Level (70–100 %) | `Documents/Assetto Corsa/out/race_out.json` or the server's `results/*.json` |
 | Assetto Corsa Competizione | AI Strength (80–100) | Server `results/*.json` (UTF-16 handled) |
 | Project CARS / 2 | Opponent Skill | Paste / CSV |
 | EA SPORTS F1 | AI Difficulty (0–110) | Paste / CSV |

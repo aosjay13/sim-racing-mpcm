@@ -198,3 +198,37 @@ Tests:
 - In this container Playwright's bundled browser revision may be missing: preload a patch
   that passes `executablePath: '/opt/pw-browsers/chromium'` to `chromium.launch`
   (`node -r ./patch.js drive.js`).
+
+## Series rules, race sheets & result proof (v3.35.0 league / v4.2.0 Solo)
+
+`js/race-rules.js` (`RaceRules`, pure, Node-loadable, loaded by both modes) holds the formats
+(spec / BoP / open + library defaults), tech inspection, team efficiency, pace / AI-tip maths,
+per-game translation (`RaceRules.ctrl(gameId)`: iRacing per model, ACC / AC per entry, Wreckfest /
+GT7 / Forza class limits), race codes, race sheets and the result checks (`checkFile`,
+`checkText`). `js/srmpc-racesheet.js` (`RaceSheet`) is the league UI: the race window's ⚖️ Rules
+card, *Edit race sheet* / *Series rules* forms, entry adjustments + entry-list downloads, signup
+tech check, `simPaceMap` (now used by `Sim.simulateRace` and the Director's AI fill) and result
+proof. `SC.Import.meta(text, format, filename)` reads track / server / session / date / laps /
+cars from results files; `ac-server-json` is a new format.
+
+- Storage: `series.rules`, `series.sheet` (sheet defaults), `race.details` (the race sheet),
+  `race.resultsCheck` (the GM import verdict + override), `raceSignups.report.proof` and
+  `raceSignups.gameCar` (the BoP car pick). No new collections.
+- Screenshots use Tesseract.js from jsDelivr, loaded on demand. Drives stub it with
+  `window.Tesseract = { recognize: async () => ({ data: { text } }) }` in an init script
+  (the harness blocks every non-localhost request anyway).
+- `PaddockCore.aiOffset` > 0 now means the car is quicker than the field, so the tip says
+  LOWER the AI (it used to say raise, which punished upgrades).
+- Paste imports are never checked (the GM's / player's own word); the Solo Career blocks a
+  results file from another track until *Use it anyway* is ticked.
+
+Tests:
+- `node race-rules-test.js`: pure rules + importer metadata, 32 checks (no browser).
+- `node rules-drive.js`: 21 steps on the shim. Library format defaults, the ⚖️ Rules form
+  (success ballast, Wreckfest class preset, BoP table), the race sheet form, tech inspection
+  blocking a spec signup until *Remove a part*, efficiency in simulated pace, a BoP car pick →
+  ACC ballast + restrictor, file proof (wrong track rejected, right one verified and auto-filled,
+  a bigger claim without new proof refused), screenshot proof (OCR stubbed), entry adjustments +
+  `entrylist.json` download, GM proof badges + import override, Director gating, a 390px check.
+  Screenshots in `harness/rules-shots/` (git-ignored). Modal content scrolls inside the
+  modal, so screenshot an element (`locator('.modal-card .rs-rules')`) rather than the page.

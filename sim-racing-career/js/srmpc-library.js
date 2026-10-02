@@ -334,6 +334,11 @@ const Library = {
     // driver in the league sees the same forecast.
     conditions(race) {
         if (race.conditions?.cond) return race.conditions;
+        const fixed = { clear: 'Clear', overcast: 'Overcast', wet: 'Wet', dynamic: 'Mixed (rain later)' }[race.details?.weather];
+        if (fixed) {
+            const base = this.conditions({ ...race, details: null });
+            return { ...base, cond: fixed, temp: fixed === 'Wet' ? Math.min(base.temp, 16) : base.temp, time: race.details.timeOfDay || base.time };
+        }
         const tr = this.track(race.track);
         const type = tr?.type || 'rd';
         const r = this._rng(`${race.id || ''}|${race.track || ''}|${race.date || ''}`);
@@ -368,20 +373,29 @@ const Library = {
         const ti = tr ? this.typeInfo(tr.type) : null;
         const wx = this.conditions(race);
         const km = tr?.km && race.laps ? Math.round(race.laps * tr.km) : null;
+        // The race sheet (js/srmpc-racesheet.js) — everything needed to build this race exactly.
+        const sheet = window.RaceSheet?.ok() ? RaceSheet.sheetFor(race, world) : null;
+        const RR = window.RaceRules;
         const length = race.laps ? `${race.laps} laps${km ? ` (≈ ${km} km)` : ''}`
-            : sd?.len?.mins ? `${sd.len.mins} minutes` : sd?.len?.stages ? `${sd.len.stages} stages` : 'Set by the host';
+            : sheet?.minutes ? `${sheet.minutes} minutes` : sd?.len?.mins ? `${sd.len.mins} minutes` : sd?.len?.stages ? `${sd.len.stages} stages` : 'Set by the host';
         const gridMax = Math.min(Number(series?.grid) || sd?.grid || 24, lg?.maxGrid || 60);
         const ai = lg?.ai;
+        const O = RR?.OPTIONS;
+        const sessions = sheet ? [sheet.practiceMin ? `Practice ${sheet.practiceMin} min` : '', sheet.qualiType === 'none' ? 'no qualifying' : sheet.qualiType === 'reverse' ? 'reverse grid' : sheet.qualiMin ? `${O.qualiType[sheet.qualiType] || 'Qualifying'} ${sheet.qualiMin} min` : '', `race ${race.laps ? race.laps + ' laps' : sheet.minutes ? sheet.minutes + ' min' : ''}`.trim()].filter(Boolean).join(' → ') : '';
         const rows = [
+            sheet ? ['Race code', `<strong>${Util.esc(sheet.code)}</strong> <span class="muted">· session name "${Util.esc(RaceSheet.sessionName(race, world, sheet))}" · ${Util.esc(O.mode[sheet.mode] || sheet.mode)}</span>`] : null,
             ['Game', `${lg ? lg.icon + ' ' : ''}${Util.esc(game?.name || lg?.name || '—')}`],
-            sd ? ['Car', Util.esc(sd.car)] : null,
-            ['Track', `${Util.esc(race.track || '—')}${ti ? ` <span class="muted">· ${ti.icon} ${Util.esc(ti.label)}${tr.km ? ` · ${tr.km} km lap` : ''}${tr.country ? ` · ${Util.esc(tr.country)}` : ''}</span>` : ''}`],
+            sheet?.gameCars ? ['Car', Util.esc(sheet.gameCars)] : sd ? ['Car', Util.esc(sd.car)] : null,
+            ['Track', `${Util.esc(race.track || '—')}${sheet?.layout ? ` (${Util.esc(sheet.layout)})` : ''}${ti ? ` <span class="muted">· ${ti.icon} ${Util.esc(ti.label)}${tr.km ? ` · ${tr.km} km lap` : ''}${tr.country ? ` · ${Util.esc(tr.country)}` : ''}</span>` : ''}`],
             ['Distance', Util.esc(length)],
-            ['Start', `${Util.esc(Util.fmtDate(race.date))}${race.time ? ' · ' + Util.esc(Util.fmtTime(race.time)) : ''}`],
-            ['Weather', `${this.wxIcon(wx.cond)} ${Util.esc(wx.cond)}, ${wx.temp}°C · ${Util.esc(wx.time)}`],
-            ['Grid', `${entrants} signed up${gridMax ? ` · up to ${gridMax} cars` : ''}${ai ? ` · AI fill: ${Util.esc(ai.label)} ${ai.kind === 'steps' ? Util.esc(ai.def) : ai.def + (ai.unit || '')}` : ''}`],
-            ['Lobby', this.realism(sd, tr, race).map(Util.esc).join('<br>')],
-            lg ? ['Results', Util.esc(lg.formats.map(f => SC.RESULT_FORMATS[f] || f).join(' · '))] : null
+            sessions ? ['Sessions', Util.esc(sessions)] : null,
+            ['Start', `${Util.esc(Util.fmtDate(race.date))}${race.time ? ' · ' + Util.esc(Util.fmtTime(race.time)) : ''}${sheet ? ` · ${Util.esc(O.start[sheet.start] || sheet.start)}` : ''}`],
+            ['Weather', `${this.wxIcon(wx.cond)} ${Util.esc(wx.cond)}, ${wx.temp}°C · ${Util.esc(wx.time)}${sheet && (sheet.weather === 'dynamic' || sheet.weather === 'real') ? ` <span class="muted">(${Util.esc(O.weather[sheet.weather])})</span>` : ''}`],
+            ['Grid', `${entrants} signed up${gridMax ? ` · up to ${gridMax} cars` : ''}${ai ? ` · AI fill: ${Util.esc(ai.label)} ${ai.kind === 'steps' ? Util.esc(ai.def) : ai.def + (ai.unit || '')}` : ''}${sheet?.field && sheet.mode !== 'online' ? ` · offline: ${sheet.field} cars${sheet.aiLevel ? `, AI ${Util.esc(sheet.aiLevel)}` : ''}` : ''}`],
+            sheet ? ['Lobby', [`${O.damage[sheet.damage]} · ${O.setup[sheet.setup]}`, `${O.fuel[sheet.fuel]} · ${O.tyreWear[sheet.tyreWear]}`, `${O.assists[sheet.assists]} · ${O.flags[sheet.flags]}`, sheet.pitRule ? `Pit rule: ${sheet.pitRule}` : ''].filter(Boolean).map(Util.esc).join('<br>')]
+                : ['Lobby', this.realism(sd, tr, race).map(Util.esc).join('<br>')],
+            sheet?.notes ? ['Notes', Util.esc(sheet.notes)] : null,
+            lg ? ['Results', `${Util.esc(lg.formats.map(f => SC.RESULT_FORMATS[f] || f).join(' · '))}${sheet && sheet.proof !== 'none' ? `<br><strong>Proof needed:</strong> ${Util.esc(O.proof[sheet.proof])}${sheet.windowDays ? `, dated within ${sheet.windowDays} day${sheet.windowDays === 1 ? '' : 's'} of the race` : ''}` : ''}`] : null
         ].filter(Boolean);
         const text = [`${race.name || race.track} — ${series?.name || ''}`.trim(),
             ...rows.map(([k, v]) => `${k}: ${String(v).replace(/<br>/g, '; ').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"')}`)].join('\n');
@@ -389,13 +403,13 @@ const Library = {
             <section class="lib-brief">
                 <h3 class="section-label">🎮 Set this up in ${Util.esc(lg?.short || game?.name || 'your game')}</h3>
                 <dl class="lib-brief-grid">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
-                <button type="button" class="btn btn-ghost btn-sm" data-copy-setup="${Util.esc(text)}">📋 Copy setup</button>
+                <button type="button" class="btn btn-ghost btn-sm" data-copy-setup="${Util.esc(text)}">📋 Copy race sheet</button>
             </section>`;
     },
     wireBriefing(root = document) {
         Util.$$('[data-copy-setup]', root).forEach(b => b.addEventListener('click', () => {
             const text = b.dataset.copySetup;
-            const done = () => Util.notify('Setup copied — paste it in the lobby chat or your notes. 📋');
+            const done = () => Util.notify('Copied — paste it in the lobby chat or your notes. 📋');
             if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done, () => Util.notify('Copy failed — select the text manually.', 'error'));
             else done();
         }));
@@ -408,7 +422,8 @@ const Library = {
         return `
             <details class="lib-import">
                 <summary>📂 Import a results file or paste the finishing order</summary>
-                <p class="muted small">${lg ? `Best for ${Util.esc(lg.short)}: ${Util.esc(lg.formats.map(f => SC.RESULT_FORMATS[f] || f).join(' · '))}. ` : ''}Any supported sim works: rFactor / LMU / AMS XML, GTR2 / RACE 07 logs, NR2003 HTML, iRacing CSV, AC / ACC JSON.</p>
+                <p class="muted small">${lg ? `Best for ${Util.esc(lg.short)}: ${Util.esc(lg.formats.map(f => SC.RESULT_FORMATS[f] || f).join(' · '))}. ` : ''}Any supported sim works: rFactor / LMU / AMS XML, GTR2 / RACE 07 logs, NR2003 HTML, iRacing CSV, AC / ACC JSON.
+                    ${window.RaceSheet?.ok() ? 'Files are checked against the race sheet (track, session, distance, race code, date) — a file from the wrong race is blocked.' : ''}</p>
                 <div class="form-row">
                     <label class="field"><span>Results file</span><input id="lib-im-file" class="input" type="file" accept=".xml,.txt,.html,.htm,.csv,.json,.tsv"></label>
                     <label class="field"><span>…or paste</span><textarea id="lib-im-text" class="input" rows="4" placeholder="1. Driver Name&#10;2. Driver Name&#10;3. Driver Name - DNF"></textarea></label>
@@ -422,10 +437,13 @@ const Library = {
         const parts = String(d.name || '').trim().split(/\s+/);
         return { id: d.id, first: parts.length > 1 ? parts.slice(0, -1).join(' ') : parts[0] || '', last: parts.length > 1 ? parts[parts.length - 1] : parts[0] || '', num: Number(d.number) || null, nick: d.nick || '' };
     },
+    // apply(results, check): check is the race-sheet verdict for the file
+    // (with the GM's override reason when they used one).
     wireImport(race, world, drivers, apply) {
         const btn = Util.$('#lib-im-read');
         if (!btn) return;
         let matched = null;
+        let check = null;
         btn.addEventListener('click', async () => {
             try {
                 const file = Util.$('#lib-im-file').files[0];
@@ -434,19 +452,47 @@ const Library = {
                 if (!String(text || '').trim()) throw new Error('Choose a results file or paste the finishing order.');
                 const { format, rows } = SC.Import.parse(text, file?.name || '');
                 if (!rows.length) throw new Error('No drivers found in that file.');
+                // Does the file belong to this race? (A pasted order is the GM's own word.)
+                check = window.RaceSheet?.ok() && format !== 'paste' ? RaceSheet.importCheck(text, file?.name || '', race, world) : null;
                 // Car numbers only identify a driver when nobody else in the league shares them.
                 const numCount = {};
                 drivers.forEach(d => { const n = Number(d.number); if (n) numCount[n] = (numCount[n] || 0) + 1; });
                 const entrants = drivers.map(d => { const e = this._entrant(d); if (e.num && numCount[e.num] > 1) e.num = null; return e; });
                 matched = SC.Import.match(rows, entrants, { playerId: '__none__', autoFill: false });
+                // Per-driver checks: allowed cars, and the ballast / restrictor AC servers record.
+                const rowFlags = {};
+                if (check) {
+                    const allowed = RaceRules.allowedCars(RaceSheet.sheetFor(race, world).gameCars);
+                    let expect = null;
+                    if (rows.some(r => r.ballast != null)) { try { expect = Object.fromEntries((await RaceSheet.entryRows(race.id)).rows.map(x => [x.driver.id, x.adj])); } catch (e) { expect = null; } }
+                    matched.forEach((m, i) => {
+                        const f = [];
+                        if (allowed.length && m.car && !/^ACC model/.test(m.car) && !allowed.some(a => RaceRules.carMatch(a, m.car))) f.push(`wrong car: ${m.car}`);
+                        const ex = m.id && expect?.[m.id];
+                        if (ex && m.ballast != null && m.ballast < (ex.ballastKg || 0)) f.push(`ran ${m.ballast} kg, needs ${ex.ballastKg}`);
+                        if (ex && m.restrictor != null && m.restrictor < (ex.restrictorPct || 0)) f.push(`ran ${m.restrictor}% restrictor, needs ${ex.restrictorPct}%`);
+                        if (f.length) rowFlags[i] = f;
+                    });
+                    check.rowFlags = rowFlags;
+                }
+                const blocked = check?.status === 'invalid';
                 const opts = (sel) => `<option value="">— skip (not a league driver) —</option>${drivers.map(d => `<option value="${Util.attr(d.id)}" ${sel === d.id ? 'selected' : ''}>${Util.esc(d.name)}</option>`).join('')}`;
                 Util.$('#lib-im-map').innerHTML = `
+                    ${check ? RaceSheet.checksHtml(check) : ''}
+                    ${blocked ? `<div class="rs-override"><label class="check"><input type="checkbox" id="lib-im-override"> Override: use this file anyway (logged on the race)</label>
+                        <input id="lib-im-reason" class="input" maxlength="140" placeholder="Why? e.g. red-flagged at lap 38, server renamed by mistake"></div>` : ''}
                     <p class="small">Read <strong>${rows.length}</strong> rows (${Util.esc(format)}). ${matched.filter(m => m.id).length} matched to league drivers — fix any row, then apply.</p>
                     <table class="table table-tight"><thead><tr><th>Pos</th><th>In the file</th><th>League driver</th></tr></thead><tbody>
-                    ${matched.map((m, i) => `<tr><td>${m.dnf ? 'DNF' : 'P' + (m.pos || i + 1)}</td><td>${Util.esc(m.name)}${m.num != null ? ` <span class="muted">#${m.num}</span>` : ''}${m.how === 'name' && m.conf < 0.9 ? ' <span class="badge badge-amber">check</span>' : m.how === 'number' ? ' <span class="badge badge-amber" title="Matched by car number — check it">by car #</span>' : ''}</td>
+                    ${matched.map((m, i) => `<tr><td>${m.dnf ? 'DNF' : 'P' + (m.pos || i + 1)}</td><td>${Util.esc(m.name)}${m.num != null ? ` <span class="muted">#${m.num}</span>` : ''}${m.how === 'name' && m.conf < 0.9 ? ' <span class="badge badge-amber">check</span>' : m.how === 'number' ? ' <span class="badge badge-amber" title="Matched by car number — check it">by car #</span>' : ''}${check?.rowFlags?.[i] ? ` <span class="badge badge-bad" title="Against the race sheet">⛔ ${Util.esc(check.rowFlags[i].join('; '))}</span>` : ''}</td>
                         <td><select class="input" data-im-row="${i}">${opts(m.id)}</select></td></tr>`).join('')}</tbody></table>
-                    <button type="button" class="btn btn-primary btn-sm" id="lib-im-apply">⬇ Apply to the results form</button>`;
+                    <button type="button" class="btn btn-primary btn-sm" id="lib-im-apply" ${blocked ? 'disabled' : ''}>⬇ Apply to the results form</button>`;
+                if (blocked) {
+                    const sync = () => { Util.$('#lib-im-apply').disabled = !(Util.$('#lib-im-override').checked && Util.$('#lib-im-reason').value.trim().length >= 3); };
+                    Util.$('#lib-im-override').addEventListener('change', sync);
+                    Util.$('#lib-im-reason').addEventListener('input', sync);
+                }
                 Util.$('#lib-im-apply').addEventListener('click', () => {
+                    if (blocked && !(Util.$('#lib-im-override')?.checked && Util.$('#lib-im-reason')?.value.trim().length >= 3)) { Util.notify('This file doesn\'t match the race sheet. Tick override and give a reason to use it anyway.', 'error'); return; }
                     Util.$$('[data-im-row]').forEach(s => { matched[Number(s.dataset.imRow)].id = s.value || null; });
                     const used = matched.filter(m => m.id);
                     const ids = used.map(m => m.id);
@@ -461,8 +507,13 @@ const Library = {
                             incidents: m.inc ?? null, wrecks: m.wrecks ?? null, fastestLap: !!m.fl
                         };
                     });
-                    apply(results);
-                    Util.notify(`Applied ${Util.plural(results.length, 'result')} — check the table and save. ✅`);
+                    const verdict = check ? {
+                        status: check.status, file: file?.name || null, format, checks: check.checks, at: new Date().toISOString(),
+                        flagged: Object.entries(check.rowFlags || {}).map(([i, f]) => ({ driverId: matched[Number(i)].id || null, name: matched[Number(i)].name, issues: f })),
+                        override: blocked ? { reason: Util.$('#lib-im-reason').value.trim(), by: Auth.state.profile?.displayName || 'Game Master' } : null
+                    } : null;
+                    apply(results, verdict);
+                    Util.notify(`Applied ${Util.plural(results.length, 'result')}${blocked ? ' (override logged)' : ''} — check the table and save. ✅`);
                 });
             } catch (e) { Util.notify(e.message, 'error'); }
         });
@@ -493,13 +544,37 @@ const Library = {
                         <label class="check"><input id="rep-dnf" type="checkbox" ${rep.dnf ? 'checked' : ''}> Did not finish</label>
                         ${derby ? '' : `<label class="check"><input id="rep-fl" type="checkbox" ${rep.fastestLap ? 'checked' : ''}> I set the fastest lap</label>`}
                     </div>
+                    ${window.RaceSheet?.ok() ? RaceSheet.proofPanelHtml(race, world, rep) : ''}
                     <button type="submit" class="btn btn-primary btn-sm">💾 ${signup.report ? 'Update' : 'Submit'} my result</button>
                 </form>
             </section>`;
     },
-    wireReport(race, signup) {
+    wireReport(race, signup, world = null) {
         const form = Util.$('#lib-rep-form');
         if (!form) return;
+        const RS = window.RaceSheet?.ok() ? RaceSheet : null;
+        const driverOf = (w) => w?.driversById?.[signup.driverId] || { id: signup.driverId, name: Auth.state.profile?.displayName || '' };
+        let shot = null; // a screenshot read on pick (OCR is slow, so it's done once)
+        const put = (id, v) => { const el = Util.$('#' + id); if (el && v != null) el.value = v; };
+        // A results file fills the form from your own row as soon as it's picked.
+        Util.$('#rep-proof-file')?.addEventListener('change', async () => {
+            try {
+                const w = world || await DB.loadWorld();
+                const { fill } = await RS.readProof(race, w, driverOf(w), null, signup);
+                if (fill) {
+                    put('rep-pos', fill.position); put('rep-start', fill.start); put('rep-led', fill.lapsLed); put('rep-inc', fill.incidents);
+                    Util.$('#rep-dnf').checked = !!fill.dnf;
+                    if (Util.$('#rep-fl')) Util.$('#rep-fl').checked = !!fill.fastestLap;
+                }
+            } catch (err) { Util.notify('Could not read that file: ' + err.message, 'error'); }
+        });
+        Util.$('#rep-proof-shot')?.addEventListener('change', async () => {
+            try {
+                const w = world || await DB.loadWorld();
+                shot = null;
+                shot = (await RS.readProof(race, w, driverOf(w), null, signup)).proof;
+            } catch (err) { Util.notify(err.message, 'error'); }
+        });
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             const num = (id) => { const v = Util.$('#' + id)?.value; return v === '' || v == null ? null : Number(v); };
@@ -512,9 +587,32 @@ const Library = {
                 fastestLap: !!Util.$('#rep-fl')?.checked, at: new Date().toISOString()
             };
             Object.keys(report).forEach(k => { if (report[k] === null) delete report[k]; });
+            // Proof against the race sheet (js/srmpc-racesheet.js): an invalid
+            // file or screenshot is rejected; a required one must be attached.
+            if (RS) {
+                const w = world || await DB.loadWorld();
+                const sheet = RS.sheetFor(race, w);
+                const old = signup.report;
+                let proof = null;
+                try {
+                    if (Util.$('#rep-proof-file')?.files?.[0]) proof = (await RS.readProof(race, w, driverOf(w), { position: report.position, dnf }, signup)).proof;
+                    else if (Util.$('#rep-proof-shot')?.files?.[0]) proof = shot || (await RS.readProof(race, w, driverOf(w), null, signup)).proof;
+                    // Earlier proof still stands while the result it proved is unchanged.
+                    else if (old?.proof && !!old.dnf === dnf && (dnf || Number(old.position) === Number(position))) proof = old.proof;
+                } catch (err) { Util.notify('Could not read your proof: ' + err.message, 'error'); return; }
+                if (proof?.status === 'invalid') {
+                    Util.notify(`Proof rejected — ${proof.checks.filter(c => c.ok === false).map(c => c.detail).join('; ')}`, 'error');
+                    return;
+                }
+                if (sheet.proof !== 'none' && !proof) { Util.notify(`This race needs proof: ${RaceRules.OPTIONS.proof[sheet.proof].toLowerCase()}.`, 'error'); return; }
+                if (proof && sheet.proof === 'file' && proof.kind !== 'file') { Util.notify('This race needs the results file, not a screenshot.', 'error'); return; }
+                if (proof && sheet.proof === 'shot' && proof.kind !== 'shot') { Util.notify('This race needs a screenshot of the results.', 'error'); return; }
+                if (proof) report.proof = JSON.parse(JSON.stringify(proof));
+            }
             try {
                 await DB.update('raceSignups', signup.id, { report });
-                Util.notify('Result reported — thanks! The Game Master will confirm it. 📝');
+                Util.notify(report.proof?.status === 'valid' ? 'Result reported with verified proof ✅ — the Game Master will confirm it.'
+                    : 'Result reported — thanks! The Game Master will confirm it. 📝');
                 Views.showRace(race.id);
             } catch (err) { Util.notify('Could not save your report: ' + err.message, 'error'); }
         });

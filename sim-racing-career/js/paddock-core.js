@@ -155,6 +155,7 @@
         e.races = Math.max(0, Math.round(Number(e.races) || 0));
         e.km = Math.max(0, Math.round(Number(e.km) || 0));
         e.parts = { ...(e.parts || {}) };
+        e.shelf = { ...(e.shelf || {}) };   // removed parts kept for refitting (labour only)
         e.tune = clamp(Math.round(Number(e.tune) || 0), 0, 3);
         e.title = TITLES[e.title] ? e.title : 'clean';
         e.hidden = Array.isArray(e.hidden) ? e.hidden.slice() : [];
@@ -397,9 +398,10 @@
     // Pre-race mechanical check: a seeded roll per race + car. When it
     // fails, the driver gets an order to retire on a given lap (honour it
     // in the sim, log a DNF).
-    PC.gremlinCheck = function (car, { seed, laps = 0 } = {}) {
+    // riskMult: team efficiency (RaceRules.riskMult) — a well-run team breaks less.
+    PC.gremlinCheck = function (car, { seed, laps = 0, riskMult = 1 } = {}) {
         const r = PC.rng(seed);
-        const risk = PC.failRisk(car);
+        const risk = Math.min(0.95, PC.failRisk(car) * (Number(riskMult) > 0 ? Number(riskMult) : 1));
         const roll = r();
         if (roll >= risk) return { fails: false, risk };
         const b = PC.riskBreakdown(car);
@@ -409,9 +411,10 @@
         return { fails: true, risk, comp, lap, pct: Math.round(rf(r, 20, 90)) };
     };
 
-    // Suggested in-game AI offset from the car's performance index vs an
-    // "average" 55-PI car: a faster car means the field should be tougher
-    // to stay fair; a slower car earns a softer field. ±6 max.
+    // The car's edge over an "average" 55-PI car, in AI-strength steps (±6).
+    // Positive = your car is quicker than the field's, so LOWER the in-game
+    // AI to let the paddock car's advantage show; negative = raise it.
+    // (Format-aware tips live in RaceRules.aiTip.)
     PC.aiOffset = function (car) {
         return clamp(Math.round((PC.pi(car) - 55) / 6), -6, 6);
     };
@@ -472,7 +475,15 @@
         tune: { label: 'Dyno tune', icon: '📈', kind: 'tune', cat: 'tune' },
         inspect: { label: 'Inspection', icon: '🔍', kind: 'inspect', cat: 'service' },
         detail: { label: 'Detail & fresh livery', icon: '🧽', kind: 'detail', cat: 'body' },
-        install: { label: 'Install a part', icon: '🧩', kind: 'install', cat: null }
+        install: { label: 'Install a part', icon: '🧩', kind: 'install', cat: null },
+        remove: { label: 'Remove a part', icon: '🪛', kind: 'remove', cat: null }
+    };
+    // What can be taken off a car: fitted parts, plus the dyno tune map.
+    PC.removable = function (car) {
+        const c = PC.ensureCar(car);
+        const out = Object.entries(c.parts).map(([id, p]) => ({ id, label: `${TIERS[p.tier]?.label || ''} ${PARTS[id]?.label || id}`.trim(), icon: PARTS[id]?.icon || '🧩', perf: PARTS[id]?.perf || 0 }));
+        if (c.tune > 0) out.push({ id: 'tune', label: `Dyno tune map (step ${c.tune}/3)`, icon: '📈', perf: 1 });
+        return out;
     };
     PC.SERVICES = SERVICES;
 
@@ -513,9 +524,16 @@
             }
         } else if (svc.kind === 'install') {
             const cost = PC.partCost(c, job.part, job.tier);
-            partsCost += cost;
+            const shelved = c.shelf[job.part] && Number(c.shelf[job.part].tier) === Number(job.tier);
+            partsCost += shelved ? 0 : cost;
             labor += cost * 0.18 + 150;
-            lines.push(`${PARTS[job.part]?.icon || '🧩'} ${TIERS[job.tier]?.label || ''} ${PARTS[job.part]?.label || 'part'}`);
+            lines.push(`${PARTS[job.part]?.icon || '🧩'} ${TIERS[job.tier]?.label || ''} ${PARTS[job.part]?.label || 'part'}${shelved ? ' (from your shelf — labour only)' : ''}`);
+        } else if (svc.kind === 'remove') {
+            if (job.part === 'tune' ? c.tune > 0 : c.parts[job.part]) {
+                const p = c.parts[job.part];
+                labor += job.part === 'tune' ? 200 + base * 0.002 : PC.partCost(c, job.part, p.tier) * 0.08 + 120;
+                lines.push(job.part === 'tune' ? '📈 Flash the stock engine map back' : `🪛 Take off the ${TIERS[p.tier]?.label || ''} ${PARTS[job.part]?.label || 'part'} (kept on your shelf)`);
+            }
         } else if (svc.kind === 'tune') {
             labor += 350 + base * 0.004 * (c.tune + 1);
             lines.push(`📈 Dyno tune step ${c.tune + 1} of 3`);
@@ -543,6 +561,7 @@
     PC.diyAP = function (job, car) {
         const svc = SERVICES[job.service] || SERVICES.install;
         if (svc.kind === 'install') return 2 + (Number(job.tier) || 1);
+        if (svc.kind === 'remove') return job.part === 'tune' ? 1 : 1 + Math.ceil((Number(car ? PC.ensureCar(car).parts[job.part]?.tier : 1) || 1) / 2);
         if (svc.kind === 'tune') return 3;
         if (svc.kind === 'inspect') return 1;
         if (svc.kind === 'detail') return 2;
@@ -557,6 +576,7 @@
         const lvl = GARAGE_LEVELS[clamp(level || 1, 1, 5)];
         const svc = SERVICES[job.service] || SERVICES.install;
         if (svc.kind === 'install') return lvl.installs;
+        if (svc.kind === 'remove') return job.part === 'tune' ? lvl.installs : lvl.level >= 3;
         if (svc.kind === 'tune') return lvl.tune;
         if (svc.kind === 'inspect' || svc.kind === 'detail') return true;
         const comps = job.comps && job.comps.length ? job.comps : svc.comps;
@@ -585,9 +605,25 @@
             const def = PARTS[job.part];
             if (!def || !TIERS[job.tier]) throw new Error('Unknown part.');
             const eff = Math.round(clamp((0.85 + 0.15 * quality) * (botched ? 0.6 : 1), 0.3, 1) * 100) / 100;
+            // Swapping a part out puts the old one on the shelf; refitting a shelved one uses it up.
+            if (c.parts[job.part] && Number(c.parts[job.part].tier) !== Number(job.tier)) c.shelf[job.part] = { tier: c.parts[job.part].tier };
+            else if (c.shelf[job.part] && Number(c.shelf[job.part].tier) === Number(job.tier)) delete c.shelf[job.part];
             c.parts[job.part] = { tier: job.tier, eff, at: PC.dayKey(), shop: job.shopName || null };
             if (botched) c.cond[def.comp] = clamp(c.cond[def.comp] - ri(r, 8, 16), 0, 100);
             text = `Installed ${TIERS[job.tier].label} ${def.label} (${Math.round(eff * 100)}% fitted)`;
+        } else if (svc.kind === 'remove') {
+            if (job.part === 'tune') {
+                if (!c.tune) throw new Error('There is no dyno tune to remove.');
+                c.tune = 0;
+                text = 'Stock engine map flashed back';
+            } else {
+                const p = c.parts[job.part];
+                if (!p) throw new Error('That part is not fitted.');
+                c.shelf[job.part] = { tier: p.tier };
+                delete c.parts[job.part];
+                if (botched) c.cond[PARTS[job.part]?.comp || 'body'] = clamp(c.cond[PARTS[job.part]?.comp || 'body'] - ri(r, 4, 9), 0, 100);
+                text = `Removed the ${TIERS[p.tier]?.label || ''} ${PARTS[job.part]?.label || 'part'} (on the shelf)`;
+            }
         } else if (svc.kind === 'tune') {
             c.tune = clamp(c.tune + (botched ? 0 : 1), 0, 3);
             if (botched) c.cond.engine = clamp(c.cond.engine - ri(r, 5, 12), 0, 100);

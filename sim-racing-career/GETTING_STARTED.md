@@ -28,10 +28,15 @@ The full guide is [SOLO_CAREER.md](SOLO_CAREER.md).
 3. Pick a difficulty (it sets your starting money), then choose **Driver** as your role.
 4. **Start from scratch** and create your driver: name, nickname, nationality, age, helmet colour.
 5. The dashboard now shows your next step. Open the next race and press **Sign me up**.
-   If the series needs a specific car, buy one in the **Dealership** first.
-6. Read the race's **Set this up in your game** card and race it.
-7. After the race, open it again and use **📝 Report my result**. The Game Master confirms
-   the official results, and points, prize money and achievements update automatically.
+   If the series needs a specific car, buy one in the **Dealership** first. Spec and BoP
+   series ban performance parts, so the race window tells you if your car fails inspection.
+6. Read the race's **Set this up in your game** card (the race sheet) and the **⚖️ Rules**
+   card under it (your ballast, build allowance or AI tip, and the session name to use), then
+   race it.
+7. After the race, open it again and use **📝 Report my result**, attaching your results file
+   or a screenshot. It's checked against the race sheet: a file or screenshot from the wrong
+   race is rejected. The Game Master confirms the official results, and points, prize money
+   and achievements update automatically.
 
 **Between races**, open the **🅿️ Paddock** tab: service and upgrade your car (worn cars break
 down), sign personal sponsors, train your skills, run side events for money and fans, and deal

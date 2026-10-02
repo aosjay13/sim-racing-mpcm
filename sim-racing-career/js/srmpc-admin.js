@@ -286,6 +286,7 @@ const Admin = {
                             ${s.status === 'proposed' ? `<button class="btn btn-primary btn-sm" onclick="Admin.approveSeries('${Util.attr(s.id)}')">Approve</button>` : ''}
                             <button class="btn btn-ghost btn-sm" onclick="App.go('series-detail','${Util.attr(s.id)}')">View</button>
                             <button class="btn btn-ghost btn-sm" onclick="Admin.seriesForm('${Util.attr(s.id)}')">Edit</button>
+                            ${window.RaceSheet ? `<button class="btn btn-ghost btn-sm" onclick="RaceSheet.seriesRulesForm('${Util.attr(s.id)}')" title="Spec / BoP / open, class limit, ballast, race sheet defaults">⚖️ Rules</button>` : ''}
                             <button class="btn btn-ghost btn-sm" onclick="Admin.scheduleBuilder('${Util.attr(s.id)}')">Schedule</button>
                             <button class="btn btn-ghost btn-sm" onclick="Admin.seasonsModal('${Util.attr(s.id)}')">Seasons</button>
                             <button class="btn btn-danger btn-sm" onclick="Admin.deleteSeries('${Util.attr(s.id)}')">Delete</button>
@@ -973,7 +974,13 @@ const Admin = {
         // Drivers' own reports (Report my result) pre-fill rows that have no
         // official result yet — the GM checks them and saves.
         const reported = {};
-        signups.forEach(s => { if (s.report && s.driverId) reported[s.driverId] = s.report; });
+        const rejected = {};
+        // A report whose proof failed the race-sheet check is never pre-filled.
+        signups.forEach(s => { if (s.report && s.driverId) (s.report.proof?.status === 'invalid' ? rejected : reported)[s.driverId] = s.report; });
+        const proofOf = {};
+        signups.forEach(s => { if (s.report && s.driverId) proofOf[s.driverId] = s.report.proof || null; });
+        const sheet = window.RaceSheet?.ok() ? RaceSheet.sheetFor(race, world) : null;
+        let importCheck = race.resultsCheck || null;
         const reportCount = Object.keys(reported).filter(id => !existing[id]).length;
         Object.entries(reported).forEach(([id, rep]) => {
             if (existing[id]) return;
@@ -996,6 +1003,9 @@ const Admin = {
             ${Modal.header(`🏁 Results — ${race.name || race.track || 'Race'}`, `${Util.fmtDate(race.date)} · Points are computed automatically from the series points system`)}
             <form id="results-form">
                 ${reportCount ? `<p class="small lib-reported">📝 ${Util.plural(reportCount, 'driver')} reported their own result — pre-filled below (marked <span class="badge badge-amber">reported</span>). Check them, then save.</p>` : ''}
+                ${Object.keys(rejected).length ? `<p class="small pd-bad-text">⛔ ${Util.plural(Object.keys(rejected).length, 'report')} came with proof that doesn't match the race sheet and ${Object.keys(rejected).length === 1 ? 'was' : 'were'} not pre-filled.</p>` : ''}
+                ${sheet && sheet.proof !== 'none' ? `<p class="muted small">📸 This race needs proof (${Util.esc(RaceRules.OPTIONS.proof[sheet.proof].toLowerCase())}). Each reported row shows its proof check.</p>` : ''}
+                ${race.resultsCheck ? `<p class="small">Last import: ${window.RaceSheet?.badge ? RaceSheet.badge({ ...race.resultsCheck, kind: 'file' }) : ''} ${Util.esc(race.resultsCheck.file || '')}${race.resultsCheck.override ? ` · override: “${Util.esc(race.resultsCheck.override.reason)}”` : ''}</p>` : ''}
                 ${window.Library ? Library.importPanel(race, world) : ''}
                 <div class="form-row">
                     <label class="field"><span>🅿️ Pole position</span>
@@ -1021,7 +1031,8 @@ const Admin = {
                             const tv = (v) => (v === undefined || v === null) ? '' : v;
                             return `<tr data-driver="${Util.attr(d.id)}" data-wrecks="${tv(ex?.wrecks)}">
                                 <td><input class="input input-pos" type="number" min="1" max="99" value="${ex && !ex.dnf ? ex.position || '' : ''}" placeholder="—"></td>
-                                <td>${Util.esc(d.name)} ${signedIds.has(d.id) ? '<span class="badge badge-blue">signed up</span>' : ''}${ex?._reported ? ' <span class="badge badge-amber" title="Pre-filled from the driver\'s own report">reported</span>' : ''}</td>
+                                <td>${Util.esc(d.name)} ${signedIds.has(d.id) ? '<span class="badge badge-blue">signed up</span>' : ''}${ex?._reported ? ' <span class="badge badge-amber" title="Pre-filled from the driver\'s own report">reported</span>' : ''}${rejected[d.id] ? ' <span class="badge badge-bad">report rejected</span>' : ''}${window.RaceSheet && (reported[d.id] || rejected[d.id]) ? ' ' + RaceSheet.badge(proofOf[d.id]) : ''}
+                                    ${/^data:image\/(jpeg|png|webp);base64,/.test(proofOf[d.id]?.image || '') ? `<details class="rs-shot"><summary class="small">📸 screenshot</summary><img src="${Util.esc(proofOf[d.id].image)}" alt="Result screenshot from ${Util.esc(d.name)}"></details>` : ''}</td>
                                 <td><input type="checkbox" class="chk-dnf" ${ex?.dnf ? 'checked' : ''}></td>
                                 <td><input class="input input-grid" type="number" min="1" max="99" style="width:4rem" value="${tv(ex?.start)}" placeholder="—"></td>
                                 <td><input class="input input-inc" type="number" min="0" max="99" style="width:4rem" value="${tv(ex?.incidents)}" placeholder="—"></td>
@@ -1044,7 +1055,8 @@ const Admin = {
         `, { wide: true });
 
         // Results import fills the table (positions, DNFs, telemetry, pole/FL).
-        if (window.Library) Library.wireImport(race, world, drivers, (results) => {
+        if (window.Library) Library.wireImport(race, world, drivers, (results, check) => {
+            if (check) importCheck = check;
             const byId = Object.fromEntries(results.map(r => [r.driverId, r]));
             const put = (row, cls, v) => { row.querySelector(cls).value = v === null || v === undefined ? '' : v; };
             Util.$$('#results-form .results-table tbody tr').forEach(row => {
@@ -1110,10 +1122,12 @@ const Admin = {
 
                 if (!results.length) throw new Error('Enter at least one finishing position or DNF.');
                 // The AI field races around the humans' results (League Director).
-                const final = Util.$('#res-aifill')?.checked ? Director.withAIField(race, results, world) : results;
+                const final = Util.$('#res-aifill')?.checked ? Director.withAIField(race, results, world, await Director.aiBonus(race, world, results)) : results;
                 // Prize money + sponsor payouts + prestige XP run on the first
                 // save only, so editing results never double-pays.
                 await Director.saveResults(race, final, world);
+                // Keep the import's race-sheet verdict (and any override) on the race.
+                if (importCheck && importCheck !== race.resultsCheck) await DB.update('races', raceId, { resultsCheck: JSON.parse(JSON.stringify(importCheck)) }).catch(() => {});
                 Modal.close();
                 Util.notify(`Results saved — standings, stats, and race earnings updated${final.length > results.length ? `, with ${final.length - results.length} AI cars raced around them` : ''}. 🏆`);
                 this.refresh();

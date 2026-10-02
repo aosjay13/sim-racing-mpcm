@@ -1250,3 +1250,41 @@ td.right, th.right { text-align: right; }
 @media (max-width: 420px) {
     .pd-cond-row { grid-template-columns: 6.6rem 1fr 2.4rem; }
 }
+
+/* Race sheets, series rules & result proof (js/srmpc-racesheet.js) */
+.rs-rules {
+    margin-top: 1rem; padding: .9rem 1rem; border-radius: var(--r-sm);
+    background: var(--bg-3, rgba(255,255,255,.04)); border: 1px solid var(--hairline, rgba(255,255,255,.1));
+}
+.rs-rules h3 { margin: 0 0 .6rem; }
+.rs-rules h4 { margin: .2rem 0 .5rem; font-size: .95rem; }
+.rs-format { font-weight: 600; }
+.rs-format-spec { color: #7cc4ff; border-color: rgba(124,196,255,.4); }
+.rs-format-bop { color: #c9a4ff; border-color: rgba(201,164,255,.4); }
+.rs-format-open { color: var(--warn); border-color: rgba(245,179,1,.4); }
+.rs-bop { margin: .5rem 0; }
+.rs-code { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1rem; margin: .6rem 0 .3rem; padding: .5rem .7rem; border-radius: var(--r-sm); background: var(--bg-2, rgba(0,0,0,.2)); border: 1px dashed var(--hairline); }
+.rs-code code { font-size: .85rem; word-break: break-all; }
+.rs-host summary, .rs-shot summary { cursor: pointer; }
+.rs-host ul { margin: .4rem 0 .2rem 1.1rem; display: grid; gap: .25rem; }
+.rs-mine { margin-top: .8rem; padding-top: .7rem; border-top: 1px solid var(--hairline); }
+.rs-eff { display: flex; gap: .7rem; align-items: center; margin: .4rem 0; }
+.rs-grade { flex: none; width: 2.2rem; height: 2.2rem; display: grid; place-items: center; border-radius: 50%; font-weight: 800; border: 2px solid currentColor; }
+.rs-grade-A { color: var(--good); } .rs-grade-B { color: #7cc4ff; } .rs-grade-C { color: var(--text-dim); }
+.rs-grade-D { color: var(--warn); } .rs-grade-E { color: var(--bad); }
+.rs-adjust { margin: .4rem 0 .2rem; }
+.rs-lines { margin: .2rem 0 .4rem 1.1rem; }
+.rs-illegal ul { margin: .3rem 0 0 1.1rem; }
+.rs-gm { margin-top: .7rem; }
+.rs-gamecar { max-width: 22rem; margin-top: .6rem; }
+.rs-fieldset { border: 1px solid var(--hairline); border-radius: var(--r-sm); padding: .5rem .8rem .7rem; margin: 0; display: grid; gap: .5rem; }
+.rs-fieldset legend { padding: 0 .3rem; color: var(--text-dim); font-size: .85rem; }
+.rs-proof { margin-top: .4rem; padding-top: .5rem; border-top: 1px dashed var(--hairline); }
+.rs-check { margin: .5rem 0; padding: .5rem .7rem; border-radius: var(--r-sm); border: 1px solid var(--hairline); }
+.rs-check ul { margin: .3rem 0 0 1rem; display: grid; gap: .15rem; list-style: none; padding: 0; }
+.rs-check-valid { background: rgba(34,197,94,.08); border-color: rgba(34,197,94,.35); }
+.rs-check-unverified { background: rgba(245,179,1,.08); border-color: rgba(245,179,1,.35); }
+.rs-check-invalid { background: rgba(255,77,77,.08); border-color: rgba(255,77,77,.4); }
+.rs-override { display: grid; gap: .4rem; margin: .4rem 0 .6rem; }
+.rs-shot img { display: block; max-width: 100%; max-height: 260px; margin-top: .3rem; border-radius: var(--r-sm); border: 1px solid var(--hairline); }
+.badge-bad { color: var(--bad); background: rgba(255,77,77,.12); border-color: rgba(255,77,77,.4); }

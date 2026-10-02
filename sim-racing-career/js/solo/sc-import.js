@@ -8,10 +8,14 @@
      NR2003 HTML export  exports_imports/*.html
      iRacing CSV         session results → "Export to CSV"
      AC race_out.json    Documents/Assetto Corsa/out/race_out.json
+     AC server JSON      acServer results/*.json (ballast + restrictor)
      ACC results JSON    server results/*.json (UTF-16 handled)
      Any CSV/TSV/table   header auto-detection
      Pasted list         one driver per line in finishing order
 
+   I.meta() reads what the file says about the session itself
+   (track, server name, session type, date, laps, cars) so a
+   result can be checked against the race sheet (js/race-rules.js).
    Pure functions — no DOM needed (the Node tests use them too).
    ============================================================ */
 'use strict';
@@ -63,6 +67,7 @@
                 const j = JSON.parse(t);
                 if (j.sessionResult && j.sessionResult.leaderBoardLines) return 'acc-json';
                 if (Array.isArray(j.sessions) && Array.isArray(j.players)) return 'ac-json';
+                if (Array.isArray(j.Result) && (j.TrackName != null || Array.isArray(j.Cars))) return 'ac-server-json';
             } catch (e) { /* not JSON */ }
         }
         if (/<rFactorXML|<RaceResults|<Driver>\s*<Name>/i.test(t)) return 'isi-xml';
@@ -85,14 +90,19 @@
         status: ['out', 'status', 'reason', 'finish status', 'result', 'state'],
         inc: ['inc', 'incidents', 'inc.', 'x'],
         team: ['team', 'team name'],
-        wrecks: ['wrecks', 'kills', 'takedowns', 'wrecked']
+        wrecks: ['wrecks', 'kills', 'takedowns', 'wrecked'],
+        car: ['car', 'vehicle', 'car name', 'car model', 'model', 'veh']
     };
+    // Header names keep '#', so iRacing's "Car #" (number) and "Car"
+    // (model) never collide — they used to, and every driver came out
+    // as #18 from "Dallara IR18".
+    const hnorm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9#]+/g, ' ').replace(/\s+/g, ' ').trim();
     function mapHeaders(headers) {
-        const h = headers.map(x => I.norm(x).replace(/ +/g, ' '));
+        const h = headers.map(hnorm);
         const out = {};
         for (const [key, names] of Object.entries(COLS)) {
             for (const n of names) {
-                const idx = h.findIndex((x, i) => x === I.norm(n) && !Object.values(out).includes(i));
+                const idx = h.findIndex((x, i) => x === hnorm(n) && !Object.values(out).includes(i));
                 if (idx >= 0) { out[key] = idx; break; }
             }
         }
@@ -116,6 +126,7 @@
                 inc: m.inc != null ? num(cells[m.inc]) : null,
                 team: m.team != null ? String(cells[m.team] ?? '').trim() : '',
                 wrecks: m.wrecks != null ? num(cells[m.wrecks]) : null,
+                car: m.car != null ? String(cells[m.car] ?? '').trim() : '',
                 // Anything that isn't a "still running / classified" status is a retirement
                 // (iRacing: Contact, Mechanical, Disconnected, Towed; NR2003: Accident, Engine…).
                 dnf: !!status.trim() && !FIN_RE.test(status.trim()),
@@ -146,10 +157,10 @@
         const delim = (sample.match(/\t/g) || []).length > 3 ? '\t' : (sample.match(/;/g) || []).length > (sample.match(/,/g) || []).length ? ';' : ',';
         // Find the header row (iRacing exports put session info above it).
         let hi = lines.findIndex(l => {
-            const cells = splitCsvLine(l, delim).map(c => I.norm(c));
+            const cells = splitCsvLine(l, delim).map(hnorm);
             return cells.some(c => COLS.name.includes(c)) && cells.some(c => COLS.pos.includes(c) || COLS.laps.includes(c));
         });
-        if (hi < 0) hi = lines.findIndex(l => splitCsvLine(l, delim).map(c => I.norm(c)).some(c => COLS.name.includes(c)));
+        if (hi < 0) hi = lines.findIndex(l => splitCsvLine(l, delim).map(hnorm).some(c => COLS.name.includes(c)));
         if (hi < 0) return null;
         const headers = splitCsvLine(lines[hi], delim);
         const body = lines.slice(hi + 1).map(l => splitCsvLine(l, delim)).filter(c => c.length >= 2);
@@ -162,7 +173,7 @@
         for (const tb of tables) {
             const trs = tb.match(/<tr[\s\S]*?<\/tr>/gi) || [];
             const grid = trs.map(tr => (tr.match(/<t[hd][^>]*>[\s\S]*?<\/t[hd]>/gi) || []).map(stripTags));
-            const hi = grid.findIndex(r => r.some(c => COLS.name.includes(I.norm(c))));
+            const hi = grid.findIndex(r => r.some(c => COLS.name.includes(hnorm(c))));
             if (hi < 0) continue;
             const rows = rowsFromTable(grid[hi], grid.slice(hi + 1).filter(r => r.length >= 2));
             if (rows && rows.length && (!best || rows.length > best.length)) best = rows;
@@ -186,6 +197,7 @@
             return {
                 name: tag(d, 'Name') || '', pos: num(tag(d, 'Position')), start: num(tag(d, 'GridPos')),
                 num: num(tag(d, 'CarNumber')), laps: num(tag(d, 'Laps')), team: tag(d, 'TeamName') || '',
+                car: tag(d, 'VehName') || tag(d, 'CarType') || '', carClass: tag(d, 'CarClass') || '',
                 led: laps.length ? laps.filter(p => p === 1).length : null,
                 isPlayer: tag(d, 'isPlayer') === '1', status,
                 dnf: /dnf|dq|dns/i.test(status) || /none/i.test(status) && num(tag(d, 'Laps')) === 0
@@ -213,7 +225,7 @@
             const time = parseTime(rt);
             return {
                 name: v.driver, laps, time, pos: num(v.position), start: num(v.gridpos || v.grid || v.qualpos),
-                team: v.team || '', num: num(v.number || v.carnumber), status: rt,
+                team: v.team || '', num: num(v.number || v.carnumber), status: rt, car: v.vehicle || v.car || '',
                 dnf: /dnf|dsq|dns|dq/i.test(rt) || (v.reason && v.reason !== '0' && /\d/.test(v.reason) && Number(v.reason) > 0) || false
             };
         });
@@ -241,7 +253,7 @@
             const laps = totals[carIdx];
             return {
                 name: p.name || `Car ${carIdx}`, pos: i + 1, start: null, laps: laps ?? null, led: led[carIdx] ?? null,
-                isPlayer: carIdx === 0, fl: best ? best.car === carIdx : false,
+                isPlayer: carIdx === 0, fl: best ? best.car === carIdx : false, car: p.car || '',
                 dnf: laps != null && maxLaps > 0 && laps < maxLaps - 0 && laps < maxLaps * 0.9, status: ''
             };
         });
@@ -259,6 +271,30 @@
             return {
                 name, pos: i + 1, num: l.car?.raceNumber ?? null, laps, start: null, led: null,
                 fl: l.timing?.bestLap === bestLap, team: l.car?.teamName || '',
+                car: l.car?.carModel != null ? `ACC model ${l.car.carModel}` : '', carGroup: l.car?.carGroup || '',
+                dnf: laps != null && maxLaps > 0 && laps < maxLaps * 0.9, status: ''
+            };
+        });
+    }
+
+    /* ---------------- Assetto Corsa server results JSON ---------------- */
+    // acServer writes results/YYYY_M_D_H_M_RACE.json: Result[] in finishing
+    // order (with each car's BallastKG / Restrictor) and every lap in Laps[].
+    function parseAcServerJson(j) {
+        const res = j.Result || [];
+        const lapCount = {};
+        (j.Laps || []).forEach(l => { const k = l.DriverGuid || l.DriverName || l.CarId; lapCount[k] = (lapCount[k] || 0) + 1; });
+        const lapsOf = (r) => lapCount[r.DriverGuid || r.DriverName || r.CarId] ?? null;
+        const maxLaps = Math.max(0, ...res.map(lapsOf).filter(n => n != null));
+        const best = Math.min(...res.map(r => Number(r.BestLap) || 1e12));
+        const carOf = (r) => (j.Cars || []).find(c => c.CarId === r.CarId) || {};
+        return res.filter(r => r.DriverName).map((r, i) => {
+            const laps = lapsOf(r);
+            const c = carOf(r);
+            return {
+                name: r.DriverName, pos: i + 1, start: null, laps, led: null, num: null,
+                fl: Number(r.BestLap) > 0 && Number(r.BestLap) === best, car: r.CarModel || c.Model || '',
+                ballast: Number(r.BallastKG ?? c.BallastKG) || 0, restrictor: Number(r.Restrictor ?? c.Restrictor) || 0,
                 dnf: laps != null && maxLaps > 0 && laps < maxLaps * 0.9, status: ''
             };
         });
@@ -298,6 +334,7 @@
         let rows = [];
         if (format === 'acc-json') rows = parseAccJson(JSON.parse(text));
         else if (format === 'ac-json') rows = parseAcJson(JSON.parse(text));
+        else if (format === 'ac-server-json') rows = parseAcServerJson(JSON.parse(text));
         else if (format === 'isi-xml') rows = parseIsiXml(text);
         else if (format === 'isi-txt') rows = parseIsiTxt(text);
         else if (format === 'html' || format === 'nr2003') rows = parseHtmlTables(text) || [];
@@ -307,6 +344,144 @@
         // Normalise positions: finishers first by pos, DNFs after (keep their relative order).
         rows.sort((a, b) => (a.pos || 999) - (b.pos || 999));
         return { format, rows };
+    };
+
+    /* ---------------- session metadata ---------------- */
+    // What the file says about the session itself, for checking a result
+    // against the race sheet: { track, layout, server, session ('race' |
+    // 'qualify' | 'practice' | 'warmup' | null), date ('YYYY-MM-DD'),
+    // raceLaps (configured), minutes, leaderLaps, cars[], settings{} }.
+    // Anything the format doesn't carry stays null — never guessed.
+    const iso = (y, m, d) => {
+        y = Number(y); m = Number(m); d = Number(d);
+        if (y < 100) y += 2000;
+        if (!(y > 1990 && m >= 1 && m <= 12 && d >= 1 && d <= 31)) return null;
+        return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    };
+    function dateFrom(s) {
+        s = String(s || '');
+        let m = s.match(/(\d{4})[\/_.-](\d{1,2})[\/_.-](\d{1,2})/);
+        if (m) return iso(m[1], m[2], m[3]);
+        m = s.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/); // US m/d/yyyy
+        if (m) return iso(m[3], m[1], m[2]);
+        return null;
+    }
+    function fileHints(filename) {
+        const fn = String(filename || '');
+        let date = dateFrom(fn);
+        const acc = fn.match(/(?:^|[\\/])(\d{2})(\d{2})(\d{2})_\d{6}_([A-Z]+)/i); // ACC 210101_123456_R.json
+        if (!date && acc) date = iso(acc[1], acc[2], acc[3]);
+        let session = null;
+        if (/_RACE\b|_R\d*\.json$|-\d+R\d*\.xml$/i.test(fn)) session = 'race';
+        else if (/_QUALIFY|_Q\d*\.json$|-\d+Q\d*\.xml$/i.test(fn)) session = 'qualify';
+        else if (/_PRACTICE|_FP\d*\.json$|-\d+P\d*\.xml$/i.test(fn)) session = 'practice';
+        return { date, session };
+    }
+    const sessionWord = (s) => {
+        s = String(s || '').toLowerCase();
+        if (/^r\d*$|race|feature|heat|main/.test(s)) return 'race';
+        if (/^q\d*$|qual/.test(s)) return 'qualify';
+        if (/warm/.test(s)) return 'warmup';
+        if (/^fp\d*$|^p\d*$|practice|happy hour/.test(s)) return 'practice';
+        return null;
+    };
+    I.meta = function (text, format = null, filename = '') {
+        const t = String(text || '');
+        format = format || I.detect(t, filename);
+        const hint = fileHints(filename);
+        const m = { format, track: null, layout: null, server: null, session: null, date: null, raceLaps: null, minutes: null, leaderLaps: null, cars: [], settings: {} };
+        let rows = [];
+        try { rows = I.parse(t, filename, format).rows; } catch (e) { rows = []; }
+        try {
+            if (format === 'isi-xml') {
+                const top = t.replace(/<(Race|Qualify|Practice\d*|Warmup)\d*>[\s\S]*?<\/\1\d*>/gi, '');
+                m.track = tag(top, 'TrackVenue') || tag(top, 'TrackEvent');
+                m.layout = tag(top, 'TrackCourse');
+                m.server = tag(top, 'ServerName');
+                const ts = tag(top, 'TimeString');
+                const epoch = num(tag(top, 'DateTime'));
+                m.date = dateFrom(ts) || (epoch > 1e9 ? new Date(epoch * 1000).toISOString().slice(0, 10) : null);
+                const races = t.match(/<Race\d*>[\s\S]*?<\/Race\d*>/gi);
+                if (races && races.length) {
+                    m.session = 'race';
+                    const scope = races[races.length - 1].replace(/<Driver>[\s\S]*?<\/Driver>/gi, '');
+                    m.raceLaps = num(tag(scope, 'Laps')) || num(tag(top, 'RaceLaps')) || null;
+                    const mins = num(tag(scope, 'Minutes'));
+                    if (mins) m.minutes = mins;
+                } else if (/<Qualify\d*>/i.test(t)) m.session = 'qualify';
+                else if (/<Warmup\d*>/i.test(t)) m.session = 'warmup';
+                else if (/<Practice\d*>/i.test(t)) m.session = 'practice';
+                const mlc = num(tag(t, 'MostLapsCompleted'));
+                if (mlc) m.leaderLaps = mlc;
+                ['DamageMult', 'FuelMult', 'TireMult', 'MechFailRate', 'FixedSetups', 'ParcFerme'].forEach(k => { const v = tag(top, k); if (v != null && v !== '') m.settings[k] = v; });
+            } else if (format === 'isi-txt') {
+                const scene = (t.match(/^\s*Scene\s*=\s*(.+)$/im) || [])[1] || '';
+                const parts = scene.split(/[\\/]/).filter(Boolean);
+                const li = parts.findIndex(x => /^locations$/i.test(x));
+                m.track = (li >= 0 && parts[li + 1]) || (parts.length >= 2 ? parts[parts.length - 2] : parts[0] ? parts[0].replace(/\.trk$/i, '') : null) || null;
+                m.layout = parts.length ? parts[parts.length - 1].replace(/\.trk$/i, '') : null;
+                m.date = dateFrom((t.match(/^\s*TimeString\s*=\s*(.+)$/im) || [])[1]);
+                m.server = ((t.match(/^\s*Server(?:Name)?\s*=\s*(.+)$/im) || [])[1] || '').trim() || null;
+                if (/^\s*RaceTime\s*=/im.test(t)) m.session = 'race';
+                else if (/^\s*Qual(?:ify)?Time\s*=/im.test(t)) m.session = 'qualify';
+                const rl = num((t.match(/^\s*RaceLaps\s*=\s*(\d+)/im) || [])[1]);
+                if (rl) m.raceLaps = rl;
+            } else if (format === 'iracing-csv') {
+                const lines = t.split(/\r?\n/);
+                const hi = lines.findIndex(l => /"?track"?/i.test(l) && /start time|session name/i.test(l));
+                if (hi >= 0 && lines[hi + 1]) {
+                    const h = splitCsvLine(lines[hi], ',').map(x => x.toLowerCase());
+                    const v = splitCsvLine(lines[hi + 1], ',');
+                    const at = (k) => { const i = h.indexOf(k); return i >= 0 ? v[i] : null; };
+                    m.track = at('track');
+                    m.server = at('session name');
+                    m.date = dateFrom(at('start time'));
+                }
+                if (/fin pos/i.test(t)) m.session = 'race';
+            } else if (format === 'html' || format === 'nr2003') {
+                const heads = (t.match(/<h[1-4][^>]*>[\s\S]*?<\/h[1-4]>/gi) || []).map(stripTags);
+                const title = stripTags((t.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || '');
+                const h = heads.find(x => / [-–—] /.test(x)) || heads[0] || '';
+                if (h) {
+                    const bits = h.split(/\s+[-–—]\s+/);
+                    m.track = bits[0] || null;
+                    m.session = sessionWord(bits.slice(1).join(' ')) || sessionWord(title);
+                } else m.session = sessionWord(title);
+                if (!m.session && /results/i.test(title) && /\brace\b/i.test(title)) m.session = 'race';
+                m.date = dateFrom(t.replace(/<[^>]+>/g, ' ').slice(0, 2000));
+            } else if (format === 'ac-json') {
+                const j = JSON.parse(t);
+                m.track = j.track || null;
+                m.layout = j.track_config || j.trackConfig || null;
+                const sessions = j.sessions || [];
+                const race = sessions.slice().reverse().find(s => s.type === 3 || /race/i.test(s.name || ''));
+                if (race) { m.session = 'race'; m.raceLaps = Number(race.lapsCount) || null; }
+                else if (sessions.length) m.session = sessionWord(sessions[sessions.length - 1].name);
+            } else if (format === 'ac-server-json') {
+                const j = JSON.parse(t);
+                m.track = j.TrackName || null;
+                m.layout = j.TrackConfig || null;
+                m.session = sessionWord(j.Type);
+                m.raceLaps = Number(j.RaceLaps) || null;
+                m.minutes = Number(j.DurationSecs) ? Math.round(Number(j.DurationSecs) / 60) : null;
+                m.server = j.ServerName || null;
+                m.date = dateFrom(j.Date) || null;
+            } else if (format === 'acc-json') {
+                const j = JSON.parse(t);
+                m.track = j.trackName || null;
+                m.server = j.serverName ?? null;
+                m.session = sessionWord(j.sessionType);
+                m.settings.wet = j.sessionResult?.isWetSession ? 1 : 0;
+            }
+        } catch (e) { /* metadata is best-effort */ }
+        m.date = m.date || hint.date;
+        m.session = m.session || hint.session;
+        const lapsList = rows.map(r => Number(r.laps) || 0).filter(Boolean);
+        if (!m.leaderLaps && lapsList.length) m.leaderLaps = Math.max(...lapsList);
+        m.cars = [...new Set(rows.map(r => r.car).filter(Boolean))];
+        m.entries = rows.length;
+        if (m.track) m.track = String(m.track).trim();
+        return m;
     };
 
     /* ---------------- name matching ---------------- */

@@ -14,10 +14,11 @@ single-player mode has its own guide: [SOLO_CAREER.md](SOLO_CAREER.md).
 4. [Racing as a driver](#racing-as-a-driver)
 5. [Money, cars and contracts](#money-cars-and-contracts)
 6. [The Paddock (between races)](#the-paddock-between-races)
-7. [League Hub](#league-hub)
-8. [Game Master guide](#game-master-guide)
-9. [Points systems](#points-systems)
-10. [Troubleshooting](#troubleshooting)
+7. [Series rules, race sheets and result proof](#series-rules-race-sheets-and-result-proof)
+8. [League Hub](#league-hub)
+9. [Game Master guide](#game-master-guide)
+10. [Points systems](#points-systems)
+11. [Troubleshooting](#troubleshooting)
 
 ## Signing in
 
@@ -80,14 +81,19 @@ Switch roles any time from **My Career → ⇄ Switch Role**; progress in each r
 2. **Find a race**: the dashboard's next-step banner points you to the next open race, or
    browse **Races**. If the series requires a car, you need an eligible one in your garage
    (or your team's); the race window tells you which.
-3. **Sign up**: open the race and press **🏁 Sign me up**.
-4. **Set up your game**: the race window's **🎮 Set this up in your game** card lists the car,
-   track type and lap length, distance, weather and time of day (the same for every driver),
-   grid size, lobby realism settings and which results file your sim saves. **📋 Copy setup**
-   copies it for the lobby host.
+3. **Sign up**: open the race and press **🏁 Sign me up**. Your car has to pass the series'
+   tech inspection (see [Series rules](#series-rules-race-sheets-and-result-proof)).
+4. **Set up your game**: the race window's **🎮 Set this up in your game** card is the race
+   sheet: race code, car, track and layout, distance, sessions, start type, weather and time of
+   day (the same for every driver), grid size, damage, setups, fuel and tyre wear, assists,
+   flags, any pit rule and which results file your sim saves. **📋 Copy race sheet** copies it
+   for the lobby host. The **⚖️ Rules** card below it shows the series format, the session /
+   server name to use, the host settings for your sim and **your entry**: tech inspection,
+   team efficiency, any ballast, restrictor, power or build allowance, and the offline AI tip.
 5. **Report your result**: on race day (or once the GM marks the race live) the race window
    shows **📝 Report my result**: finishing position or DNF, grid slot, laps led, incidents,
-   fastest lap. You can update it until the official results are in.
+   fastest lap, plus a **results file** or **screenshot** as proof. A results file fills the
+   form from your own row. You can update it until the official results are in.
 6. **Results**: once the GM saves the results, standings, stats, prestige, prize money,
    contract pay and achievements all update. Your workspace keeps your race history.
 
@@ -146,7 +152,11 @@ level from your usual setting: a faster car means a tougher field, a slower one 
 - **Player shops** are run by league Mechanics. You pay the labour to the mechanic when you
   book; they finish the job within 2 days (or it completes itself at standard quality).
 - **Jobs**: fresh tyres, brakes, a full service, engine/gearbox/suspension rebuilds, body
-  repair, full restoration, a dyno tune (3 steps), an inspection, a detail and fresh livery.
+  repair, full restoration, a dyno tune (3 steps), an inspection, a detail and fresh livery,
+  and **🪛 Remove a part** (any fitted part, or the dyno tune map). A removed part goes on the
+  car's shelf, so refitting it later costs labour only. Use it to make a car legal for a spec
+  or BoP series, or to get under an open series' PI limit. DIY removal needs a Home Workshop
+  (a tune map needs a Race Shop).
 - **Upgrades**: twelve part categories (engine build, intake & turbo, ECU tune, exhaust, cooling,
   sequential gearbox, coilovers, big brakes, softer tyres, aero kit, weight reduction, roll cage)
   in Street, Sport, Race and Elite tiers. More performance usually means more wear; a cage and
@@ -231,6 +241,95 @@ When results are saved, every human driver who raced gets: car wear on the car t
 pay and objective progress, loan and finance installments, merch, XP and fans, a full paddock-time
 refill, fresh sponsor offers and a new paddock event. Team sponsors pay the team budget.
 
+## Series rules, race sheets and result proof
+
+Real motorsport works two ways. Top series are mostly **spec** or **balanced**: everyone gets
+the same equipment (or the series balances different cars), and teams win on how well they
+are run. Grassroots classes (street, pure, mini and pro stocks, late models, club racing,
+Wreckfest's D / C / B / A classes) let you **build your own car** to a class limit, so a
+well-funded team can dominate. Every series picks one of three formats (Game Master:
+**⚖️ Rules** on the series):
+
+| Format | Equipment | What decides it |
+|---|---|---|
+| 🟰 **Spec** | Everyone runs the same car. Performance parts and engine maps are illegal; a safety cage and a cooling package are fine. | Team efficiency and driving. |
+| ⚖️ **Balance of Performance** | Several car models, balanced by weight, power or restrictor per model. Performance parts are illegal. | The BoP, team efficiency and driving. |
+| 🔧 **Open** | Build your own car up to the class limit (a paddock PI limit, plus the game's own class such as Wreckfest class C, 120 to 164 PP). | Equipment first, then efficiency. |
+
+Library series get a sensible default (one-make cups and modern stock cars are spec, GT3 / GT4 /
+GTP / Hypercar / TCR are BoP, grassroots and Wreckfest are open). The race window and the
+series page show the format.
+
+### Tech inspection
+
+When you sign up, your car is inspected. In a spec or BoP series any part that adds performance
+(and any dyno tune) fails; in an open series a car over the PI limit fails. The race window
+lists what's wrong and how to fix it (a shop's **🪛 Remove a part**). You can't sign up until
+the car is legal.
+
+### Team efficiency
+
+Every entry gets an efficiency score (A to E) from the team's staff (crew chief, race engineer,
+mechanic, spotter, including player crew), its workshop level, how well the car is prepared, a
+race-day mechanic and a crew chief's pit-wall briefing. Teams in the red lose some. Privateers
+use their own garage and mechanical skill. Efficiency:
+
+- moves **pace in simulated races** (strongly in spec and BoP series, a little in open ones,
+  where equipment matters more), for AI teams too;
+- sets the **offline AI tip**: a better-run team or better car means you can *lower* the
+  in-game AI a step or two (a worse one means raise it);
+- lowers **wear** and the odds of a **mechanical gremlin** (the "retire on lap N" order).
+
+### Ballast, restrictors and build allowances
+
+Each sim can enforce different things, and the race window translates the rules for yours:
+
+| Game | What the series can set |
+|---|---|
+| iRacing | Per car model only: engine power 90 to 110% and a weight penalty in the hosted session. Per-driver weight can't be set, so success ballast becomes a grid drop if the GM turns that on. |
+| ACC | Per driver: `ballastKg` 0 to 100 and `restrictor` 0 to 20% in `entrylist.json` (the GM can download it). |
+| Assetto Corsa | Per car: `BALLAST` (kg) and `RESTRICTOR` (0 to 100) in `entry_list.ini`. The server results JSON records both, so they're checked. |
+| Wreckfest, GT7, Forza | Class or PP / PI limits. In an open series each driver gets a **build allowance** inside the class from their paddock car. |
+| Others | The game's own BoP; the offline AI tip carries the rest. |
+
+- **BoP** series: pick your in-game car in the race window; its weight / power / restrictor apply.
+- **Open** series on ACC / AC: a car under the PI limit carries equipment ballast (kg per PI
+  point, or restrictor), so a better-built car really is faster on the server.
+- **Success ballast** (optional): extra kg for the championship leaders or last race's podium.
+
+### Race sheets
+
+Every race has a sheet (Game Master: **📋 Edit race sheet** in the race window; defaults come
+from the series rules). It holds everything needed to build the race exactly, online or
+offline: how it runs (online lobby, offline vs AI, or either), layout, laps or minutes,
+practice and qualifying, start type, weather and time of day, damage, setups, fuel and tyre
+wear, assists, flags, pit rule, offline field size and AI baseline, the allowed in-game cars,
+the proof required and how many days around race day results may be dated.
+
+Each race also has a **race code** (like `PX3-K7QM`) and a **session / server name** built from
+it. Put that name in the lobby or server name: iRacing, ACC and rFactor 2 / LMU write it into
+their results files, which proves the results came from this race.
+
+### Result proof
+
+Results files and screenshots are checked against the race sheet:
+
+- **Results file**: the session must be the race, the track (and layout) must match, the
+  distance must match, an online race's file must carry the race code, the file must be dated
+  inside the race window, an offline field must be big enough, your car must be allowed, the
+  ballast / restrictor the server recorded must be at least what the sheet asks, and the
+  position you report must match your row in the file.
+- **Screenshot**: the app reads the text in it (OCR, loaded only when you upload one). A
+  screenshot showing a different track or race length, or dated before the race window, is
+  invalid. One showing the race code, or the track and your name, is verified. If nothing can
+  be read, it's *unverified* and the Game Master decides.
+
+An **invalid** proof is rejected: the report isn't saved. Unverified proof is saved for the
+Game Master to check. The GM's results form shows each report's proof badge (and the
+screenshot itself), never pre-fills a rejected report, and blocks an imported file that doesn't
+match the sheet unless the GM ticks **Override** and gives a reason (kept on the race). The
+League Director only auto-confirms races where every report has verified proof.
+
 ## League Hub
 
 - **News**: race results and league announcements.
@@ -288,6 +387,10 @@ panel. Each job can be switched off:
 - **Series**: create or edit a championship (game, points system, logo, eligible cars,
   highest car number). **Seasons** groups races into a season and crowns champions when you
   close it.
+- **⚖️ Rules** (series list or series page): the equipment format, class limit (with
+  Wreckfest class presets), BoP table (`Car | weight kg | power % | restrictor %`), success
+  ballast, equipment ballast for open series, the grid-drop fallback, and the race sheet
+  defaults (online / offline, proof, date window, start, damage, setups, assists, race code).
 - **📅 Schedule Builder**: pick the series and season, the first date, time and cadence, and
   list the tracks one per line. Add `| laps` to set a round's distance
   (`Watkins Glen | 40`). Library series have **Load the real calendar**, scaled to a race
@@ -304,6 +407,12 @@ panel. Each job can be switched off:
   positions re-numbered (untick to keep the file's positions). Optional columns: Grid, Inc,
   Led, Laps; pick pole and fastest lap. **Save Results** scores the race and runs the payouts
   (first save only, so editing never double-pays). **Reopen** clears results.
+- Imported files are checked against the race sheet (see
+  [Result proof](#result-proof)). A file from the wrong race can't be applied unless you
+  override it with a reason. Rows with a disallowed car or missing ballast are flagged.
+- **📋 Edit race sheet**, **🎛️ Entry adjustments** (every entry's PI, efficiency, inspection
+  and ballast / power / allowance) and the **⬇ entrylist.json / entry_list.ini** download are in
+  the race window.
 
 ### World, people and money
 
