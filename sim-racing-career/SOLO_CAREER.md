@@ -119,6 +119,22 @@ always at the back, lower it.
   book training (fitness, engineering feedback, media), buy an AI team.
 - **Reliability orders:** a fragile car may get a pre-race order to retire at a
   given lap — honour it in the game and log a mechanical DNF (toggle in Settings).
+- **The Paddock (🅿️):** life between rounds, on the same rules as the league app.
+  - *Your own cars*, separate from the team's race car: road and club cars plus the series
+    cars of your game near your level. Six components wear and break; upgrade them with twelve
+    part categories in four tiers.
+  - *Dealers*: Phoenix Motors (new, 5-round warranty, finance, trade-ins) and four used lots
+    that restock every round (Second Gear, Lucky Lou's, the Race Car Exchange, the Salvage
+    Auction): inspect for hidden faults, haggle, buy.
+  - *Shops and DIY*: seven mechanic shops (the best need reputation) or do it yourself with
+    paddock time; build your garage up from a Driveway to a Pro Facility.
+  - *Side events* (track days, club races, hill climbs, drift shows, car shows, streams, charity
+    karting, sponsor photo shoots), each once per round, and *paddock events*: a decision card
+    after every round.
+  - *Fans, merch and the bank*: fans open a merch stand at 1,000 and raise your reputation at
+    every milestone; loans and car finance come out after every round, with a credit score.
+  - **Paddock time** (⏱ 10, more with fitness) refills after every round. Money scales with
+    your series. Paddock work trains marketability, feedback and fitness.
 - **The AI world:** every championship in the game runs in parallel. Drivers age,
   improve toward their potential, decline, retire; top performers get promoted;
   rookies arrive; teams rise and fall with results.
@@ -135,7 +151,8 @@ result" flow. See the league section of `README.md`.
 - Code: `js/solo/` — `sc-tracks.js` (track library), `sc-gamedb.js` (games,
   series, points), `sc-names.js`, `sc-engine.js` (pure career logic, seeded RNG),
   `sc-import.js` (results parsers), `sc-store.js` (IndexedDB), `sc-ui-kit.js`,
-  `sc-views-*.js`, `sc-app.js` (router). Styles: `css/career.css`.
+  `sc-views-*.js`, `sc-paddock.js` (the Paddock, on the shared rules in `js/paddock-core.js`),
+  `sc-app.js` (router). Styles: `css/career.css`.
 - Tests (in `.claude/skills/verify/harness/`):
   - `node solo-engine-test.js [game] [seasons]` — plays 40-season careers for every
     game × role and checks world invariants.

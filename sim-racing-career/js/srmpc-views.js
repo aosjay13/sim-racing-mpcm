@@ -596,6 +596,10 @@ const Views = {
         let crewHtml = '';
         try { crewHtml = await Crew.raceSection(race, world); } catch (e) { /* crew optional */ }
 
+        // The paddock (js/srmpc-paddock.js): the car you'd race, its condition,
+        // a suggested AI offset and any pre-race mechanical gremlin.
+        const carHtml = canSignUp && window.Paddock ? await Paddock.raceCardHtml(race, world, mySignup, elig) : '';
+
         Modal.open(`
             ${Modal.header(race.name || race.track || 'Race', `${series ? series.name + ' · ' : ''}${Util.fmtDate(race.date)}${race.time ? ' · ' + Util.fmtTime(race.time) : ''}`)}
             <div class="chip-row" style="margin-bottom:1rem">
@@ -636,6 +640,7 @@ const Views = {
                     ? `<p class="muted" style="margin-top:1rem">Create your driver profile in <a href="#" onclick="Modal.close();App.go('career');return false">My Career</a> to sign up for races.</p>` : '')}
             `}
 
+            ${carHtml}
             ${(race.status !== 'completed' && race.status !== 'cancelled') && window.Library?.ok() ? Library.briefing(race, world, signups.length) : ''}
             ${mySignup && window.Library && Library.canReport(race) ? Library.reportPanel(race, mySignup, world) : ''}
 
@@ -672,9 +677,12 @@ const Views = {
                 const elig = await Garage.validateSeriesEligibility(uid, race?.seriesId, { raceId });
                 if (!elig.eligible) { Util.notify(elig.reason, 'error'); return; }
                 await Garage.ensureFlatIds(elig);
+                // Which garage entry takes the race-day wear (js/srmpc-paddock.js).
+                const garageEntryId = window.Paddock ? await Paddock.raceEntryFor(elig) : null;
                 await DB.create('raceSignups', {
                     raceId, uid, driverId,
-                    carId: elig.carId || null, teamId: elig.via === 'team' ? elig.teamId : null, via: elig.via
+                    carId: elig.carId || null, teamId: elig.via === 'team' ? elig.teamId : null, via: elig.via,
+                    garageEntryId: garageEntryId || null
                 });
                 Util.notify('You are on the grid! 🏁');
             }

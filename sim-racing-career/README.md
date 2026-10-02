@@ -6,7 +6,7 @@ Two ways to run a sim-racing career across every game you play:
 | --- | --- | --- |
 | Who | You, single-player | A multiplayer league with a Game Master |
 | Account | None — saved in your browser, works offline | Firebase email/password or GM passcode |
-| What | 40-season careers in one game: contracts, money, sponsors, R&D, facilities, staff, calendars, standings, an evolving AI world | Shared series, schedules, results, standings, deals, teams, garages, dealership, number registry |
+| What | 40-season careers in one game: contracts, money, sponsors, R&D, facilities, staff, calendars, standings, an evolving AI world, and a Paddock of your own cars, dealers, shops and side events | Shared series, schedules, results, standings, deals, teams, number registry, and the Paddock: garages, new and used dealers, mechanic shops, sponsors, training, side events, loans |
 
 Live site: <https://aosjay13.github.io/sim-racing-mpcm/>
 
@@ -33,6 +33,29 @@ DiRT Rally 2.0 — plus a **Custom game** builder for anything else.
 Firebase-backed multiplayer league: players register, pick roles (driver, team
 owner, crew, agent, sponsor…), negotiate contracts in deal rooms, and the Game
 Master runs series, schedules, results and simulations. See `MANUAL.md`.
+
+### The Paddock (between races)
+
+`js/paddock-core.js` holds the rules (pure functions, shared with the Solo Career); the league
+screens are `js/srmpc-paddock.js` and `js/srmpc-paddock-trade.js`. Every player gets a **🅿️
+Paddock** tab with paddock time that refills after each race they run:
+
+- **Garage**: six components per car wear on race day; condition sets the car's performance
+  index, reliability, value and the race window's AI-level tip. Worn cars get a pre-race
+  "mechanical gremlin" order (retire on lap N). Garage levels from Driveway to Pro Facility.
+- **Shops & DIY**: seven NPC mechanic shops plus player-run shops (Mechanic role, with a bookings
+  queue and walk-in diagnosis jobs), twelve upgrade parts in four tiers, dyno tunes, inspections.
+- **Dealers**: Phoenix Motors (the GM catalog: warranty, finance, trade-ins), four used lots that
+  restock weekly with hidden faults, inspections and haggling, and the Player Market (private
+  sales and the new 🚘 Car Dealer role's lots, with AI walk-in buyers).
+- **Sponsors** with slots, objectives, happiness, appearance requests and renewals, for drivers
+  and team owners; **training** of eight RPG skills with perks; **side events**; **paddock event**
+  cards; **fans and merch**; **loans** with a credit score.
+- Race day settles it all inside `Sim.payoutRace`. The GM tunes it in *Admin → 🅿️ Paddock*.
+- Nothing needs a new Firestore collection: state lives on `users`, `teams`, `roleProfiles`
+  and `config/paddock`.
+
+See [MANUAL.md](MANUAL.md#the-paddock-between-races).
 
 ### League Director (Game Master autopilot)
 
@@ -79,6 +102,8 @@ and score the same:
 - `career.html`, `css/career.css`, `js/solo/` — Solo Career (`sc-tracks.js`, `sc-gamedb.js`,
   `sc-names.js` and `sc-import.js` are also loaded by the league app)
 - `js/srmpc-library.js` — the league's bridge to the shared library
+- `js/paddock-core.js` — Paddock rules shared by both modes; `js/srmpc-paddock.js`,
+  `js/srmpc-paddock-trade.js` (league) and `js/solo/sc-paddock.js` (Solo Career)
 - `app.html`, `css/style.css`, `js/srmpc-*.js` — League app (`js/srmpc-core.js` holds the Firebase config)
 - `firestore.rules` — Firestore security rules for the league app
 - `docs/design/` — design notes (contracts, recruitment, car number registry); `docs/archive/` — older notes

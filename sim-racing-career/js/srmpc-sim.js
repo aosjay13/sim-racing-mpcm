@@ -722,10 +722,11 @@ const Sim = {
     },
 
     // One driver's pace for a session: skill rating ± race-day variance.
-    _pace(driver) {
+    // bonus: the paddock's car + perk adjustment for human drivers.
+    _pace(driver, bonus = 0) {
         const rating = Number(driver.rating) || 75;
         const gauss = (Math.random() + Math.random() + Math.random()) / 3; // ~normal 0..1
-        return rating + (gauss - 0.5) * 30;
+        return rating + (Number(bonus) || 0) + (gauss - 0.5) * 30;
     },
 
     async simulateRace(raceId, { quiet = false } = {}) {
@@ -739,10 +740,12 @@ const Sim = {
             throw new Error('No AI grid for this race. Enter its teams in the series (Admin → Teams → Edit → Series) or install the Real-World Pack.');
         }
 
-        // Qualifying → pole; race pace + DNF roll → classification.
-        const quali = grid.map(d => ({ d, q: this._pace(d) })).sort((a, b) => b.q - a.q);
+        // Qualifying → pole; race pace + DNF roll → classification. Human
+        // drivers' cars and skills count (js/srmpc-paddock.js).
+        const bonus = window.Paddock ? await Paddock.simPaceMap(race, world, grid) : {};
+        const quali = grid.map(d => ({ d, q: this._pace(d, bonus[d.id]) })).sort((a, b) => b.q - a.q);
         const poleId = quali[0].d.id;
-        const runners = grid.map(d => ({ d, pace: this._pace(d), dnf: Math.random() < this.DNF_CHANCE }));
+        const runners = grid.map(d => ({ d, pace: this._pace(d, bonus[d.id]), dnf: Math.random() < this.DNF_CHANCE }));
         const finishers = runners.filter(r => !r.dnf).sort((a, b) => b.pace - a.pace);
         // Never let everyone crash out.
         if (!finishers.length) { runners[0].dnf = false; finishers.push(runners[0]); }
@@ -966,6 +969,17 @@ const Sim = {
             playerProfiles.filter(p => (p.role === 'crew-chief' || p.role === 'mechanic')
                 && racedTeams.has(p.teamId) && !crewPaid.has(p.uid))
                 .forEach(p => add(p.uid, this.CREW_STIPEND, '🔧', `Race-day crew stipend — ${raceName}`));
+
+            /* -- 6. The paddock (js/srmpc-paddock.js): car wear, personal and
+                  team sponsors, loan + car-finance installments, merch, storage,
+                  XP, fans, and a paddock-time refill for every human who raced.
+                  Money joins this same batch; netFor lets loans see what the
+                  player has already earned this race. -- */
+            if (window.Paddock) {
+                const netFor = (type, id) => tx.filter(l => l.wallet.type === type && l.wallet.id === id).reduce((n, l) => n + l.amount, 0);
+                try { await Paddock.settleRace(race, world, { add, addTeam, netFor }); }
+                catch (e) { console.warn('Paddock settlement failed:', e); }
+            }
 
             /* -- Apply: one balance write per wallet (players and teams
                   batched separately), one ledger row per line, every row

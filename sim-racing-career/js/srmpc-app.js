@@ -18,6 +18,7 @@ const App = {
         'challenges': (el) => Views.challenges(el),
         'career': (el) => Views.career(el),
         'dealership': (el) => Market.dealership(el),
+        'paddock': (el, tab) => Paddock.render(el, tab),
         'hub': (el, tab) => Hub.render(el, tab),
         'profile': (el, uid) => Profile.render(el, uid),
         'admin': (el, tab) => Admin.render(el, tab)
@@ -52,6 +53,17 @@ const App = {
                 `<button class="btn btn-primary" onclick="App.go('${view}'${param ? `,'${Util.attr(param)}'` : ''})">Try again</button>`);
         }
         this.refreshHubBadge(); // fire-and-forget — never blocks navigation
+        this.refreshPaddockBadge();
+    },
+
+    // Paddock nav dot: a pending paddock event + sponsor appearance requests.
+    refreshPaddockBadge() {
+        const el = document.getElementById('paddock-badge');
+        if (!el) return;
+        let n = 0;
+        try { if (window.Paddock) n = Paddock.badgeCount(); } catch (e) { /* */ }
+        el.textContent = String(n);
+        el.classList.toggle('hidden', !n);
     },
 
     /* ---------------- League Hub notification badge ---------------- */

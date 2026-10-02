@@ -156,3 +156,45 @@ collection). Player sessions only use it for instant AI-principal replies
 - `page.waitForFunction` with an async predicate returns immediately — poll from Node when
   waiting on Firestore-backed state.
 
+
+## The Paddock (v3.34.0 league / v4.1.0 Solo)
+
+`js/paddock-core.js` (`PaddockCore`) is the pure, Node-loadable rules module shared by both
+modes: car components + race wear, PI / reliability / market value, mechanical gremlins, the
+seven NPC shops + services + twelve upgrade parts, garage levels, the four used lots
+(deterministic per week + salt), haggling, finance, skills/XP/perks, side events, decision
+cards, sponsor offers/objectives/happiness, loans/credit, Car Dealer AI buyers, mechanic
+walk-in jobs. Every roll takes an explicit `PaddockCore.rng(seed)`.
+
+- League: `js/srmpc-paddock.js` (`Paddock`: the 🅿️ tab, settlement via `Paddock.settleRace`
+  inside `Sim.payoutRace`, the race-window car card, `simPaceMap` in `Sim.simulateRace`,
+  Admin → 🅿️ Paddock) and `js/srmpc-paddock-trade.js` (`PaddockTrade`: Dealership tabs —
+  used lots, Player Market, finance/trade-in modal; the Mechanic shop panel; the Car Dealer
+  role). **No new collections**: `users/{uid}.paddock`, `users/teams .garage[]` (extended
+  entries), `teams/{id}.paddock`, `roleProfiles/{id}.shop|.lot|.dealer`, `config/paddock`
+  (GM knobs + `usedSold`, reserved in a transaction). Paddock state is written with
+  `DB.update` (whole-field replace) — real Firestore's set-merge deep-merges maps, the shim's
+  doesn't, so never rely on set-merge to delete map keys.
+- Solo: `js/solo/sc-paddock.js` (`SC.Paddock` + `SC.Views.paddock`), state in `S.paddock`,
+  hooks `afterRound` / `newSeason` in sc-engine.js. Uses its own seeded rng (never `S.rng`).
+  Skills are derived from the career's attrs; paddock XP feeds marketability / feedback /
+  fitness. Money scales by `PD.econ(S)` (series tier salary / 25k, clamped).
+- Merch only starts at 1,000 fans and storage fees only after a player has opened the
+  Paddock once (`p.seen`) — so older drives' exact settlement sums are unchanged.
+
+Tests:
+- `node paddock-core-test.js` — pure rules, 38 checks (no browser).
+- `node paddock-drive.js` — league end-to-end on the shim, 33 steps: admin knobs, overview +
+  card, finance + trade-in, garage, NPC shop / DIY / install, training + rating sync, side
+  events, sponsors, loans, used lot inspect/haggle/buy + the one-buyer reservation, Player
+  Market private sale, Mechanic shop bookings + walk-ins, Car Dealer trade stock + AI buyer +
+  sale to a player, team sponsors + workshop, race-day settlement, gremlin, simulated round,
+  leak + 390px sweep. Screenshots in `harness/paddock-shots/`.
+- `node solo-paddock-drive.js` — the Solo Paddock in the real UI (18 steps). Shots in
+  `harness/solo-paddock-shots/`.
+- `node solo-engine-test.js` now loads paddock-core + sc-paddock and runs a paddock bot every
+  other round; `PADDOCK_ECON=1` prints each career's paddock money share, `NO_PADDOCK=1`
+  turns the bot off.
+- In this container Playwright's bundled browser revision may be missing: preload a patch
+  that passes `executablePath: '/opt/pw-browsers/chromium'` to `chromium.launch`
+  (`node -r ./patch.js drive.js`).

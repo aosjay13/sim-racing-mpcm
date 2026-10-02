@@ -23,6 +23,7 @@
         ['standings', '🏆', 'Standings'],
         ['team', '🛠️', 'Team'],
         ['market', '🤝', 'Market'],
+        ['paddock', '🅿️', 'Paddock'],
         ['finances', '💰', 'Finances'],
         ['inbox', '📨', 'Inbox'],
         ['career', '🧑‍🚀', 'Career'],
@@ -178,7 +179,7 @@
             const phaseTxt = S.phase === 'season' ? `Round ${Math.min(S.season.round + 1, S.season.events.length)}/${S.season.events.length}`
                 : S.phase === 'preseason' ? 'Pre-season' : S.phase === 'postseason' ? 'Off-season' : 'Retired';
             const nav = NAV.map(([id, icon, label]) => `<button class="nav-btn ${this.route.view === id ? 'active' : ''}" data-go="${id}">
-                <span class="sc-nav-icon">${icon}</span>${label}${id === 'inbox' && unread ? `<span class="nav-badge">${unread > 99 ? '99+' : unread}</span>` : ''}</button>`).join('');
+                <span class="sc-nav-icon">${icon}</span>${label}${id === 'inbox' && unread ? `<span class="nav-badge">${unread > 99 ? '99+' : unread}</span>` : ''}${id === 'paddock' && S.paddock?.card ? '<span class="pd-dot" title="A paddock event is waiting"></span>' : ''}</button>`).join('');
             return `
             <header class="header sc-header"><div class="header-inner">
                 <a class="brand" href="#/" title="Save slots"><img src="../phoenix-logo.png" alt="" class="brand-logo"><span class="brand-name">Solo <em>Career</em></span></a>

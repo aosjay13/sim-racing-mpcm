@@ -13,10 +13,11 @@ single-player mode has its own guide: [SOLO_CAREER.md](SOLO_CAREER.md).
 3. [Career roles](#career-roles)
 4. [Racing as a driver](#racing-as-a-driver)
 5. [Money, cars and contracts](#money-cars-and-contracts)
-6. [League Hub](#league-hub)
-7. [Game Master guide](#game-master-guide)
-8. [Points systems](#points-systems)
-9. [Troubleshooting](#troubleshooting)
+6. [The Paddock (between races)](#the-paddock-between-races)
+7. [League Hub](#league-hub)
+8. [Game Master guide](#game-master-guide)
+9. [Points systems](#points-systems)
+10. [Troubleshooting](#troubleshooting)
 
 ## Signing in
 
@@ -44,7 +45,8 @@ money, and then a **career role**.
 | **Stats** | Records, track history and career tables |
 | **Challenges** | Weekly / monthly solo and multiplayer challenges you can claim |
 | **League Hub** | News, achievements, the player directory and recruitment |
-| **Dealership** | Buy cars for your personal or team garage |
+| **Dealership** | Phoenix Motors (new cars, finance, trade-ins), the used lots, and the Player Market |
+| **Paddock** | Between races: your garage, mechanic shops, sponsors, training, side events, the bank |
 | **My Career** | Your role's workspace |
 | **Admin** | Game Master console (GM only) |
 | **Solo Career ↗** | The single-player mode |
@@ -65,6 +67,7 @@ On a phone, the ☰ button opens the menu.
 | 💰 **Sponsor** | Back teams and drivers |
 | 🏆 **Series Owner** | Propose and promote championships |
 | 🛣️ **Track Owner** | Register venues and host league races |
+| 🚘 **Car Dealer** | Buy cars at trade prices, recondition them and sell them to players and AI customers |
 
 Switch roles any time from **My Career → ⇄ Switch Role**; progress in each role is kept.
 
@@ -98,12 +101,135 @@ decide which teams and deals you can reach.
 - **Race-day payouts**: prize money by finishing position, team shares, sponsor deals,
   contract salaries, agent commissions, venue and promoter fees.
 - **Dealership & garage**: buy cars into your personal or team garage; series can require
-  specific cars.
+  specific cars. Cars wear out, get upgraded and lose value; see [The Paddock](#the-paddock-between-races).
 - **Contracts and deals**: every seat and sponsorship is negotiated in a deal room with
   offers and counter-offers (salary, buyout, exclusivity, performance clauses). Nothing is
   signed automatically.
 - **Car numbers**: won or leased through the registry. Team owners and 5★ drivers can
   **＋ Request a number** on a series page, which opens a 3-day sealed-bid auction.
+
+## The Paddock (between races)
+
+The **Paddock** tab is everything you do between races. Every player has it, whatever their
+role. A red dot on the tab means something is waiting (a paddock event or a sponsor request).
+
+### Paddock time
+
+Most paddock actions cost **⏱ paddock time**: 10 points (more with the Fitness perks). It
+refills completely after every race you run, and also regenerates a few points a day. Spend
+it on training, side events, DIY work, haggling and sponsor appearances.
+
+### Your garage
+
+Every car has six components (engine, gearbox, suspension, brakes, tyres, body & aero) that
+wear on race day: tyres fastest, engines slowly, the body when you have contact. Worn cars:
+
+- score a lower **performance index (PI)** and are less **reliable**;
+- are worth less (mileage, condition, title and upgrades all set the **market value**);
+- can get a **mechanical gremlin**: the race window tells you before the race that a part won't
+  last and to retire on lap N. Honour it in the sim and report a DNF, or fix the car first.
+
+Set a **⭐ race car** (it takes the race-day wear), give cars nicknames, and upgrade your garage
+from a Driveway (2 cars) through a Lock-up, Home Workshop and Race Shop to a Pro Facility
+(8 cars, your own dyno). Cars beyond your garage's spaces cost a storage fee per race. Team
+owners get a team workshop with twice the spaces.
+
+The race window also shows your car's condition and suggests how far to move the in-game AI
+level from your usual setting: a faster car means a tougher field, a slower one a softer field.
+
+### Mechanic shops and DIY
+
+- **NPC shops** do the job on the spot: Wrench & Pray (cheap, sometimes botched), Main Street
+  Auto Care, Dirt Slingers Fab Shop, Apex Performance Tuning, the Factory Works Service Centre
+  (warranty work is free), Velocity Aero Works (2★) and Precision Race Engineering (3★). Better
+  shops cost more and leave the car closer to factory fresh. Each has specialities.
+- **Player shops** are run by league Mechanics. You pay the labour to the mechanic when you
+  book; they finish the job within 2 days (or it completes itself at standard quality).
+- **Jobs**: fresh tyres, brakes, a full service, engine/gearbox/suspension rebuilds, body
+  repair, full restoration, a dyno tune (3 steps), an inspection, a detail and fresh livery.
+- **Upgrades**: twelve part categories (engine build, intake & turbo, ECU tune, exhaust, cooling,
+  sequential gearbox, coilovers, big brakes, softer tyres, aero kit, weight reduction, roll cage)
+  in Street, Sport, Race and Elite tiers. More performance usually means more wear; a cage and
+  cooling package make the car tougher.
+- **DIY**: pay for parts only and spend paddock time instead of labour. What you can do depends
+  on your garage level; quality depends on your Mechanical skill.
+
+### Dealers
+
+- **🏬 Phoenix Motors** sells the Game Master's catalog. New cars come with a 5-race factory
+  warranty. **💳 Finance / trade** lets you trade in a car (72% of its value) and finance the
+  rest: 20% down, then 12 payments taken on race day. The rate depends on your credit score.
+  Miss three payments (go into the red) and the car is repossessed.
+- **🔑 Used lots** restock every Monday from the league's catalog: Second Gear Pre-Owned (mostly
+  honest), Lucky Lou's Auto Lot (cheap, often hiding faults), the Race Car Exchange (upgraded
+  ex-race cars, ridden hard) and the Salvage Auction (write-offs, sold as seen). Listings show
+  mileage, condition, title and history. **🔍 Inspect** before you buy to reveal undisclosed
+  faults (otherwise they show up after the first race), and **🤝 Haggle**: the salesman has
+  limited patience and lowball offers burn it faster. Each car can only be sold once.
+- **👥 Player Market**: cars other players have listed for sale and every player Car Dealer's
+  lot. The money goes straight to the seller.
+- Selling to a dealer pays 60% of the car's current market value.
+
+### Sponsors
+
+Drivers get **personal sponsors** (primary, helmet & apparel, and social & digital partners);
+team owners get **team sponsors** (title, primary, associates) paid into the team budget. The
+offers board refreshes after every race and grows with your prestige, fans and Media skill.
+
+Each deal pays per race for a number of races, plus a signing fee, and has an **objective**
+(start, finish, clean races, top 10/5, podiums, poles, wins) with a bonus if you hit it.
+Sponsors have **happiness**: good results, clean races and turning up to their **appearance
+requests** keep them happy; crashes and ignored requests don't. A sponsor whose happiness drops
+too far walks out. Happy sponsors offer a renewal when the deal ends. One sponsor per industry;
+**📈 Push for more** works sometimes (and sometimes the brand walks away).
+
+### Training and skills
+
+Eight skills, levels 1 to 20: Pace, Racecraft, Consistency, Tyre management, Wet weather,
+Fitness, Media and Mechanical. Racing, training sessions, side events and DIY earn XP. Skills set
+your **driver rating** (used when a race is simulated), reduce car wear, and unlock **perks** at
+levels 10 and 16 (for example Smooth Operator: tyre wear −15%, Marathon Runner: +4 paddock time,
+Brand Icon: an extra sponsor slot).
+
+### Side events
+
+Track days, club races, hill climbs, drift exhibitions, cars & coffee shows, sim-racing streams,
+charity karting and sponsor photo shoots: each costs paddock time (and sometimes an entry fee)
+and pays in money, fans and XP. Events with your car wear it. Each event can be done once per
+race week.
+
+### Paddock events
+
+After each race (or every couple of days) a **paddock event** card turns up: a journalist wants a
+quote, a barn find, a sponsor hospitality night, a speeding ticket… Each choice has consequences
+for your money, fans, skills, sponsors or car.
+
+### Fans, merch and the bank
+
+Results and events build **fans**. At 1,000 fans your merch stand opens and pays every race.
+The **🏦 Bank** lends money (repaid per race you start) up to a credit limit set by your prestige,
+fans and **credit score**; paying while in credit raises the score, going into the red lowers it.
+
+### Running a mechanic shop (Mechanic role)
+
+My Career → Mechanic shows your shop: name it, pick a speciality and a labour rate, and open it.
+Players see it in Paddock → Shops. Work the **bookings** queue (a careful job takes more paddock
+time and does better work), and diagnose **walk-in customers**: read the symptom and pick the
+faulty part. Every job earns prestige XP; at 3★ you can rule out one wrong answer.
+
+### Running a dealership (Car Dealer role)
+
+My Career → Car Dealer shows your lot. Buy stock on the used lots or at Phoenix Motors with your
+lot as the destination to get **trade prices**, recondition cars at the shops, then set a retail
+price. Players see your cars on the Player Market, and **AI customers** drop by every day: cars
+priced near their value sell; overpriced ones sit. Wholesale anything that won't move. Your lot
+grows with your prestige.
+
+### What happens on race day
+
+When results are saved, every human driver who raced gets: car wear on the car they raced, sponsor
+pay and objective progress, loan and finance installments, merch, XP and fans, a full paddock-time
+refill, fresh sponsor offers and a new paddock event. Team sponsors pay the team budget.
 
 ## League Hub
 
@@ -187,6 +313,10 @@ panel. Each job can be switched off:
 - **Challenges**: generate or write challenges and review claims.
 - **Numbers**: the car-number registry, auctions and renewals.
 - **AI Finance**: how AI teams are funded, with GM overrides.
+- **🅿️ Paddock**: switch the paddock on or off, mechanical gremlins, paddock time (cap and daily
+  regeneration), car wear, a money multiplier for sponsors, events, shops and training, the
+  storage fee, plus tools to restock the used lots, refill everyone's paddock time and repair
+  every car, and a table of every player's paddock.
 - **GM Override**: rename anything, edit wallets and contracts, and a raw document editor.
 - **Settings**: career modes (create, rename, reset, delete), the **🔑 Passcode** for this
   career, and data export.

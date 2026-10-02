@@ -26,7 +26,7 @@ const Admin = {
 
         const tabs = [
             ['overview', '🎛 Overview'], ['games', '🎮 Games'], ['series', '🏆 Series'],
-            ['races', '🏁 Races'], ['dealership', '🏬 Dealership'], ['teams', '🛠 Teams'], ['drivers', '🏎 Drivers'],
+            ['races', '🏁 Races'], ['dealership', '🏬 Dealership'], ['paddock', '🅿️ Paddock'], ['teams', '🛠 Teams'], ['drivers', '🏎 Drivers'],
             ['world', '🌍 World'], ['players', '👥 Players'], ['challenges', '🎯 Challenges'],
             ['numbers', '🔢 Numbers'], ['parity', '🏦 AI Finance'], ['override', '🔧 GM Override'], ['settings', '⚙ Settings']
         ];
@@ -58,6 +58,9 @@ const Admin = {
     // AI Financial Parity oversight — rendered by the parity module
     // (js/srmpc-parity.js) in the house flat-2D style.
     async tab_parity(body) { return Parity.adminPanel(body); },
+
+    // The between-race paddock (js/srmpc-paddock.js): knobs, tools, players.
+    async tab_paddock(body) { return Paddock.adminPanel(body); },
 
     refresh() {
         const el = document.getElementById('view-root');

@@ -200,7 +200,8 @@ const Garage = {
             const garage = this.garageOf(team);
             const car = garage.find(c => c.id === entryId);
             if (!car) return;
-            const back = Math.round((Number(car.price) || 0) * Market.SELL_RATIO);
+            if (car.job) throw new Error('That car is in a shop — collect it first.');
+            const back = Market.sellBackFor(car);
             if (!confirm(`Sell the team's ${car.name} back to the Dealership for ${Economy.fmt(back)}?`)) return;
             await this.persistTeamGarage(teamId, garage.filter(c => c.id !== entryId));
             await Wallet.adjustTeamWallet(teamId, back, '🚗', `Sold ${car.name} (Team Garage)`);
@@ -215,17 +216,19 @@ const Garage = {
         const cars = this.garageOf(team);
         return `<section class="panel">
             <div class="panel-head"><h2>🚗 Team Garage (${cars.length})</h2>
-                <button class="btn btn-primary btn-sm" onclick="App.go('dealership')">🏬 Buy Car</button></div>
+                <div class="btn-row">
+                    ${window.Paddock ? `<button class="btn btn-secondary btn-sm" onclick="Paddock._holder='team__${Util.attr(team.id)}';App.go('paddock','garage')">🔧 Workshop</button>` : ''}
+                    <button class="btn btn-primary btn-sm" onclick="App.go('dealership')">🏬 Buy Car</button></div></div>
             <p class="muted small">Team cars unlock series entry for every driver contracted to this team — a series only accepts cars on its GM-set eligible list.</p>
             ${cars.length ? cars.map(c => `
                 <div class="race-row">
                     ${CarImg.normalize(c.imageUrl) ? CarImg.thumb(c.imageUrl, c.name)
                         : `<div class="driver-hero-num" style="font-size:1.2rem;min-width:2.8rem;height:2.8rem">${c.emoji || '🚗'}</div>`}
                     <div class="race-row-main">
-                        <span class="race-title">${Util.esc(c.name)} <span class="chip chip-dim">${Util.esc(c.carId || this.carId(c.name))}</span></span>
+                        <span class="race-title">${Util.esc(c.name)} <span class="chip chip-dim">${Util.esc(c.carId || this.carId(c.name))}</span>${window.PaddockCore ? ` <span class="chip chip-dim" title="Overall condition">🔧 ${PaddockCore.overall(c)}%</span>` : ''}${c.assigned ? ` <span class="chip chip-dim">🏎️ assigned</span>` : ''}</span>
                         <span class="race-sub">${Util.esc(c.tag || '')} · bought ${Util.esc(Util.fmtDateShort(c.boughtAt))} for ${Economy.fmt(c.price)}</span>
                     </div>
-                    <button class="btn btn-ghost btn-sm" onclick="Garage.sellTeamCar('${Util.attr(team.id)}','${Util.attr(c.id)}')">Sell ${Economy.fmt(Math.round((Number(c.price) || 0) * Market.SELL_RATIO))}</button>
+                    <button class="btn btn-ghost btn-sm" ${c.job ? 'disabled title="In a shop"' : ''} onclick="Garage.sellTeamCar('${Util.attr(team.id)}','${Util.attr(c.id)}')">Sell ${Economy.fmt(Market.sellBackFor(c))}</button>
                 </div>`).join('')
             : C.empty('🏚', 'The team garage is empty', 'Buy cars from the team budget — they make the whole roster eligible for series that require them.')}
         </section>`;

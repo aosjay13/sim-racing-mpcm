@@ -443,7 +443,7 @@
         const income = rows.filter(l => l.a > 0).reduce((s, l) => s + l.a, 0);
         const spend = rows.filter(l => l.a < 0).reduce((s, l) => s + l.a, 0);
         const seasons = [...new Set([S.seasonNo, ...S.ledger.map(l => l.s)])].sort((a, b) => b - a);
-        const catLabel = { salary: 'Salaries', bonus: 'Bonuses', prize: 'Prize money', sponsor: 'Sponsors', living: 'Living costs', agent: 'Agent', ops: 'Race operations', staff: 'Staff', facilities: 'Facilities', rd: 'R&D', repairs: 'Repairs', funding: 'Series & owner funding', interest: 'Interest', entry: 'Entry fees', team: 'Team deals', training: 'Training' };
+        const catLabel = { salary: 'Salaries', bonus: 'Bonuses', prize: 'Prize money', sponsor: 'Sponsors', living: 'Living costs', agent: 'Agent', ops: 'Race operations', staff: 'Staff', facilities: 'Facilities', rd: 'R&D', repairs: 'Repairs', funding: 'Series & owner funding', interest: 'Interest', entry: 'Entry fees', team: 'Team deals', training: 'Training', paddock: 'Paddock (cars, events, loans)' };
         el.innerHTML = `
         <div class="view-head"><div><h1>💰 Finances</h1><p class="muted">Two separate wallets: your personal money and ${showTeam ? 'the team budget' : 'your team’s (run by the AI)'}.</p></div></div>
         <div class="stat-strip">

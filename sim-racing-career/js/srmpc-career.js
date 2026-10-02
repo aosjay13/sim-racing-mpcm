@@ -13,7 +13,8 @@ const ROLES = [
     { id: 'agent', icon: '💼', label: 'Agent', desc: 'Represent drivers, broker seats and sponsorships.' },
     { id: 'sponsor', icon: '💰', label: 'Sponsor', desc: 'Back teams and drivers, put your brand on the podium.' },
     { id: 'series-owner', icon: '🏆', label: 'Series Owner', desc: 'Propose and promote championships for the league.' },
-    { id: 'track-owner', icon: '🛣️', label: 'Track Owner', desc: 'Register venues and host league events.' }
+    { id: 'track-owner', icon: '🛣️', label: 'Track Owner', desc: 'Register venues and host league events.' },
+    { id: 'car-dealer', icon: '🚘', label: 'Car Dealer', desc: 'Buy, recondition and sell cars — run the league’s used-car empire.' }
 ];
 window.ROLES = ROLES;
 
@@ -960,9 +961,12 @@ const Career = {
             const reliability = starts ? Math.round((1 - dnfs / starts) * 100) : null;
 
             kpis = `${kpi(teamRank ? '#' + teamRank : '—', 'Constructor rank')}${kpi(roster.length, 'Cars')}${kpi(reliability != null ? reliability + '%' : '—', 'Reliability')}${kpi(dnfs, 'DNFs')}`;
+            // Your own shop (js/srmpc-paddock-trade.js): bookings from players
+            // and AI walk-in diagnosis jobs, then the race-day buff panel.
+            contextHtml = window.PaddockTrade ? await PaddockTrade.mechanicShopPanel(mine, world) : '';
             // Immersive upgrades panel (js/srmpc-crew.js): prestige buff tiers
             // per game paradigm + race-day buff activation.
-            contextHtml = await Crew.mechanicPanel(mine, world);
+            contextHtml += await Crew.mechanicPanel(mine, world);
             contextHtml += `<section class="panel">
                 <div class="panel-head"><h2>🔧 My Garage</h2>
                     <button class="btn btn-secondary btn-sm" onclick="Career.pickTeamForRole('${Util.attr(mine.id)}')">✍️ Apply to a Team</button></div>
@@ -1018,6 +1022,12 @@ const Career = {
                     ${sponsoredDriver ? `<div class="race-row" onclick="Views.showDriver('${Util.attr(sponsoredDriver.id)}')"><div class="race-row-main"><span class="race-title">${Util.esc(sponsoredDriver.name)}</span><span class="race-sub">${drvRow ? `#${drvRow.rank} · ${drvRow.points} pts · ${drvRow.wins} wins` : 'Sponsored driver'}</span></div></div>` : ''}`
                     : C.empty('💰', 'No focus partner set', 'Pick the team or driver whose results build your brand prestige.')}
             </section>`;
+        } else if (roleId === 'car-dealer') {
+            const lot = Array.isArray(mine.lot) ? mine.lot : [];
+            const d = mine.dealer || {};
+            kpis = `${kpi(lot.length, 'Cars on the lot')}${kpi(lot.filter(c => c.retail).length, 'Listed')}${kpi(d.sales || 0, 'Sold')}${kpi(Economy.fmt(d.profit || 0), 'Profit')}`;
+            // Dealer lot, pricing, AI walk-in buyers, sales log (js/srmpc-paddock-trade.js).
+            contextHtml = window.PaddockTrade ? await PaddockTrade.dealerPanel(mine, world) : '';
         } else if (roleId === 'series-owner') {
             const mySeries = world.series.filter(s => s.ownerUid === Auth.uid());
             const seriesIds = new Set(mySeries.map(s => s.id));
@@ -1088,6 +1098,7 @@ const Career = {
                 <button class="btn btn-primary" onclick="App.go('challenges')">Browse challenges</button>
             </section>
         </div>`;
+        if (roleId === 'mechanic' && window.PaddockTrade) PaddockTrade.wireMechanicShop(el, mine);
     },
 
     async roleProfileForm(roleId, profileId = null) {
