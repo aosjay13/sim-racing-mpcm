@@ -138,15 +138,24 @@ const Director = {
         return world.drivers.filter(d => d.teamId && teamIds.has(d.teamId) && !d.ownerUid && !excludeIds.has(d.id));
     },
 
+    // Pace bonuses for the AI field that races around entered results.
+    async aiBonus(race, world, results) {
+        if (!window.RaceSheet?.ok()) return {};
+        const ai = this.aiGridFor(race.seriesId, world, new Set(results.map(r => r.driverId)));
+        return ai.length ? RaceSheet.simPaceMap(race, world, ai).catch(() => ({})) : {};
+    },
+
     /* ---------------- results: AI field + saving ---------------- */
     // Race the AI field around entered results: every human keeps the exact
     // position typed in; AI drivers fill the other places in simulated pace
     // order (a few retire). Grid slots, pole and fastest lap fill in too.
-    withAIField(race, results, world) {
+    // bonus: optional driverId → pace bonus (RaceSheet.simPaceMap — team
+    // efficiency in spec / BoP series, equipment in open ones).
+    withAIField(race, results, world, bonus = {}) {
         const entered = new Set(results.map(r => r.driverId));
         const ai = this.aiGridFor(race.seriesId, world, entered);
         if (!ai.length) return results;
-        const pace = (d) => (typeof Sim !== 'undefined' ? Sim._pace(d) : Number(d.rating) || 75);
+        const pace = (d) => (typeof Sim !== 'undefined' ? Sim._pace(d, bonus?.[d.id]) : Number(d.rating) || 75);
         const dnfChance = typeof Sim !== 'undefined' ? Sim.DNF_CHANCE : 0.1;
         const runners = ai.map(d => ({ d, pace: pace(d), q: pace(d), dnf: Math.random() < dnfChance }));
         const aiFinishers = runners.filter(r => !r.dnf).sort((a, b) => b.pace - a.pace);
@@ -328,6 +337,10 @@ const Director = {
                 // Humans raced: the GM enters results, unless every driver has
                 // reported and the GM switched on auto-confirm.
                 if (!cfg.autoConfirm || !entries.every(s => s.report)) continue;
+                // Proof (js/srmpc-racesheet.js): only verified results confirm themselves.
+                const sheet = window.RaceSheet?.ok() ? RaceSheet.sheetFor(race, world) : null;
+                const unproven = entries.filter(s => s.report.proof?.status === 'invalid' || (sheet && sheet.proof !== 'none' && s.report.proof?.status !== 'valid'));
+                if (unproven.length) { act('🔎', `${this._raceName(race)}: ${unproven.length} report${unproven.length === 1 ? '' : 's'} without verified proof, so it's waiting for you`); continue; }
                 const results = entries.map(s => ({
                     driverId: s.driverId, position: s.report.dnf ? null : Number(s.report.position) || null, dnf: !!s.report.dnf,
                     start: s.report.start ?? null, incidents: s.report.incidents ?? null, lapsLed: s.report.lapsLed ?? null,
@@ -335,7 +348,7 @@ const Director = {
                 }));
                 const pos = results.filter(r => r.position).map(r => r.position);
                 if (new Set(pos).size !== pos.length) { act('⚠️', `${this._raceName(race)}: two drivers reported the same position, so it's waiting for you`); continue; }
-                const full = cfg.aiFill ? this.withAIField(race, results, world) : results;
+                const full = cfg.aiFill ? this.withAIField(race, results, world, await this.aiBonus(race, world, results)) : results;
                 const { winnerName } = await this.saveResults(race, full, world, { note: 'Confirmed from driver reports' });
                 act('✅', `Confirmed ${this._raceName(race)} from ${entries.length} driver report${entries.length === 1 ? '' : 's'}${winnerName ? ` — ${winnerName} wins` : ''}`);
                 continue;

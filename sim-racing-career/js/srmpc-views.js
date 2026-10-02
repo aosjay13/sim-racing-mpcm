@@ -408,11 +408,12 @@ const Views = {
             ${C.logoBox(s, 'logo-xl')}
             <div class="series-hero-info">
                 <h1>${Util.esc(s.name)}</h1>
-                <div class="chip-row">${C.gameChip(game)}${s.season ? `<span class="chip chip-dim">Season ${Util.esc(String(s.season))}</span>` : ''}<span class="chip chip-dim">${Util.esc(sys?.label || 'Custom points')}</span>${C.statusBadge(s.status || 'active')}</div>
+                <div class="chip-row">${C.gameChip(game)}${s.season ? `<span class="chip chip-dim">Season ${Util.esc(String(s.season))}</span>` : ''}<span class="chip chip-dim">${Util.esc(sys?.label || 'Custom points')}</span>${C.statusBadge(s.status || 'active')}${window.RaceSheet?.ok() ? (() => { const r = RaceSheet.rulesFor({ seriesId: s.id, gameId: s.gameId }, world); const f = RaceRules.format(r.format); return `<span class="chip rs-format rs-format-${f.id}" title="${Util.esc(f.desc)}">${f.icon} ${Util.esc(f.label)}${r.cap?.label ? ` · class ${Util.esc(r.cap.label)}` : ''}</span>`; })() : ''}</div>
                 ${s.description ? `<p class="muted">${Util.esc(s.description)}</p>` : ''}
             </div>
             ${isAdmin ? `<div class="btn-col">
                 <button class="btn btn-secondary btn-sm" onclick="Admin.seriesForm('${Util.attr(s.id)}')">✎ Edit Series</button>
+                ${window.RaceSheet ? `<button class="btn btn-secondary btn-sm" onclick="RaceSheet.seriesRulesForm('${Util.attr(s.id)}')">⚖️ Rules & race sheets</button>` : ''}
                 <button class="btn btn-secondary btn-sm" onclick="Admin.scheduleBuilder('${Util.attr(s.id)}')">📅 Schedule Builder</button>
                 <button class="btn btn-secondary btn-sm" onclick="Admin.raceForm(null,'${Util.attr(s.id)}')">＋ Add Race</button>
                 ${seriesRaces.some(r => (r.status !== 'completed' && r.status !== 'cancelled')) ? `
@@ -598,7 +599,12 @@ const Views = {
 
         // The paddock (js/srmpc-paddock.js): the car you'd race, its condition,
         // a suggested AI offset and any pre-race mechanical gremlin.
-        const carHtml = canSignUp && window.Paddock ? await Paddock.raceCardHtml(race, world, mySignup, elig) : '';
+        // Series rules (js/srmpc-racesheet.js): your tech inspection, team
+        // efficiency, ballast / allowance and the offline AI tip for this race.
+        const facts = canSignUp && window.RaceSheet?.ok() ? await RaceSheet.myFacts(race, world, mySignup, elig) : null;
+        const carHtml = canSignUp && window.Paddock ? await Paddock.raceCardHtml(race, world, mySignup, elig, facts) : '';
+        const rulesHtml = window.RaceSheet?.ok() ? await RaceSheet.rulesSection(race, world, { signups, mySignup, elig, facts }) : '';
+        const techOk = !facts || !facts.entry || facts.insp.legal;
 
         Modal.open(`
             ${Modal.header(race.name || race.track || 'Race', `${series ? series.name + ' · ' : ''}${Util.fmtDate(race.date)}${race.time ? ' · ' + Util.fmtTime(race.time) : ''}`)}
@@ -633,7 +639,8 @@ const Views = {
                 ${canSignUp ? `<div style="margin-top:1rem">
                     ${mySignup
                         ? `<button class="btn btn-secondary" onclick="Views.toggleSignup('${Util.attr(race.id)}')">Withdraw my entry</button>`
-                        : `<button class="btn btn-primary" ${elig.eligible ? '' : 'disabled'} onclick="Views.toggleSignup('${Util.attr(race.id)}')">🏁 Sign me up</button>`}
+                        : `<button class="btn btn-primary" ${elig.eligible && techOk ? '' : 'disabled'} onclick="Views.toggleSignup('${Util.attr(race.id)}')">🏁 Sign me up</button>`}
+                    ${!mySignup && elig.eligible && !techOk ? '<p class="small pd-bad-text">⛔ Your car fails tech inspection for this series — see Rules below.</p>' : ''}
                     ${mySignup ? '' : Garage.eligibilityHtml(elig)}
                     ${!mySignup && !elig.eligible ? `<div class="btn-row" style="margin-top:.5rem"><button class="btn btn-secondary btn-sm" onclick="Modal.close();App.go('dealership')">🏬 Visit the Dealership</button></div>` : ''}
                 </div>` : (Auth.isPlayer() && !Auth.state.profile?.driverId && (race.status !== 'completed' && race.status !== 'cancelled')
@@ -642,6 +649,7 @@ const Views = {
 
             ${carHtml}
             ${(race.status !== 'completed' && race.status !== 'cancelled') && window.Library?.ok() ? Library.briefing(race, world, signups.length) : ''}
+            ${rulesHtml}
             ${mySignup && window.Library && Library.canReport(race) ? Library.reportPanel(race, mySignup, world) : ''}
 
             ${crewHtml}
@@ -654,9 +662,10 @@ const Views = {
                 <button class="btn btn-danger" onclick="Admin.deleteRace('${Util.attr(race.id)}')">Delete</button>
             </div>` : ''}
         `, { wide: race.status === 'completed' || !!window.Library?.ok() });
+        if (window.RaceSheet?.ok()) RaceSheet.wireRules(race, mySignup);
         if (window.Library) {
             Library.wireBriefing(Util.$('.modal-card') || document);
-            if (mySignup) Library.wireReport(race, mySignup);
+            if (mySignup) Library.wireReport(race, mySignup, world);
         }
     },
 
@@ -676,6 +685,10 @@ const Views = {
                 const race = (await DB.races()).find(r => r.id === raceId);
                 const elig = await Garage.validateSeriesEligibility(uid, race?.seriesId, { raceId });
                 if (!elig.eligible) { Util.notify(elig.reason, 'error'); return; }
+                // Tech inspection: spec / BoP series ban performance parts, open
+                // series cap the PI (js/srmpc-racesheet.js).
+                const tech = window.RaceSheet?.ok() ? await RaceSheet.techCheck(raceId, elig) : { legal: true };
+                if (!tech.legal) { Util.notify(`Tech inspection failed: ${tech.issues.map(i => i.text).join('; ')}. ${tech.issues[0].fix}`, 'error'); return; }
                 await Garage.ensureFlatIds(elig);
                 // Which garage entry takes the race-day wear (js/srmpc-paddock.js).
                 const garageEntryId = window.Paddock ? await Paddock.raceEntryFor(elig) : null;

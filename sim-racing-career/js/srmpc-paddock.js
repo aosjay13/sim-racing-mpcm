@@ -767,6 +767,18 @@ const Paddock = {
         </section>`;
     },
 
+    // Part picker options: every part to install, or what's fitted to remove.
+    partOptions(service, car) {
+        const PC = this.PC;
+        if (service === 'remove') {
+            const list = PC.removable(car);
+            return list.length ? list.map(x => `<option value="${Util.attr(x.id)}">${x.icon} ${Util.esc(x.label)}${x.perf > 0 ? '' : ' (no performance)'}</option>`).join('')
+                : '<option value="">— nothing fitted —</option>';
+        }
+        const shelf = PC.ensureCar(car).shelf;
+        return Object.entries(PC.PARTS).map(([id, d]) => `<option value="${id}">${d.icon} ${Util.esc(d.label)}${shelf[id] ? ` (${PC.TIERS[shelf[id].tier]?.label} on your shelf)` : ''}</option>`).join('');
+    },
+
     // Booking modal. holderKey/carId may be null (picked in the modal);
     // shopKey may be null (picked in the modal). mode: 'install' opens on parts.
     async bookModal(holderKey = null, carId = null, shopKey = null, mode = null) {
@@ -799,7 +811,7 @@ const Paddock = {
                     ${services.map(([id, s]) => `<option value="${id}" ${(mode === 'install' ? id === 'install' : id === 'service') ? 'selected' : ''}>${s.icon} ${Util.esc(s.label)}</option>`).join('')}</select></label>
                 <div class="form-row" id="pd-b-partrow">
                     <label class="field"><span>Part</span><select id="pd-b-part" class="input">${partOpts}</select></label>
-                    <label class="field"><span>Tier</span><select id="pd-b-tier" class="input">${[1, 2, 3, 4].map(t => `<option value="${t}">${PC.TIERS[t].stars} ${PC.TIERS[t].label}</option>`).join('')}</select></label>
+                    <label class="field" id="pd-b-tierwrap"><span>Tier</span><select id="pd-b-tier" class="input">${[1, 2, 3, 4].map(t => `<option value="${t}">${PC.TIERS[t].stars} ${PC.TIERS[t].label}</option>`).join('')}</select></label>
                 </div>
                 <div id="pd-b-car-now" class="pd-quote-car"></div>
                 <div id="pd-b-quote" class="pd-quote"></div>
@@ -816,19 +828,28 @@ const Paddock = {
             const job = { service, part: Util.$('#pd-b-part').value, tier: Number(Util.$('#pd-b-tier').value) };
             return { sel, shop, job };
         };
+        let partsFor = '';
         const update = () => {
+            // "Remove a part" lists what's fitted to the chosen car; installs list every part.
+            const svcNow = Util.$('#pd-b-svc').value;
+            const pk = `${svcNow}|${Util.$('#pd-b-car').value}`;
+            if (pk !== partsFor) { partsFor = pk; Util.$('#pd-b-part').innerHTML = this.partOptions(svcNow, (allCars[Number(Util.$('#pd-b-car').value)] || allCars[0]).car); }
             const { sel, shop, job } = read();
-            Util.$('#pd-b-partrow').style.display = job.service === 'install' ? '' : 'none';
+            Util.$('#pd-b-partrow').style.display = job.service === 'install' || job.service === 'remove' ? '' : 'none';
+            Util.$('#pd-b-tierwrap').style.display = job.service === 'remove' ? 'none' : '';
             const q = PC.quote(sel.car, job, shop, { econ: ctx.cfg.econ, warranty: Number(sel.car.warranty) > 0 });
             const c = PC.ensureCar(sel.car);
             const fits = PC.shopFits(shop, PC.SERVICES[job.service]?.cat || job.part);
             const existing = job.service === 'install' ? c.parts[job.part] : null;
-            const after = job.service === 'install' ? PC.performJob(c, { ...job }, PC.jobQuality(shop, job.part), 0, PC.rng('preview')).car : null;
+            let after = null;
+            if ((job.service === 'install' || job.service === 'remove') && job.part) {
+                try { after = PC.performJob(c, { ...job }, PC.jobQuality(shop, job.part), 0, PC.rng('preview')).car; } catch (e) { after = null; }
+            }
             Util.$('#pd-b-car-now').innerHTML = `${this.carKpis(sel.car)}${job.service === 'install' ? '' : this.condGrid(sel.car)}`;
             Util.$('#pd-b-quote').innerHTML = `
-                <div class="pd-quote-lines">${q.lines.length ? q.lines.map(l => `<div>${Util.esc(l)}</div>`).join('') : '<div class="muted">Nothing to fix there — that part is already at 100%.</div>'}</div>
+                <div class="pd-quote-lines">${q.lines.length ? q.lines.map(l => `<div>${Util.esc(l)}</div>`).join('') : `<div class="muted">${job.service === 'remove' ? 'Nothing fitted to take off.' : 'Nothing to fix there — that part is already at 100%.'}</div>`}</div>
                 ${existing ? `<p class="muted small">Replaces the fitted ${PC.TIERS[existing.tier]?.label} ${PC.PARTS[job.part].label}.</p>` : ''}
-                ${after ? `<p class="small">⚡ PI ${PC.pi(c)} → <strong>${PC.pi(after)}</strong> · ${Util.esc(PC.PARTS[job.part].desc)}</p>` : ''}
+                ${after ? `<p class="small">⚡ PI ${PC.pi(c)} → <strong>${PC.pi(after)}</strong>${job.service === 'install' && PC.PARTS[job.part] ? ` · ${Util.esc(PC.PARTS[job.part].desc)}` : ' · the part goes on your shelf; refit it later for labour only'}</p>` : ''}
                 <div class="pd-quote-total"><span>Parts ${Economy.fmt(q.parts)} · Labour ${Economy.fmt(q.labor)}${fits ? ' · ✅ shop speciality' : ''}</span>
                     <strong>${Economy.fmt(q.total)}</strong></div>
                 <p class="muted small">Paid from ${sel.h.type === 'team' ? `the team budget (${Economy.fmt(Wallet.teamBalance(sel.h.id))})` : `your wallet (${Economy.fmt(Economy.balance())})`}.
@@ -949,7 +970,7 @@ const Paddock = {
                     ${services.map(([id, s]) => `<option value="${id}">${s.icon} ${Util.esc(s.label)}</option>`).join('')}</select></label>
                 <div class="form-row" id="pd-d-partrow">
                     <label class="field"><span>Part</span><select id="pd-d-part" class="input">${Object.entries(PC.PARTS).map(([id, d]) => `<option value="${id}">${d.icon} ${Util.esc(d.label)}</option>`).join('')}</select></label>
-                    <label class="field"><span>Tier</span><select id="pd-d-tier" class="input">${[1, 2, 3, 4].map(t => `<option value="${t}">${PC.TIERS[t].stars} ${PC.TIERS[t].label}</option>`).join('')}</select></label>
+                    <label class="field" id="pd-d-tierwrap"><span>Tier</span><select id="pd-d-tier" class="input">${[1, 2, 3, 4].map(t => `<option value="${t}">${PC.TIERS[t].stars} ${PC.TIERS[t].label}</option>`).join('')}</select></label>
                 </div>
                 <label class="check"><input type="checkbox" id="pd-d-careful"> Take your time (+1 ⏱, better result)</label>
                 <div id="pd-d-quote" class="pd-quote"></div>
@@ -957,9 +978,12 @@ const Paddock = {
                     <button type="submit" class="btn btn-primary" id="pd-d-go">Get the spanners out 🪛</button></div>
             </form>`, { wide: true });
         const read = () => ({ service: Util.$('#pd-d-svc').value, part: Util.$('#pd-d-part').value, tier: Number(Util.$('#pd-d-tier').value), careful: Util.$('#pd-d-careful').checked });
+        let partsFor = '';
         const update = () => {
+            if (Util.$('#pd-d-svc').value !== partsFor) { partsFor = Util.$('#pd-d-svc').value; Util.$('#pd-d-part').innerHTML = this.partOptions(partsFor, car); }
             const job = read();
-            Util.$('#pd-d-partrow').style.display = job.service === 'install' ? '' : 'none';
+            Util.$('#pd-d-partrow').style.display = job.service === 'install' || job.service === 'remove' ? '' : 'none';
+            Util.$('#pd-d-tierwrap').style.display = job.service === 'remove' ? 'none' : '';
             const allowed = PC.diyAllowed(job, level);
             const q = PC.quote(car, job, null, { diy: { level, mechanical: mech }, econ: cfg.econ });
             const ap = q.ap + (job.careful ? 1 : 0);
@@ -1421,6 +1445,8 @@ const Paddock = {
         const wet = !!wx && /rain|wet|storm|drizzle|shower/i.test(wx.cond || '');
         const km = tr?.km && race.laps ? Math.round(tr.km * race.laps) : 0;
         const teamCarsDirty = new Map(); // teamId → cars array
+        // Team efficiency (js/srmpc-racesheet.js): well-run teams wear their cars less and break less.
+        const effData = window.RaceSheet?.ok() ? await RaceSheet.effData(race).catch(() => null) : null;
 
         for (const res of results) {
             const driver = world.driversById[res.driverId];
@@ -1483,9 +1509,10 @@ const Paddock = {
                 else cars = Array.isArray(user.garage) ? user.garage.slice() : [];
                 const entry = this.resolveRaceEntry(cars, { signup, raceCarId: viaTeam ? null : p.raceCar, driverId: driver.id, personal: !viaTeam });
                 if (entry) {
-                    const g = cfg.gremlins ? PC.gremlinCheck(entry, { seed: `${race.id}|${entry.id}`, laps: race.laps }) : { fails: false };
+                    const eff = effData ? RaceSheet.efficiencyFor(driver, race, world, effData, { teamId: viaTeam || driver.teamId || null, entry, userPaddock: viaTeam ? null : p }).score : null;
+                    const g = cfg.gremlins ? PC.gremlinCheck(entry, { seed: `${race.id}|${entry.id}`, laps: race.laps, riskMult: eff != null ? RaceRules.riskMult(eff) : 1 }) : { fails: false };
                     const wear = PC.applyRaceWear(entry, {
-                        km, laps: race.laps, type: tr?.type || 'rd', result: res, wearMult: cfg.wearMult,
+                        km, laps: race.laps, type: tr?.type || 'rd', result: res, wearMult: cfg.wearMult * (eff != null ? RaceRules.wearMult(eff) : 1),
                         skills: { tyres: PC.skillValue(p.skills.tyres) * (PC.hasPerk(p.skills, 'tyres', 16) ? 1.75 : PC.hasPerk(p.skills, 'tyres', 10) ? 1.4 : 1), mechanical: PC.skillValue(p.skills.mechanical) * (PC.hasPerk(p.skills, 'mechanical', 10) ? 1.4 : 1) },
                         failComp: res.dnf && g.fails ? g.comp : null
                     }, r);
@@ -1582,7 +1609,10 @@ const Paddock = {
     },
 
     /* ---------------- Race window: your car for this race ---------------- */
-    async raceCardHtml(race, world, mySignup, elig) {
+    // facts (RaceSheet.myFacts): the format-aware tip, inspection and team
+    // efficiency live in the race window's Rules section; this card keeps
+    // the car's condition and the pre-race gremlin check.
+    async raceCardHtml(race, world, mySignup, elig, facts = null) {
         const PC = this.PC;
         try {
             if (!Auth.isPlayer() || !Auth.state.profile?.driverId) return '';
@@ -1606,12 +1636,13 @@ const Paddock = {
             const lg = window.Library?.libGameFor ? Library.libGameFor(world.gamesById[race.gameId]) : null;
             const off = PC.aiOffset(entry);
             const aiLabel = lg?.ai?.label || 'AI strength';
-            const g = cfg.gremlins && mySignup ? PC.gremlinCheck(entry, { seed: `${race.id}|${entry.id}`, laps: race.laps }) : null;
+            const riskMult = facts?.eff ? RaceRules.riskMult(facts.eff.score) : 1;
+            const g = cfg.gremlins && mySignup ? PC.gremlinCheck(entry, { seed: `${race.id}|${entry.id}`, laps: race.laps, riskMult }) : null;
             return `<section class="pd-race-car">
                 <h3 class="section-label pd-sec">🔧 Your car — ${Util.esc(entry.nick || entry.name)} <span class="muted small">(${Util.esc(where)})</span></h3>
                 ${this.carKpis(entry)}
                 ${this.condGrid(entry)}
-                <p class="small" style="margin-top:.5rem">🎚️ Car vs an average field: ${off === 0 ? `leave ${Util.esc(aiLabel)} at your usual level` : `${off > 0 ? 'raise' : 'lower'} ${Util.esc(aiLabel)} about <strong>${Math.abs(off)}</strong> step${Math.abs(off) === 1 ? '' : 's'} from your usual level`} (PI ${PC.pi(entry)}).</p>
+                ${facts ? '' : `<p class="small" style="margin-top:.5rem">🎚️ Car vs an average field: ${off === 0 ? `leave ${Util.esc(aiLabel)} at your usual level` : `${off > 0 ? 'lower' : 'raise'} ${Util.esc(aiLabel)} about <strong>${Math.abs(off)}</strong> step${Math.abs(off) === 1 ? '' : 's'} from your usual level`} (PI ${PC.pi(entry)}).</p>`}
                 ${g ? (g.fails
                     ? `<div class="warn-banner pd-gremlin">⚠️ <strong>Mechanical gremlin:</strong> your ${Util.esc(PC.COMPONENTS[g.comp].label.toLowerCase())} won't make the distance. ${g.lap ? `Retire on <strong>lap ${g.lap}</strong>` : `Retire at about <strong>${g.pct}%</strong> race distance`} and report a DNF. Fix the car in the Paddock before the race to clear this.</div>`
                     : `<p class="small pd-good-text">✅ Pre-race inspection passed (${PC.reliability(entry)}% reliability).</p>`) : ''}

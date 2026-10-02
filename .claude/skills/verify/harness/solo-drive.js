@@ -155,6 +155,19 @@ const log = (ok, msg) => { const line = `${ok ? '✅' : '❌'} ${msg}`; steps.pu
     /* ---------------- 7. Import a pasted result ---------------- */
     await page.waitForSelector('[data-rtab="import"]');
     await page.click('[data-rtab="import"]');
+    // A results file from a different track is blocked (js/race-rules.js).
+    const roundBefore = await page.evaluate(() => SC.Engine.nextEvent(SC.App.S).r);
+    const wrongXml = '<rFactorXML><RaceResults><TrackVenue>Zzyzx Test Oval</TrackVenue><Race><Driver><Name>Someone Else</Name><Position>1</Position><Laps>3</Laps><FinishStatus>Finished Normally</FinishStatus><isPlayer>1</isPlayer></Driver><Driver><Name>Other Guy</Name><Position>2</Position><Laps>3</Laps></Driver></Race></RaceResults></rFactorXML>';
+    await page.setInputFiles('#im-file', { name: 'wrong.xml', mimeType: 'text/xml', buffer: Buffer.from(wrongXml) });
+    await page.click('#im-parse');
+    await page.waitForSelector('#im-map .rs-check-invalid');
+    const wrongText = await page.innerText('#im-map .rs-check-invalid');
+    await page.click('#im-go');
+    await page.waitForTimeout(300);
+    const roundAfter = await page.evaluate(() => SC.Engine.nextEvent(SC.App.S).r);
+    log(/doesn.t match this round/i.test(wrongText) && /Zzyzx Test Oval/.test(wrongText) && !(await page.$('.sc-report-hero')) && roundAfter === roundBefore,
+        'A results file from another track is blocked until "Use it anyway" is ticked');
+    await page.setInputFiles('#im-file', []);
     const names = await page.evaluate(() => { const S = SC.App.S; return SC.Engine.driversIn(S, S.season.sid).filter(x => x !== 'P').slice(0, 3).map(id => `${S.drivers[id].first} ${S.drivers[id].last}`); });
     await page.fill('#im-text', `1. ${names[0]}\n2. Jamie Racer\n3. ${names[1]}\n4. ${names[2]} - DNF`);
     await page.click('#im-parse');

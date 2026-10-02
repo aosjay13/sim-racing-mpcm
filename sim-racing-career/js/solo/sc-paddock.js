@@ -685,6 +685,16 @@
         });
     }
 
+    // Part picker: every part to install, or what's fitted when removing one.
+    function partOpts(service, car) {
+        if (service === 'remove') {
+            const list = PC.removable(car);
+            return list.length ? list.map(x => `<option value="${esc(x.id)}">${x.icon} ${esc(x.label)}</option>`).join('') : '<option value="">— nothing fitted —</option>';
+        }
+        const shelf = PC.ensureCar(car).shelf;
+        return Object.entries(PC.PARTS).map(([id, p]) => `<option value="${id}">${p.icon} ${esc(p.label)}${shelf[id] ? ' (on your shelf)' : ''}</option>`).join('');
+    }
+
     function shopModal(S, carId, install) {
         const car = S.paddock.garage.find(c => c.id === carId);
         const stars = PD.stars(S);
@@ -699,11 +709,15 @@
                 <div id="pd-sh-q" class="pd-quote"></div>
                 <div class="modal-actions"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary" type="submit" id="pd-sh-go">Book it 🔧</button></div></form>`, { wide: true });
         const read = () => ({ shop: PC.SHOPS[K().$('#pd-sh-shop').value], job: { service: K().$('#pd-sh-svc').value, part: K().$('#pd-sh-part').value, tier: Number(K().$('#pd-sh-tier').value) } });
+        let lastSvc = '';
         const upd = () => {
+            if (K().$('#pd-sh-svc').value !== lastSvc) { const was = lastSvc; lastSvc = K().$('#pd-sh-svc').value; if (was || lastSvc === 'remove') K().$('#pd-sh-part').innerHTML = partOpts(lastSvc, car); }
             const { shop, job } = read();
-            K().$('#pd-sh-partrow').style.display = job.service === 'install' ? '' : 'none';
+            K().$('#pd-sh-partrow').style.display = job.service === 'install' || job.service === 'remove' ? '' : 'none';
+            K().$('#pd-sh-tier').closest('.field').style.display = job.service === 'remove' ? 'none' : '';
             const q = PC.quote(car, job, shop, { warranty: Number(car.warranty) > 0 });
-            const after = job.service === 'install' ? PC.performJob(car, job, PC.jobQuality(shop, job.part), 0, PC.rng('preview')).car : null;
+            let after = null;
+            if ((job.service === 'install' || job.service === 'remove') && job.part) { try { after = PC.performJob(car, job, PC.jobQuality(shop, job.part), 0, PC.rng('preview')).car; } catch (e) { after = null; } }
             K().$('#pd-sh-q').innerHTML = `<div class="pd-quote-lines">${q.lines.map(l => `<div>${esc(l)}</div>`).join('') || '<div class="muted">Nothing to fix there.</div>'}</div>
                 ${after ? `<p class="small">⚡ PI ${PC.pi(car)} → <strong>${PC.pi(after)}</strong></p>` : ''}
                 <div class="pd-quote-total"><span>Parts ${fmt(q.parts)} · Labour ${fmt(q.labor)}</span><strong>${fmt(q.total)}</strong></div>`;
@@ -733,9 +747,12 @@
                 <div id="pd-dy-q" class="pd-quote"></div>
                 <div class="modal-actions"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary" type="submit" id="pd-dy-go">Get the spanners out 🪛</button></div></form>`, { wide: true });
         const read = () => ({ job: { service: K().$('#pd-dy-svc').value, part: K().$('#pd-dy-part').value, tier: Number(K().$('#pd-dy-tier').value) }, careful: K().$('#pd-dy-careful').checked });
+        let lastSvc = '';
         const upd = () => {
+            if (K().$('#pd-dy-svc').value !== lastSvc) { const was = lastSvc; lastSvc = K().$('#pd-dy-svc').value; if (was || lastSvc === 'remove') K().$('#pd-dy-part').innerHTML = partOpts(lastSvc, car); }
             const { job, careful } = read();
-            K().$('#pd-dy-partrow').style.display = job.service === 'install' ? '' : 'none';
+            K().$('#pd-dy-partrow').style.display = job.service === 'install' || job.service === 'remove' ? '' : 'none';
+            K().$('#pd-dy-tier').closest('.field').style.display = job.service === 'remove' ? 'none' : '';
             const ok = PC.diyAllowed(job, pd.garageLevel);
             const q = PC.quote(car, job, null, { diy: { level: pd.garageLevel, mechanical: mech } });
             const ap = q.ap + (careful ? 1 : 0);

@@ -57,6 +57,29 @@ Paddock** tab with paddock time that refills after each race they run:
 
 See [MANUAL.md](MANUAL.md#the-paddock-between-races).
 
+### Series rules, race sheets and result proof
+
+`js/race-rules.js` (pure, shared with the Solo Career) and `js/srmpc-racesheet.js`:
+
+- **Formats** per series (*⚖️ Rules*): **spec** (identical cars, performance parts illegal),
+  **BoP** (several models balanced by weight / power / restrictor) or **open** (build to a class
+  limit; equipment varies, so one team can dominate). Tech inspection at sign-up, and a shop's
+  *Remove a part* to get legal.
+- **Team efficiency** (staff, workshop, car prep, race-day crew) drives simulated pace, the
+  offline AI tip, wear and mechanical gremlins, for AI teams too.
+- **Per-game translation**: iRacing per-model power % and weight, ACC / AC per-entry ballast and
+  restrictor (with `entrylist.json` / `entry_list.ini` downloads), Wreckfest / GT7 / Forza class
+  limits and build allowances, success ballast with a grid-drop fallback.
+- **Race sheets** (`race.details`): race code + session name and every setting needed to build
+  the race online or offline.
+- **Result proof**: results files (metadata read by `SC.Import.meta`) and screenshots (OCR via
+  Tesseract.js, loaded on demand) are checked against the sheet; invalid proof is rejected, GM
+  imports need an override with a reason, and the Director only auto-confirms verified reports.
+- No new collections: `series.rules`, `series.sheet`, `race.details`, `race.resultsCheck`, and
+  the proof inside each driver's `raceSignups.report`.
+
+See [MANUAL.md](MANUAL.md#series-rules-race-sheets-and-result-proof).
+
 ### League Director (Game Master autopilot)
 
 The GM's only regular job is entering race results. The **🤖 League Director**
@@ -104,6 +127,8 @@ and score the same:
 - `js/srmpc-library.js` — the league's bridge to the shared library
 - `js/paddock-core.js` — Paddock rules shared by both modes; `js/srmpc-paddock.js`,
   `js/srmpc-paddock-trade.js` (league) and `js/solo/sc-paddock.js` (Solo Career)
+- `js/race-rules.js` — series formats, efficiency, per-game settings and result checks (both
+  modes); `js/srmpc-racesheet.js` — the league's race sheets, rules and result proof
 - `app.html`, `css/style.css`, `js/srmpc-*.js` — League app (`js/srmpc-core.js` holds the Firebase config)
 - `firestore.rules` — Firestore security rules for the league app
 - `docs/design/` — design notes (contracts, recruitment, car number registry); `docs/archive/` — older notes

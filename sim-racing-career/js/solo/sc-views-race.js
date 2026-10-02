@@ -389,17 +389,33 @@
                 if (!rows.length) throw new Error('No drivers found in that file.');
                 const entrants = E().driversIn(S, S.season.sid).map(id => { const d = id === 'P' ? S.drivers.P : S.drivers[id]; return { id, first: d.first, last: d.last, num: d.num, skill: id === 'P' ? S.player.dr : d.skill, nick: id === 'P' ? S.player.nick : '' }; });
                 const matched = SC.Import.match(rows, entrants);
-                parsed = { format, matched, entrants };
+                // Is this file from this round? (js/race-rules.js — wrong track,
+                // session or distance makes it invalid; a pasted list is your word.)
+                let check = null;
+                if (window.RaceRules && SC.Import.meta && format !== 'paste') {
+                    const meta = SC.Import.meta(text, format, name);
+                    check = RaceRules.checkFile({
+                        race: { track: ev.t },
+                        sheet: { laps: ev.stages ? null : ev.laps || null, minutes: ev.laps || ev.stages ? null : ev.mins || null, mode: 'offline', codeRequired: false, windowDays: 0, gameCars: '' },
+                        meta, rows
+                    });
+                }
+                parsed = { format, matched, entrants, check };
                 drawMapping(el, S, parsed);
             } catch (err) { K.toast(err.message, 'error'); }
         });
     }
 
     function drawMapping(el, S, parsed) {
-        const { format, matched, entrants } = parsed;
+        const { format, matched, entrants, check } = parsed;
+        const blocked = check?.status === 'invalid';
+        const st = check && window.RaceRules ? RaceRules.STATUS[check.status] : null;
         const opts = [['', '— ignore this row —']].concat(entrants.map(e => [e.id, `${e.id === 'P' ? '⭐ YOU — ' : ''}${e.first} ${e.last}${e.num != null ? ' #' + e.num : ''}`]));
         const howLbl = { 'file-player': 'marked as player in file', name: 'name match', number: 'car number', auto: 'auto-assigned' };
         K.$('#im-map', el).innerHTML = `
+            ${check ? `<div class="rs-check rs-check-${check.status}"><strong>${st.icon} ${esc(check.status === 'invalid' ? "This file doesn't match this round" : check.status === 'valid' ? 'Matches this round' : 'Could not confirm it\'s this round')}</strong>
+                <ul class="small">${check.checks.map(c => `<li>${c.ok === true ? '✓' : c.ok === false ? '✗' : '?'} ${esc(c.label)}: ${esc(c.detail)}</li>`).join('')}</ul>
+                ${blocked ? '<label class="check"><input type="checkbox" id="im-override"> Use it anyway — I raced this round with these settings</label>' : ''}</div>` : ''}
             <p class="small">Read <strong>${matched.length}</strong> drivers (${esc(SC.RESULT_FORMATS[format] ? format : format)}). Check who is who — especially <strong>which row is you</strong>.</p>
             <div class="sc-table-wrap"><table class="table table-tight"><thead><tr><th>Pos</th><th>In file</th><th>Career driver</th><th></th></tr></thead><tbody>
             ${matched.map((r, i) => `<tr class="${r.id === 'P' ? 'sc-me' : ''}"><td>${r.dnf ? 'DNF' : 'P' + r.pos}</td><td>${esc(r.name)}${r.start ? ` <span class="muted small">(from P${r.start})</span>` : ''}</td>
@@ -407,6 +423,7 @@
             </tbody></table></div>
             <button class="btn btn-primary btn-block" id="im-go">✅ Use these results</button>`;
         K.$('#im-go', el).addEventListener('click', () => {
+            if (blocked && !K.$('#im-override', el)?.checked) { K.toast('That results file is from a different race. Load the right file, or tick "Use it anyway".', 'error'); return; }
             const rows = matched.map((r, i) => ({ ...r, id: K.$(`[data-map="${i}"]`, el).value || null }));
             const ids = rows.filter(r => r.id).map(r => r.id);
             if (!ids.includes('P')) { K.toast('Pick which row is you.', 'error'); return; }

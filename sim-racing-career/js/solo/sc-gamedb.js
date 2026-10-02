@@ -93,6 +93,7 @@
         'nr2003': 'NR2003 exported results (exports_imports/*.html)',
         'iracing-csv': 'iRacing results CSV (session results → export)',
         'ac-json': 'Assetto Corsa race_out.json (Documents/Assetto Corsa/out)',
+        'ac-server-json': 'Assetto Corsa server results (acServer results/*.json)',
         'acc-json': 'ACC server results JSON (results/*.json)',
         'csv': 'Any CSV/TSV with Position + Driver columns',
         'paste': 'Paste the finishing order, one driver per line'
@@ -366,7 +367,7 @@
     game({
         id: 'ac', name: 'Assetto Corsa', short: 'AC', dev: 'Kunos Simulazioni', year: 2014, era: 2026,
         platform: 'PC / Console', color: '#e3262f', icon: '🇮🇹', ai: AI.ac, maxGrid: 32,
-        formats: ['ac-json', 'csv', 'paste'],
+        formats: ['ac-json', 'ac-server-json', 'csv', 'paste'],
         blurb: 'Kunos’ original — base content plus DLC cars. Mods are welcome: add any track to a calendar in the setup screen.',
         tracks: ['Monza', 'Imola', 'Mugello', 'Vallelunga', 'Magione', 'Spa-Francorchamps', 'Silverstone', 'Silverstone International', 'Brands Hatch', 'Brands Hatch Indy',
             'Nürburgring GP', 'Nürburgring Nordschleife', 'Red Bull Ring', 'Barcelona-Catalunya', 'Zandvoort', 'Laguna Seca', 'Black Cat County', 'Highlands', 'Trento-Bondone Hill Climb'],
